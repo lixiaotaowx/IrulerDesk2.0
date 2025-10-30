@@ -24,7 +24,7 @@ events:
       The output was:
       0
       閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-      鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:27銆?
+      鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:33銆?
       
       鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\3.28.0-rc4\\CompilerIdC\\CompilerIdC.vcxproj鈥?榛樿鐩爣)銆?
       PrepareForBuild:
@@ -53,7 +53,7 @@ events:
           0 涓鍛?
           0 涓敊璇?
       
-      宸茬敤鏃堕棿 00:00:00.56
+      宸茬敤鏃堕棿 00:00:01.02
       
       
       Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "CompilerIdC.exe"
@@ -79,7 +79,7 @@ events:
       The output was:
       0
       閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-      鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:28銆?
+      鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:35銆?
       
       鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\3.28.0-rc4\\CompilerIdCXX\\CompilerIdCXX.vcxproj鈥?榛樿鐩爣)銆?
       PrepareForBuild:
@@ -108,7 +108,7 @@ events:
           0 涓鍛?
           0 涓敊璇?
       
-      宸茬敤鏃堕棿 00:00:00.53
+      宸茬敤鏃堕棿 00:00:01.17
       
       
       Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "CompilerIdCXX.exe"
@@ -127,8 +127,8 @@ events:
     checks:
       - "Detecting C compiler ABI info"
     directories:
-      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-mlamqt"
-      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-mlamqt"
+      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-gpifgq"
+      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-gpifgq"
     cmakeVariables:
       CMAKE_C_FLAGS: "/DWIN32 /D_WINDOWS"
       CMAKE_C_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -137,40 +137,40 @@ events:
       variable: "CMAKE_C_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-mlamqt'
+        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-gpifgq'
         
-        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_9fc52.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_4ad9d.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
         閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:29銆?
+        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:36銆?
         
-        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-mlamqt\\cmTC_9fc52.vcxproj鈥?榛樿鐩爣)銆?
+        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-gpifgq\\cmTC_4ad9d.vcxproj鈥?榛樿鐩爣)銆?
         PrepareForBuild:
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_9fc52.dir\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_4ad9d.dir\\Debug\\鈥濄€?
           宸插惎鐢ㄧ粨鏋勫寲杈撳嚭銆傜紪璇戝櫒璇婃柇鐨勬牸寮忚缃皢鍙嶆槧閿欒灞傛缁撴瀯銆傛湁鍏宠缁嗕俊鎭紝璇峰弬闃?https://aka.ms/cpp/structured-output銆?
-          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-mlamqt\\Debug\\鈥濄€?
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_9fc52.dir\\Debug\\cmTC_9fc52.tlog\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-gpifgq\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_4ad9d.dir\\Debug\\cmTC_4ad9d.tlog\\鈥濄€?
         InitializeBuildStatus:
-          姝ｅ湪鍒涘缓鈥渃mTC_9fc52.dir\\Debug\\cmTC_9fc52.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
-          姝ｅ湪瀵光€渃mTC_9fc52.dir\\Debug\\cmTC_9fc52.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
+          姝ｅ湪鍒涘缓鈥渃mTC_4ad9d.dir\\Debug\\cmTC_4ad9d.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
+          姝ｅ湪瀵光€渃mTC_4ad9d.dir\\Debug\\cmTC_4ad9d.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
         ClCompile:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_9fc52.dir\\Debug\\\\" /Fd"cmTC_9fc52.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCCompilerABI.c"
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_4ad9d.dir\\Debug\\\\" /Fd"cmTC_4ad9d.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCCompilerABI.c"
           鐢ㄤ簬 x64 鐨?Microsoft (R) C/C++ 浼樺寲缂栬瘧鍣?19.43.34808 鐗?
           鐗堟潈鎵€鏈?C) Microsoft Corporation銆備繚鐣欐墍鏈夋潈鍒┿€?
-          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_9fc52.dir\\Debug\\\\" /Fd"cmTC_9fc52.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCCompilerABI.c"
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_4ad9d.dir\\Debug\\\\" /Fd"cmTC_4ad9d.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCCompilerABI.c"
           CMakeCCompilerABI.c
         Link:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-mlamqt\\Debug\\cmTC_9fc52.exe" /INCREMENTAL /ILK:"cmTC_9fc52.dir\\Debug\\cmTC_9fc52.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-mlamqt/Debug/cmTC_9fc52.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-mlamqt/Debug/cmTC_9fc52.lib" /MACHINE:X64  /machine:x64 cmTC_9fc52.dir\\Debug\\CMakeCCompilerABI.obj
-          cmTC_9fc52.vcxproj -> G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-mlamqt\\Debug\\cmTC_9fc52.exe
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-gpifgq\\Debug\\cmTC_4ad9d.exe" /INCREMENTAL /ILK:"cmTC_4ad9d.dir\\Debug\\cmTC_4ad9d.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-gpifgq/Debug/cmTC_4ad9d.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-gpifgq/Debug/cmTC_4ad9d.lib" /MACHINE:X64  /machine:x64 cmTC_4ad9d.dir\\Debug\\CMakeCCompilerABI.obj
+          cmTC_4ad9d.vcxproj -> G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-gpifgq\\Debug\\cmTC_4ad9d.exe
         FinalizeBuildStatus:
-          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_9fc52.dir\\Debug\\cmTC_9fc52.tlog\\unsuccessfulbuild鈥濄€?
-          姝ｅ湪瀵光€渃mTC_9fc52.dir\\Debug\\cmTC_9fc52.tlog\\cmTC_9fc52.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
-        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-mlamqt\\cmTC_9fc52.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
+          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_4ad9d.dir\\Debug\\cmTC_4ad9d.tlog\\unsuccessfulbuild鈥濄€?
+          姝ｅ湪瀵光€渃mTC_4ad9d.dir\\Debug\\cmTC_4ad9d.tlog\\cmTC_4ad9d.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
+        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-gpifgq\\cmTC_4ad9d.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
         
         宸叉垚鍔熺敓鎴愩€?
             0 涓鍛?
             0 涓敊璇?
         
-        宸茬敤鏃堕棿 00:00:00.55
+        宸茬敤鏃堕棿 00:00:00.97
         
       exitCode: 0
   -
@@ -182,8 +182,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-0ba046"
-      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-0ba046"
+      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28uvt8"
+      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28uvt8"
     cmakeVariables:
       CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /GR /EHsc"
       CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -192,40 +192,40 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-0ba046'
+        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28uvt8'
         
-        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_57002.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_0b33e.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
         閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:30銆?
+        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:37銆?
         
-        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-0ba046\\cmTC_57002.vcxproj鈥?榛樿鐩爣)銆?
+        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28uvt8\\cmTC_0b33e.vcxproj鈥?榛樿鐩爣)銆?
         PrepareForBuild:
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_57002.dir\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_0b33e.dir\\Debug\\鈥濄€?
           宸插惎鐢ㄧ粨鏋勫寲杈撳嚭銆傜紪璇戝櫒璇婃柇鐨勬牸寮忚缃皢鍙嶆槧閿欒灞傛缁撴瀯銆傛湁鍏宠缁嗕俊鎭紝璇峰弬闃?https://aka.ms/cpp/structured-output銆?
-          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-0ba046\\Debug\\鈥濄€?
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_57002.dir\\Debug\\cmTC_57002.tlog\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28uvt8\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_0b33e.dir\\Debug\\cmTC_0b33e.tlog\\鈥濄€?
         InitializeBuildStatus:
-          姝ｅ湪鍒涘缓鈥渃mTC_57002.dir\\Debug\\cmTC_57002.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
-          姝ｅ湪瀵光€渃mTC_57002.dir\\Debug\\cmTC_57002.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
+          姝ｅ湪鍒涘缓鈥渃mTC_0b33e.dir\\Debug\\cmTC_0b33e.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
+          姝ｅ湪瀵光€渃mTC_0b33e.dir\\Debug\\cmTC_0b33e.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
         ClCompile:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /Fo"cmTC_57002.dir\\Debug\\\\" /Fd"cmTC_57002.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCXXCompilerABI.cpp"
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /Fo"cmTC_0b33e.dir\\Debug\\\\" /Fd"cmTC_0b33e.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCXXCompilerABI.cpp"
           鐢ㄤ簬 x64 鐨?Microsoft (R) C/C++ 浼樺寲缂栬瘧鍣?19.43.34808 鐗?
           鐗堟潈鎵€鏈?C) Microsoft Corporation銆備繚鐣欐墍鏈夋潈鍒┿€?
-          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /Fo"cmTC_57002.dir\\Debug\\\\" /Fd"cmTC_57002.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCXXCompilerABI.cpp"
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /Fo"cmTC_0b33e.dir\\Debug\\\\" /Fd"cmTC_0b33e.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-3.28\\Modules\\CMakeCXXCompilerABI.cpp"
           CMakeCXXCompilerABI.cpp
         Link:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-0ba046\\Debug\\cmTC_57002.exe" /INCREMENTAL /ILK:"cmTC_57002.dir\\Debug\\cmTC_57002.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-0ba046/Debug/cmTC_57002.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-0ba046/Debug/cmTC_57002.lib" /MACHINE:X64  /machine:x64 cmTC_57002.dir\\Debug\\CMakeCXXCompilerABI.obj
-          cmTC_57002.vcxproj -> G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-0ba046\\Debug\\cmTC_57002.exe
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28uvt8\\Debug\\cmTC_0b33e.exe" /INCREMENTAL /ILK:"cmTC_0b33e.dir\\Debug\\cmTC_0b33e.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28uvt8/Debug/cmTC_0b33e.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28uvt8/Debug/cmTC_0b33e.lib" /MACHINE:X64  /machine:x64 cmTC_0b33e.dir\\Debug\\CMakeCXXCompilerABI.obj
+          cmTC_0b33e.vcxproj -> G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28uvt8\\Debug\\cmTC_0b33e.exe
         FinalizeBuildStatus:
-          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_57002.dir\\Debug\\cmTC_57002.tlog\\unsuccessfulbuild鈥濄€?
-          姝ｅ湪瀵光€渃mTC_57002.dir\\Debug\\cmTC_57002.tlog\\cmTC_57002.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
-        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-0ba046\\cmTC_57002.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
+          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_0b33e.dir\\Debug\\cmTC_0b33e.tlog\\unsuccessfulbuild鈥濄€?
+          姝ｅ湪瀵光€渃mTC_0b33e.dir\\Debug\\cmTC_0b33e.tlog\\cmTC_0b33e.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
+        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28uvt8\\cmTC_0b33e.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
         
         宸叉垚鍔熺敓鎴愩€?
             0 涓鍛?
             0 涓敊璇?
         
-        宸茬敤鏃堕棿 00:00:00.54
+        宸茬敤鏃堕棿 00:00:00.97
         
       exitCode: 0
   -
@@ -243,8 +243,8 @@ events:
     checks:
       - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
     directories:
-      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-j93nkk"
-      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-j93nkk"
+      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-ksio1t"
+      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-ksio1t"
     cmakeVariables:
       CMAKE_C_FLAGS: "/DWIN32 /D_WINDOWS"
       CMAKE_C_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -254,40 +254,40 @@ events:
       variable: "CMAKE_HAVE_LIBC_PTHREAD"
       cached: true
       stdout: |
-        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-j93nkk'
+        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-ksio1t'
         
-        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_38624.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_094be.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
         閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:30銆?
+        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:39銆?
         
-        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\cmTC_38624.vcxproj鈥?榛樿鐩爣)銆?
+        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\cmTC_094be.vcxproj鈥?榛樿鐩爣)銆?
         PrepareForBuild:
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_38624.dir\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_094be.dir\\Debug\\鈥濄€?
           宸插惎鐢ㄧ粨鏋勫寲杈撳嚭銆傜紪璇戝櫒璇婃柇鐨勬牸寮忚缃皢鍙嶆槧閿欒灞傛缁撴瀯銆傛湁鍏宠缁嗕俊鎭紝璇峰弬闃?https://aka.ms/cpp/structured-output銆?
-          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\Debug\\鈥濄€?
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_38624.dir\\Debug\\cmTC_38624.tlog\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_094be.dir\\Debug\\cmTC_094be.tlog\\鈥濄€?
         InitializeBuildStatus:
-          姝ｅ湪鍒涘缓鈥渃mTC_38624.dir\\Debug\\cmTC_38624.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
-          姝ｅ湪瀵光€渃mTC_38624.dir\\Debug\\cmTC_38624.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
+          姝ｅ湪鍒涘缓鈥渃mTC_094be.dir\\Debug\\cmTC_094be.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
+          姝ｅ湪瀵光€渃mTC_094be.dir\\Debug\\cmTC_094be.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
         ClCompile:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_38624.dir\\Debug\\\\" /Fd"cmTC_38624.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\src.c"
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_094be.dir\\Debug\\\\" /Fd"cmTC_094be.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\src.c"
           鐢ㄤ簬 x64 鐨?Microsoft (R) C/C++ 浼樺寲缂栬瘧鍣?19.43.34808 鐗?
           鐗堟潈鎵€鏈?C) Microsoft Corporation銆備繚鐣欐墍鏈夋潈鍒┿€?
-          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_38624.dir\\Debug\\\\" /Fd"cmTC_38624.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\src.c"
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CMAKE_HAVE_LIBC_PTHREAD /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_094be.dir\\Debug\\\\" /Fd"cmTC_094be.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\src.c"
           src.c
-        G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\src.c(1,10): error C1083: 鏃犳硶鎵撳紑鍖呮嫭鏂囦欢: 鈥減thread.h鈥? No such file or directory [G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\cmTC_38624.vcxproj]
-        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\cmTC_38624.vcxproj鈥?榛樿鐩爣)鐨勬搷浣?- 澶辫触銆?
+        G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\src.c(1,10): error C1083: 鏃犳硶鎵撳紑鍖呮嫭鏂囦欢: 鈥減thread.h鈥? No such file or directory [G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\cmTC_094be.vcxproj]
+        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\cmTC_094be.vcxproj鈥?榛樿鐩爣)鐨勬搷浣?- 澶辫触銆?
         
         鐢熸垚澶辫触銆?
         
-        鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\cmTC_38624.vcxproj鈥?榛樿鐩爣) (1) ->
+        鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\cmTC_094be.vcxproj鈥?榛樿鐩爣) (1) ->
         (ClCompile 鐩爣) -> 
-          G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\src.c(1,10): error C1083: 鏃犳硶鎵撳紑鍖呮嫭鏂囦欢: 鈥減thread.h鈥? No such file or directory [G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-j93nkk\\cmTC_38624.vcxproj]
+          G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\src.c(1,10): error C1083: 鏃犳硶鎵撳紑鍖呮嫭鏂囦欢: 鈥減thread.h鈥? No such file or directory [G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-ksio1t\\cmTC_094be.vcxproj]
         
             0 涓鍛?
             1 涓敊璇?
         
-        宸茬敤鏃堕棿 00:00:00.32
+        宸茬敤鏃堕棿 00:00:00.48
         
       exitCode: 1
   -
@@ -304,8 +304,8 @@ events:
     checks:
       - "Looking for pthread_create in pthreads"
     directories:
-      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-2a5skv"
-      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-2a5skv"
+      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-b7g29q"
+      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-b7g29q"
     cmakeVariables:
       CMAKE_C_FLAGS: "/DWIN32 /D_WINDOWS"
       CMAKE_C_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -315,42 +315,42 @@ events:
       variable: "CMAKE_HAVE_PTHREADS_CREATE"
       cached: true
       stdout: |
-        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-2a5skv'
+        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-b7g29q'
         
-        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_6c6b0.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_9d667.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
         閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:31銆?
+        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:39銆?
         
-        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\cmTC_6c6b0.vcxproj鈥?榛樿鐩爣)銆?
+        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\cmTC_9d667.vcxproj鈥?榛樿鐩爣)銆?
         PrepareForBuild:
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_6c6b0.dir\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_9d667.dir\\Debug\\鈥濄€?
           宸插惎鐢ㄧ粨鏋勫寲杈撳嚭銆傜紪璇戝櫒璇婃柇鐨勬牸寮忚缃皢鍙嶆槧閿欒灞傛缁撴瀯銆傛湁鍏宠缁嗕俊鎭紝璇峰弬闃?https://aka.ms/cpp/structured-output銆?
-          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\Debug\\鈥濄€?
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_6c6b0.dir\\Debug\\cmTC_6c6b0.tlog\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_9d667.dir\\Debug\\cmTC_9d667.tlog\\鈥濄€?
         InitializeBuildStatus:
-          姝ｅ湪鍒涘缓鈥渃mTC_6c6b0.dir\\Debug\\cmTC_6c6b0.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
-          姝ｅ湪瀵光€渃mTC_6c6b0.dir\\Debug\\cmTC_6c6b0.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
+          姝ｅ湪鍒涘缓鈥渃mTC_9d667.dir\\Debug\\cmTC_9d667.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
+          姝ｅ湪瀵光€渃mTC_9d667.dir\\Debug\\cmTC_9d667.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
         ClCompile:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_6c6b0.dir\\Debug\\\\" /Fd"cmTC_6c6b0.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\CheckFunctionExists.c"
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_9d667.dir\\Debug\\\\" /Fd"cmTC_9d667.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\CheckFunctionExists.c"
           鐢ㄤ簬 x64 鐨?Microsoft (R) C/C++ 浼樺寲缂栬瘧鍣?19.43.34808 鐗?
           鐗堟潈鎵€鏈?C) Microsoft Corporation銆備繚鐣欐墍鏈夋潈鍒┿€?
-          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_6c6b0.dir\\Debug\\\\" /Fd"cmTC_6c6b0.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\CheckFunctionExists.c"
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_9d667.dir\\Debug\\\\" /Fd"cmTC_9d667.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\CheckFunctionExists.c"
           CheckFunctionExists.c
         Link:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\Debug\\cmTC_6c6b0.exe" /INCREMENTAL /ILK:"cmTC_6c6b0.dir\\Debug\\cmTC_6c6b0.ilk" /NOLOGO pthreads.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-2a5skv/Debug/cmTC_6c6b0.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-2a5skv/Debug/cmTC_6c6b0.lib" /MACHINE:X64  /machine:x64 cmTC_6c6b0.dir\\Debug\\CheckFunctionExists.obj
-        LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減threads.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\cmTC_6c6b0.vcxproj]
-        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\cmTC_6c6b0.vcxproj鈥?榛樿鐩爣)鐨勬搷浣?- 澶辫触銆?
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\Debug\\cmTC_9d667.exe" /INCREMENTAL /ILK:"cmTC_9d667.dir\\Debug\\cmTC_9d667.ilk" /NOLOGO pthreads.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-b7g29q/Debug/cmTC_9d667.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-b7g29q/Debug/cmTC_9d667.lib" /MACHINE:X64  /machine:x64 cmTC_9d667.dir\\Debug\\CheckFunctionExists.obj
+        LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減threads.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\cmTC_9d667.vcxproj]
+        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\cmTC_9d667.vcxproj鈥?榛樿鐩爣)鐨勬搷浣?- 澶辫触銆?
         
         鐢熸垚澶辫触銆?
         
-        鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\cmTC_6c6b0.vcxproj鈥?榛樿鐩爣) (1) ->
+        鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\cmTC_9d667.vcxproj鈥?榛樿鐩爣) (1) ->
         (Link 鐩爣) -> 
-          LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減threads.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-2a5skv\\cmTC_6c6b0.vcxproj]
+          LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減threads.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-b7g29q\\cmTC_9d667.vcxproj]
         
             0 涓鍛?
             1 涓敊璇?
         
-        宸茬敤鏃堕棿 00:00:00.43
+        宸茬敤鏃堕棿 00:00:00.75
         
       exitCode: 1
   -
@@ -367,8 +367,8 @@ events:
     checks:
       - "Looking for pthread_create in pthread"
     directories:
-      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-u11cm1"
-      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-u11cm1"
+      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-qd2m65"
+      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-qd2m65"
     cmakeVariables:
       CMAKE_C_FLAGS: "/DWIN32 /D_WINDOWS"
       CMAKE_C_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -378,42 +378,42 @@ events:
       variable: "CMAKE_HAVE_PTHREAD_CREATE"
       cached: true
       stdout: |
-        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-u11cm1'
+        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-qd2m65'
         
-        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_f725a.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_49c1b.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
         閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:31銆?
+        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:40銆?
         
-        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\cmTC_f725a.vcxproj鈥?榛樿鐩爣)銆?
+        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\cmTC_49c1b.vcxproj鈥?榛樿鐩爣)銆?
         PrepareForBuild:
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_f725a.dir\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_49c1b.dir\\Debug\\鈥濄€?
           宸插惎鐢ㄧ粨鏋勫寲杈撳嚭銆傜紪璇戝櫒璇婃柇鐨勬牸寮忚缃皢鍙嶆槧閿欒灞傛缁撴瀯銆傛湁鍏宠缁嗕俊鎭紝璇峰弬闃?https://aka.ms/cpp/structured-output銆?
-          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\Debug\\鈥濄€?
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_f725a.dir\\Debug\\cmTC_f725a.tlog\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_49c1b.dir\\Debug\\cmTC_49c1b.tlog\\鈥濄€?
         InitializeBuildStatus:
-          姝ｅ湪鍒涘缓鈥渃mTC_f725a.dir\\Debug\\cmTC_f725a.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
-          姝ｅ湪瀵光€渃mTC_f725a.dir\\Debug\\cmTC_f725a.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
+          姝ｅ湪鍒涘缓鈥渃mTC_49c1b.dir\\Debug\\cmTC_49c1b.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
+          姝ｅ湪瀵光€渃mTC_49c1b.dir\\Debug\\cmTC_49c1b.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
         ClCompile:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_f725a.dir\\Debug\\\\" /Fd"cmTC_f725a.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\CheckFunctionExists.c"
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_49c1b.dir\\Debug\\\\" /Fd"cmTC_49c1b.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\CheckFunctionExists.c"
           鐢ㄤ簬 x64 鐨?Microsoft (R) C/C++ 浼樺寲缂栬瘧鍣?19.43.34808 鐗?
           鐗堟潈鎵€鏈?C) Microsoft Corporation銆備繚鐣欐墍鏈夋潈鍒┿€?
-          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_f725a.dir\\Debug\\\\" /Fd"cmTC_f725a.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\CheckFunctionExists.c"
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D CHECK_FUNCTION_EXISTS=pthread_create /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"cmTC_49c1b.dir\\Debug\\\\" /Fd"cmTC_49c1b.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TC /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\CheckFunctionExists.c"
           CheckFunctionExists.c
         Link:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\Debug\\cmTC_f725a.exe" /INCREMENTAL /ILK:"cmTC_f725a.dir\\Debug\\cmTC_f725a.ilk" /NOLOGO pthread.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-u11cm1/Debug/cmTC_f725a.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-u11cm1/Debug/cmTC_f725a.lib" /MACHINE:X64  /machine:x64 cmTC_f725a.dir\\Debug\\CheckFunctionExists.obj
-        LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減thread.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\cmTC_f725a.vcxproj]
-        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\cmTC_f725a.vcxproj鈥?榛樿鐩爣)鐨勬搷浣?- 澶辫触銆?
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\Debug\\cmTC_49c1b.exe" /INCREMENTAL /ILK:"cmTC_49c1b.dir\\Debug\\cmTC_49c1b.ilk" /NOLOGO pthread.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-qd2m65/Debug/cmTC_49c1b.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-qd2m65/Debug/cmTC_49c1b.lib" /MACHINE:X64  /machine:x64 cmTC_49c1b.dir\\Debug\\CheckFunctionExists.obj
+        LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減thread.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\cmTC_49c1b.vcxproj]
+        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\cmTC_49c1b.vcxproj鈥?榛樿鐩爣)鐨勬搷浣?- 澶辫触銆?
         
         鐢熸垚澶辫触銆?
         
-        鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\cmTC_f725a.vcxproj鈥?榛樿鐩爣) (1) ->
+        鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\cmTC_49c1b.vcxproj鈥?榛樿鐩爣) (1) ->
         (Link 鐩爣) -> 
-          LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減thread.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-u11cm1\\cmTC_f725a.vcxproj]
+          LINK : fatal error LNK1104: 鏃犳硶鎵撳紑鏂囦欢鈥減thread.lib鈥?[G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-qd2m65\\cmTC_49c1b.vcxproj]
         
             0 涓鍛?
             1 涓敊璇?
         
-        宸茬敤鏃堕棿 00:00:00.47
+        宸茬敤鏃堕棿 00:00:00.74
         
       exitCode: 1
   -
@@ -431,8 +431,8 @@ events:
     checks:
       - "Performing Test HAVE_STDATOMIC"
     directories:
-      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28ruiu"
-      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28ruiu"
+      source: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-4kxabv"
+      binary: "G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-4kxabv"
     cmakeVariables:
       CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /GR /EHsc"
       CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -442,40 +442,40 @@ events:
       variable: "HAVE_STDATOMIC"
       cached: true
       stdout: |
-        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28ruiu'
+        Change Dir: 'G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-4kxabv'
         
-        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_049d1.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_c7210.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
         閫傜敤浜?.NET Framework MSBuild 鐗堟湰 17.13.9+e0f243f1e
-        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 13:37:32銆?
+        鐢熸垚鍚姩鏃堕棿涓?2025/10/30 22:57:41銆?
         
-        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28ruiu\\cmTC_049d1.vcxproj鈥?榛樿鐩爣)銆?
+        鑺傜偣 1 涓婄殑椤圭洰鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-4kxabv\\cmTC_c7210.vcxproj鈥?榛樿鐩爣)銆?
         PrepareForBuild:
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_049d1.dir\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_c7210.dir\\Debug\\鈥濄€?
           宸插惎鐢ㄧ粨鏋勫寲杈撳嚭銆傜紪璇戝櫒璇婃柇鐨勬牸寮忚缃皢鍙嶆槧閿欒灞傛缁撴瀯銆傛湁鍏宠缁嗕俊鎭紝璇峰弬闃?https://aka.ms/cpp/structured-output銆?
-          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28ruiu\\Debug\\鈥濄€?
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_049d1.dir\\Debug\\cmTC_049d1.tlog\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-4kxabv\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_c7210.dir\\Debug\\cmTC_c7210.tlog\\鈥濄€?
         InitializeBuildStatus:
-          姝ｅ湪鍒涘缓鈥渃mTC_049d1.dir\\Debug\\cmTC_049d1.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
-          姝ｅ湪瀵光€渃mTC_049d1.dir\\Debug\\cmTC_049d1.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
+          姝ｅ湪鍒涘缓鈥渃mTC_c7210.dir\\Debug\\cmTC_c7210.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
+          姝ｅ湪瀵光€渃mTC_c7210.dir\\Debug\\cmTC_c7210.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
         ClCompile:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D HAVE_STDATOMIC /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /std:c++17 /Fo"cmTC_049d1.dir\\Debug\\\\" /Fd"cmTC_049d1.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28ruiu\\src.cxx"
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D HAVE_STDATOMIC /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /std:c++17 /Fo"cmTC_c7210.dir\\Debug\\\\" /Fd"cmTC_c7210.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-4kxabv\\src.cxx"
           鐢ㄤ簬 x64 鐨?Microsoft (R) C/C++ 浼樺寲缂栬瘧鍣?19.43.34808 鐗?
           鐗堟潈鎵€鏈?C) Microsoft Corporation銆備繚鐣欐墍鏈夋潈鍒┿€?
-          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D HAVE_STDATOMIC /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /std:c++17 /Fo"cmTC_049d1.dir\\Debug\\\\" /Fd"cmTC_049d1.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28ruiu\\src.cxx"
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D HAVE_STDATOMIC /D "CMAKE_INTDIR=\\"Debug\\"" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR /std:c++17 /Fo"cmTC_c7210.dir\\Debug\\\\" /Fd"cmTC_c7210.dir\\Debug\\vc143.pdb" /external:W1 /Gd /TP /errorReport:queue "G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-4kxabv\\src.cxx"
           src.cxx
         Link:
-          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28ruiu\\Debug\\cmTC_049d1.exe" /INCREMENTAL /ILK:"cmTC_049d1.dir\\Debug\\cmTC_049d1.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28ruiu/Debug/cmTC_049d1.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-28ruiu/Debug/cmTC_049d1.lib" /MACHINE:X64  /machine:x64 cmTC_049d1.dir\\Debug\\src.obj
-          cmTC_049d1.vcxproj -> G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28ruiu\\Debug\\cmTC_049d1.exe
+          C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.43.34808\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:"G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-4kxabv\\Debug\\cmTC_c7210.exe" /INCREMENTAL /ILK:"cmTC_c7210.dir\\Debug\\cmTC_c7210.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-4kxabv/Debug/cmTC_c7210.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CMakeScratch/TryCompile-4kxabv/Debug/cmTC_c7210.lib" /MACHINE:X64  /machine:x64 cmTC_c7210.dir\\Debug\\src.obj
+          cmTC_c7210.vcxproj -> G:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-4kxabv\\Debug\\cmTC_c7210.exe
         FinalizeBuildStatus:
-          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_049d1.dir\\Debug\\cmTC_049d1.tlog\\unsuccessfulbuild鈥濄€?
-          姝ｅ湪瀵光€渃mTC_049d1.dir\\Debug\\cmTC_049d1.tlog\\cmTC_049d1.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
-        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-28ruiu\\cmTC_049d1.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
+          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_c7210.dir\\Debug\\cmTC_c7210.tlog\\unsuccessfulbuild鈥濄€?
+          姝ｅ湪瀵光€渃mTC_c7210.dir\\Debug\\cmTC_c7210.tlog\\cmTC_c7210.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
+        宸插畬鎴愮敓鎴愰」鐩€淕:\\c\\2025\\lunzi\\IrulerDeskpro\\build\\CMakeFiles\\CMakeScratch\\TryCompile-4kxabv\\cmTC_c7210.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
         
         宸叉垚鍔熺敓鎴愩€?
             0 涓鍛?
             0 涓敊璇?
         
-        宸茬敤鏃堕棿 00:00:00.69
+        宸茬敤鏃堕棿 00:00:01.02
         
       exitCode: 0
 ...

@@ -41,37 +41,7 @@ ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_AQ_MODE, 3); // 启用循环滤�
 ```
 **预期收益**: 编码速度提升15-25%
 
-#### 2. 分块传输优化 ⭐
-**当前问题**: 单帧直接发送，大帧可能阻塞
-**优化方案**:
-```cpp
-class ChunkedFrameSender {
-private:
-    static const int CHUNK_SIZE = 32768; // 32KB分块
-    static const int MAX_CHUNKS_PER_FRAME = 64;
-    
-public:
-    void sendFrameChunked(const QByteArray &frameData) {
-        int totalChunks = (frameData.size() + CHUNK_SIZE - 1) / CHUNK_SIZE;
-        uint32_t frameId = generateFrameId();
-        
-        for (int i = 0; i < totalChunks; ++i) {
-            ChunkHeader header;
-            header.frameId = frameId;
-            header.chunkIndex = i;
-            header.totalChunks = totalChunks;
-            header.chunkSize = std::min(CHUNK_SIZE, frameData.size() - i * CHUNK_SIZE);
-            
-            QByteArray chunk;
-            chunk.append(reinterpret_cast<const char*>(&header), sizeof(header));
-            chunk.append(frameData.mid(i * CHUNK_SIZE, header.chunkSize));
-            
-            m_webSocket->sendBinaryMessage(chunk);
-        }
-    }
-};
-```
-**预期收益**: 减少网络阻塞，提升30-50%传输稳定性
+
 
 #### 3. 自适应质量控制
 **当前问题**: 固定码率不适应网络变化

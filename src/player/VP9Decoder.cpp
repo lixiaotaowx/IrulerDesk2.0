@@ -187,8 +187,12 @@ QByteArray VP9Decoder::convertYUVToRGB(const vpx_image_t *img)
         return QByteArray();
     }
     
-    // 分配ARGB缓冲区 (ARGB格式，每像素4字节)
-    QByteArray rgbData(width * height * 4, 0);
+    // 高效内存分配：直接分配QByteArray，避免额外复制
+    // 使用reserve()预分配内存，减少重分配
+    const size_t bufferSize = width * height * 4; // ARGB格式，每像素4字节
+    QByteArray rgbData;
+    rgbData.reserve(bufferSize);
+    rgbData.resize(bufferSize);
     uint8_t *rgbBuffer = reinterpret_cast<uint8_t*>(rgbData.data());
     
     // 获取YUV平面指针和步长

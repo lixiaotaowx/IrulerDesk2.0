@@ -9,7 +9,7 @@
 VP9Encoder::VP9Encoder(QObject *parent)
     : QObject(parent)
     , m_frameRate(30)  // 恢复30fps以获得流畅画面
-    , m_bitrate(1200000) // 1.2 Mbps，提高画质
+    , m_bitrate(800000) // 800 kbps，优化编码速度
     , m_keyFrameInterval(30) // 30帧关键帧间隔，减少闪烁
     , m_initialized(false)
     , m_frameCount(0)
@@ -225,14 +225,14 @@ bool VP9Encoder::initializeEncoder()
     // 设置编码器控制参数 - 极速实时编码和多线程优化
     vpx_codec_err_t ctrl_res;
     
-    // 使用平衡的实时编码速度 (cpu-used=7，平衡速度和质量)
-    ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_CPUUSED, 7);
+    // 使用极速实时编码速度 (cpu-used=8，优先速度)
+    ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_CPUUSED, 8);
     if (ctrl_res != VPX_CODEC_OK) {
         qWarning() << "[VP9Encoder] 设置CPU使用率失败:" << vpx_codec_err_to_string(ctrl_res);
     }
     
-    // 启用瓦片列以提升并行性能
-    ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_TILE_COLUMNS, 2);
+    // 启用瓦片列以提升并行性能 (增加到3列)
+    ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_TILE_COLUMNS, 3);
     if (ctrl_res != VPX_CODEC_OK) {
         qWarning() << "[VP9Encoder] 设置瓦片列失败:" << vpx_codec_err_to_string(ctrl_res);
     }
@@ -249,6 +249,12 @@ bool VP9Encoder::initializeEncoder()
         qWarning() << "[VP9Encoder] 启用行级多线程失败:" << vpx_codec_err_to_string(ctrl_res);
     }
     
+    // 启用自适应量化模式以优化编码效率
+    ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_AQ_MODE, 3);
+    if (ctrl_res != VPX_CODEC_OK) {
+        qWarning() << "[VP9Encoder] 设置自适应量化模式失败:" << vpx_codec_err_to_string(ctrl_res);
+    }
+    
     // 设置实时模式 - 禁用自动替代参考帧
     ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_ENABLEAUTOALTREF, 0);
     if (ctrl_res != VPX_CODEC_OK) {
@@ -257,9 +263,9 @@ bool VP9Encoder::initializeEncoder()
     
     // VP9不使用VP8E_SET_ERROR_RESILIENT，而是通过其他方式提高兼容性
     // 确保帧并行解码被禁用以提高兼容性（已在上面设置）
-    qDebug() << "[VP9Encoder] VP9编码器配置完成，使用实时模式设置";
+    qDebug() << "[VP9Encoder] VP9编码器配置完成，使用极速实时模式设置";
     
-    qDebug() << "[VP9Encoder] 编码器配置: 实时编码模式, CPU使用率8, 错误恢复启用, 禁用高级特性";
+    qDebug() << "[VP9Encoder] 编码器配置: 极速编码模式, CPU使用率8, 瓦片列3, AQ模式3, 错误恢复启用";
     
     // 分配原始图像
     if (!vpx_img_alloc(&m_rawImage, VPX_IMG_FMT_I420, m_config.g_w, m_config.g_h, 1)) {

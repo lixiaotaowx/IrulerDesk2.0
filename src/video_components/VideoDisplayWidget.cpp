@@ -80,7 +80,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
 VideoDisplayWidget::~VideoDisplayWidget()
 {
     stopReceiving();
-    qDebug() << "VideoDisplayWidget 销毁";
+    // qDebug() << "VideoDisplayWidget 销毁";
 }
 
 void VideoDisplayWidget::setupUI()
@@ -142,14 +142,14 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     m_serverUrl = serverUrl;
     
     // 初始化VP9解码器
-    qDebug() << "初始化VP9解码器...";
+    // qDebug() << "初始化VP9解码器...";
     if (!m_decoder->initialize()) {
         qCritical() << "VP9解码器初始化失败";
         return;
     }
-    qDebug() << "VP9解码器初始化成功";
+    // qDebug() << "VP9解码器初始化成功";
     
-    qDebug() << "开始连接到:" << m_serverUrl;
+    // qDebug() << "开始连接到:" << m_serverUrl;
     m_receiver->connectToServer(m_serverUrl);
     
     m_isReceiving = true;
@@ -173,7 +173,7 @@ void VideoDisplayWidget::stopReceiving()
     
     // 清理解码器缓存，确保切换设备时没有残留状态
     if (m_decoder) {
-        qDebug() << "清理解码器缓存...";
+        // qDebug() << "清理解码器缓存...";
         m_decoder->cleanup();
     }
     
@@ -195,10 +195,10 @@ void VideoDisplayWidget::stopReceiving()
 void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString &targetId)
 {
     if (m_receiver) {
-        qDebug() << "[VideoDisplayWidget] 发送观看请求，观看者ID:" << viewerId << "目标ID:" << targetId;
+        // qDebug() << "[VideoDisplayWidget] 发送观看请求，观看者ID:" << viewerId << "目标ID:" << targetId;
         m_receiver->sendWatchRequest(viewerId, targetId);
     } else {
-        qDebug() << "[VideoDisplayWidget] WebSocketReceiver未初始化，无法发送观看请求";
+        // qDebug() << "[VideoDisplayWidget] WebSocketReceiver未初始化，无法发送观看请求";
     }
 }
 
@@ -379,13 +379,14 @@ void VideoDisplayWidget::onMousePositionReceived(const QPoint &position, qint64 
     m_mouseTimestamp = timestamp;
     m_hasMousePosition = true;
     
-    // 每100条鼠标位置更新输出一次统计（避免日志过多）
-    static int mouseUpdateCount = 0;
-    mouseUpdateCount++;
-    if (mouseUpdateCount % 100 == 0) {
-        qDebug() << "[VideoDisplayWidget] 已接收" << mouseUpdateCount 
-                 << "次鼠标位置更新，最新位置:" << position;
-    }
+    // 移除鼠标位置统计日志以提升性能
+    // 每100条鼠标位置更新输出一次统计（避免日志过多） - 已禁用
+    // static int mouseUpdateCount = 0;
+    // mouseUpdateCount++;
+    // if (mouseUpdateCount % 100 == 0) {
+    //     qDebug() << "[VideoDisplayWidget] 已接收" << mouseUpdateCount 
+    //              << "次鼠标位置更新，最新位置:" << position;
+    // }
 }
 
 void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position)

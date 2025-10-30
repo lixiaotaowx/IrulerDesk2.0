@@ -151,7 +151,8 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     // 每1000帧输出一次简化统计，避免影响性能
     if (encodeCounter % 1000 == 0) {
         int avgEncodeTime = totalEncodeTime / encodeCounter;
-        qDebug() << "[VP9编码器] [统计] 第" << encodeCounter << "帧，平均耗时:" << avgEncodeTime << "μs";
+        // 移除统计日志以提升性能
+        // qDebug() << "[VP9编码器] [统计] 第" << encodeCounter << "帧，平均耗时:" << avgEncodeTime << "μs";
     }
     // 移除每帧的延迟监控打印以提升性能
     
@@ -162,7 +163,8 @@ void VP9Encoder::forceKeyFrame()
 {
     QMutexLocker locker(&m_mutex);
     m_forceNextKeyFrame = true;
-    qDebug() << "[VP9Encoder] [首帧策略] 收到强制关键帧请求，下一帧将强制为关键帧";
+    // 移除关键帧请求日志以提升性能
+    // qDebug() << "[VP9Encoder] [首帧策略] 收到强制关键帧请求，下一帧将强制为关键帧";
 }
 
 bool VP9Encoder::initializeEncoder()

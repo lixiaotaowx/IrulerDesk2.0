@@ -259,13 +259,16 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     
     frameData.resize(width * height * bytesPerPixel);
     
-    const char* srcData = static_cast<const char*>(mappedResource.pData);
-    char* dstData = frameData.data();
+    const unsigned char* srcData = static_cast<const unsigned char*>(mappedResource.pData);
+    unsigned char* dstData = reinterpret_cast<unsigned char*>(frameData.data());
     
+    // D3D11使用BGRA格式，在小端序系统上与libyuv期望的ARGB内存布局相同，直接复制
     for (int y = 0; y < height; ++y) {
-        memcpy(dstData + y * width * bytesPerPixel,
-               srcData + y * mappedResource.RowPitch,
-               width * bytesPerPixel);
+        const unsigned char* srcRow = srcData + y * mappedResource.RowPitch;
+        unsigned char* dstRow = dstData + y * width * bytesPerPixel;
+        
+        // 直接按行复制像素数据，无需颜色通道转换
+        memcpy(dstRow, srcRow, width * bytesPerPixel);
     }
     
     // 取消映射
@@ -300,9 +303,9 @@ QByteArray ScreenCapture::captureWithQt()
         return QByteArray();
     }
     
-    // 确保格式为RGBA32
-    if (image.format() != QImage::Format_RGBA8888) {
-        image = image.convertToFormat(QImage::Format_RGBA8888);
+    // 确保格式为ARGB32 (VP9编码器期望ARGB格式)
+    if (image.format() != QImage::Format_ARGB32) {
+        image = image.convertToFormat(QImage::Format_ARGB32);
     }
     
     // 返回原始像素数据

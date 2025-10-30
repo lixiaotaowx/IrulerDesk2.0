@@ -72,15 +72,7 @@ QByteArray VP9Decoder::decode(const QByteArray &encodedData)
     }
     
     if (encodedData.isEmpty()) {
-        qDebug() << "[VP9Decoder] [调试] decode方法收到空数据";
         return QByteArray();
-    }
-    
-    // 添加调试日志到decode方法
-    static int decodeCallCount = 0;
-    decodeCallCount++;
-    if (decodeCallCount <= 10 || decodeCallCount % 50 == 0) {
-        qDebug() << "[VP9Decoder] [调试] decode方法第" << decodeCallCount << "次调用，数据大小:" << encodedData.size();
     }
     
     // 立即解码策略：不等待关键帧，直接解码显示
@@ -89,12 +81,6 @@ QByteArray VP9Decoder::decode(const QByteArray &encodedData)
     
     if (!firstFrameReceived) {
         firstFrameReceived = true;
-        qDebug() << "[VP9Decoder] [立即显示] 开始解码第一帧，不等待关键帧";
-    }
-    
-    // 调试信息：输出前5帧的基本信息
-    if (frameCount < 5) {
-        qDebug() << "[VP9Decoder] 处理帧" << frameCount << "数据大小:" << encodedData.size() << "字节";
     }
     frameCount++;
     
@@ -103,54 +89,30 @@ QByteArray VP9Decoder::decode(const QByteArray &encodedData)
     
     // 诊断：获取互斥锁
     static int decodeFrameCount = 0;
-    bool shouldLog = (decodeFrameCount < 5); // 只记录前5帧的详细诊断
-    if (shouldLog) {
-        // qDebug() << "[VP9Decoder] [诊断] 开始解码帧" << decodeFrameCount; // 已禁用以提升性能
-    }
     
     QMutexLocker locker(&m_mutex);
-    if (shouldLog) {
-        qDebug() << "[VP9Decoder] [诊断] 获取解码互斥锁耗时:" << timer.elapsed() << "ms";
-    }
     
     // 解码VP9数据
-    qint64 decodeStartTime = timer.elapsed();
     vpx_codec_err_t res = vpx_codec_decode(&m_codec, 
                                           reinterpret_cast<const uint8_t*>(encodedData.constData()),
                                           encodedData.size(), 
                                           nullptr, 
                                           0);
     
-    if (shouldLog) {
-        qDebug() << "[VP9Decoder] [诊断] VP9解码耗时:" << (timer.elapsed() - decodeStartTime) << "ms";
-    }
-    
     // VP9解码器可能报告内部错误但实际解码成功，忽略错误继续处理
     if (res != VPX_CODEC_OK) {
-        if (decodeCallCount <= 10 || decodeCallCount % 50 == 0) {
-            qDebug() << "[VP9Decoder] [调试] VP9解码返回错误:" << vpx_codec_err_to_string(res) << "但继续处理";
+        // 只在严重错误时输出日志
+        if (res == VPX_CODEC_CORRUPT_FRAME || res == VPX_CODEC_MEM_ERROR) {
+            qWarning() << "[VP9Decoder] VP9解码严重错误:" << vpx_codec_err_to_string(res);
         }
     }
     
     // 获取解码后的帧
-    qint64 getFrameStartTime = timer.elapsed();
     vpx_codec_iter_t iter = nullptr;
     vpx_image_t *img = vpx_codec_get_frame(&m_codec, &iter);
     
-    if (shouldLog) {
-        // qDebug() << "[VP9Decoder] [诊断] 获取帧数据耗时:" << (timer.elapsed() - getFrameStartTime) << "ms"; // 已禁用以提升性能
-    }
-    
     if (!img) {
-        // 可能是不完整的帧，不算错误
-        if (decodeCallCount <= 10 || decodeCallCount % 50 == 0) {
-            qDebug() << "[VP9Decoder] [调试] 未获取到有效帧数据，可能是不完整的帧";
-        }
         return QByteArray();
-    }
-    
-    if (decodeCallCount <= 10 || decodeCallCount % 50 == 0) {
-        qDebug() << "[VP9Decoder] [调试] 成功解码帧，尺寸:" << img->d_w << "x" << img->d_h;
     }
     
     // 检查是否为关键帧 - 使用更准确的方法
@@ -160,33 +122,16 @@ QByteArray VP9Decoder::decode(const QByteArray &encodedData)
     static int totalFrameCount = 0;
     totalFrameCount++;
     
-    // 简单的关键帧检测：通常关键帧会重置某些状态
-    // 这里我们先输出所有帧的信息来观察模式
-    if (totalFrameCount <= 30) { // 输出前30帧的信息
-        qDebug() << "[VP9Decoder] [帧分析] 第" << totalFrameCount << "帧 - 尺寸:" << img->d_w << "x" << img->d_h 
-                 << "格式:" << img->fmt << "时间戳:" << img->user_priv;
-    }
-    
     // 更新帧尺寸
     m_frameSize = QSize(img->d_w, img->d_h);
     
     // 转换YUV到RGB
-    qint64 convertStartTime = timer.elapsed();
     QByteArray rgbData = convertYUVToRGB(img);
-    
-    if (shouldLog) {
-        qDebug() << "[VP9Decoder] [诊断] YUV转RGB耗时:" << (timer.elapsed() - convertStartTime) << "ms";
-        // qDebug() << "[VP9Decoder] [诊断] 帧" << decodeFrameCount << "解码总耗时:" << timer.elapsed() << "ms"; // 已禁用以提升性能
-        decodeFrameCount++;
-    }
     
     double decodeTime = timer.elapsed();
     updateStats(decodeTime, true);
     
     // 发射信号
-    if (decodeCallCount <= 10 || decodeCallCount % 50 == 0) {
-        qDebug() << "[VP9Decoder] [调试] 发射frameDecoded信号，RGB数据大小:" << rgbData.size();
-    }
     emit frameDecoded(rgbData, m_frameSize);
     
     return rgbData;
@@ -260,20 +205,6 @@ QByteArray VP9Decoder::convertYUVToRGB(const vpx_image_t *img)
     int colorSpace = img->cs;  // 0=未知, 1=BT.601, 2=BT.709, 3=SMPTE-170, 4=SMPTE-240, 5=BT.2020, 6=保留, 7=sRGB
     int colorRange = img->range; // 0=Studio Range(16-235), 1=Full Range(0-255)
     
-    // 调试：输出颜色空间信息（前10帧）
-    static int debugFrameCount = 0;
-    if (debugFrameCount < 10) {
-        const char* colorSpaceNames[] = {"未知", "BT.601", "BT.709", "SMPTE-170", "SMPTE-240", "BT.2020", "保留", "sRGB"};
-        const char* colorRangeNames[] = {"Studio Range(16-235)", "Full Range(0-255)"};
-        
-        qDebug() << "[VP9Decoder] [颜色空间分析] 帧" << debugFrameCount 
-                 << "格式:" << (isI420 ? "I420(4:2:0)" : "I444(4:4:4)")
-                 << "颜色空间:" << colorSpaceNames[colorSpace < 8 ? colorSpace : 0]
-                 << "颜色范围:" << colorRangeNames[colorRange < 2 ? colorRange : 0]
-                 << "尺寸:" << width << "x" << height;
-        debugFrameCount++;
-    }
-    
     int result = 0;
     
     // 根据VP9颜色空间和范围选择正确的libyuv转换函数
@@ -346,16 +277,6 @@ QByteArray VP9Decoder::convertYUVToRGB(const vpx_image_t *img)
         return QByteArray();
     }
     
-    // 输出第一个像素的ARGB值用于调试（前5帧）
-    static int pixelDebugCount = 0;
-    if (pixelDebugCount < 5 && width > 0 && height > 0) {
-        uint8_t *firstPixel = rgbBuffer;
-        qDebug() << "[VP9Decoder] [颜色调试] 第一个像素 ARGB:" 
-                 << (int)firstPixel[2] << (int)firstPixel[1] << (int)firstPixel[0] << (int)firstPixel[3]
-                 << "颜色空间:" << colorSpace << "颜色范围:" << colorRange;
-        pixelDebugCount++;
-    }
-    
     return rgbData;
 }
 
@@ -391,21 +312,9 @@ void VP9Decoder::updateStats(double decodeTime, bool success)
 void VP9Decoder::decodeFrame(const QByteArray &encodedData)
 {
     if (encodedData.isEmpty()) {
-        qDebug() << "[VP9Decoder] [调试] 收到空的编码数据";
         return;
-    }
-    
-    // 添加调试日志 - 确认收到解码请求
-    static int decodeRequestCount = 0;
-    decodeRequestCount++;
-    if (decodeRequestCount <= 10 || decodeRequestCount % 50 == 0) {
-        qDebug() << "[VP9Decoder] [调试] 收到第" << decodeRequestCount << "个解码请求，数据大小:" << encodedData.size() << "字节";
     }
     
     // 调用原有的decode方法
     QByteArray result = decode(encodedData);
-    
-    if (decodeRequestCount <= 10 || decodeRequestCount % 50 == 0) {
-        qDebug() << "[VP9Decoder] [调试] decode方法返回，结果大小:" << result.size();
-    }
 }

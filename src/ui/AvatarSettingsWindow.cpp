@@ -163,38 +163,6 @@ void AvatarSettingsWindow::setupAvatarGrid()
     m_avatarGridLayout->setContentsMargins(0, 0, 0, 0);
     
     m_contentLayout->addWidget(gridWidget);
-    
-    // 创建确认按钮
-    m_confirmButton = new QPushButton("确认", m_contentWidget);
-    m_confirmButton->setStyleSheet(
-        "QPushButton {"
-        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "                stop:0 #4caf50, stop:1 #45a049);"
-        "    border: none;"
-        "    border-radius: 8px;"
-        "    color: white;"
-        "    font-size: 14px;"
-        "    font-weight: bold;"
-        "    padding: 12px 24px;"
-        "    min-height: 16px;"
-        "}"
-        "QPushButton:hover {"
-        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "                stop:0 #5cbf60, stop:1 #4caf50);"
-        "}"
-        "QPushButton:pressed {"
-        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "                stop:0 #45a049, stop:1 #3d8b40);"
-        "}"
-        "QPushButton:disabled {"
-        "    background-color: #666;"
-        "    color: #999;"
-        "}"
-    );
-    m_confirmButton->setEnabled(false); // 初始状态禁用
-    connect(m_confirmButton, &QPushButton::clicked, this, &AvatarSettingsWindow::onConfirmClicked);
-    
-    m_contentLayout->addWidget(m_confirmButton, 0, Qt::AlignCenter);
     m_contentLayout->addStretch();
     
     m_scrollArea->setWidget(m_contentWidget);
@@ -211,6 +179,7 @@ void AvatarSettingsWindow::loadAvatarImages()
     for (int i = 3; i <= 21; ++i) {
         QString imagePath = QString("%1/%2.png").arg(mapsDir, QString::number(i));
         
+        // 创建头像标签
         QLabel *avatarLabel = new QLabel();
         avatarLabel->setFixedSize(AVATAR_SIZE, AVATAR_SIZE);
         avatarLabel->setStyleSheet(
@@ -252,6 +221,7 @@ void AvatarSettingsWindow::loadAvatarImages()
         int col = (i - 3) % GRID_COLUMNS;
         m_avatarGridLayout->addWidget(avatarLabel, row, col);
         
+        // 保存引用
         m_avatarLabels.append(avatarLabel);
     }
 }
@@ -290,9 +260,6 @@ void AvatarSettingsWindow::selectAvatar(int iconId)
             break;
         }
     }
-    
-    // 启用确认按钮
-    m_confirmButton->setEnabled(true);
     
     qDebug() << "[AvatarSettings] 选择头像ID:" << iconId;
 }
@@ -360,13 +327,10 @@ void AvatarSettingsWindow::onCloseClicked()
 
 void AvatarSettingsWindow::onAvatarClicked(int iconId)
 {
+    // 选择头像并提供视觉反馈
     selectAvatar(iconId);
-}
-
-void AvatarSettingsWindow::onConfirmClicked()
-{
-    if (m_selectedIconId != -1) {
-        emit avatarSelected(m_selectedIconId);
-        close();
-    }
+    
+    // 触发头像选择信号，但保持窗口打开
+    qDebug() << "[AvatarSettings] 选择头像并发送信号，ID:" << iconId;
+    emit avatarSelected(iconId);
 }

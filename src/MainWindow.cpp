@@ -1415,8 +1415,8 @@ void MainWindow::onAvatarSelected(int iconId)
         qDebug() << "[MainWindow] 已向服务器发送头像更新消息:" << jsonString;
     }
     
-    // 4. 关闭头像设置窗口
-    if (m_avatarSettingsWindow) {
-        m_avatarSettingsWindow->hide();
-    }
+    // 注释：保持头像设置窗口打开，方便用户多次选择
+    // if (m_avatarSettingsWindow) {
+    //     m_avatarSettingsWindow->hide();
+    // }
 }

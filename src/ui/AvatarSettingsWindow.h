@@ -31,7 +31,6 @@ private slots:
     void onMinimizeClicked();
     void onCloseClicked();
     void onAvatarClicked(int iconId);
-    void onConfirmClicked();
 
 signals:
     void avatarSelected(int iconId);
@@ -55,7 +54,6 @@ private:
     QWidget *m_contentWidget;
     QVBoxLayout *m_contentLayout;
     QGridLayout *m_avatarGridLayout;
-    QPushButton *m_confirmButton;
     
     // 窗口拖拽相关
     bool m_dragging;

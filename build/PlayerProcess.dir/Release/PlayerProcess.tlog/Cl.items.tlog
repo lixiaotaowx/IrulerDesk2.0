@@ -1,0 +1,7 @@
+G:\c\2025\lunzi\IrulerDeskpro\src\player\main_player.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess.dir\Release\main_player.obj
+G:\c\2025\lunzi\IrulerDeskpro\src\player\VP9Decoder.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess.dir\Release\VP9Decoder.obj
+G:\c\2025\lunzi\IrulerDeskpro\src\player\DxvaVP9Decoder.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess.dir\Release\DxvaVP9Decoder.obj
+G:\c\2025\lunzi\IrulerDeskpro\src\player\VideoRenderer.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess.dir\Release\VideoRenderer.obj
+G:\c\2025\lunzi\IrulerDeskpro\src\player\WebSocketReceiver.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess.dir\Release\WebSocketReceiver.obj
+G:\c\2025\lunzi\IrulerDeskpro\src\video_components\VideoDisplayWidget.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess.dir\Release\VideoDisplayWidget.obj
+G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess_autogen\mocs_compilation_Release.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\PlayerProcess.dir\Release\mocs_compilation_Release.obj

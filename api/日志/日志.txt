@@ -1,0 +1,150 @@
+[Main] ========== 应用程序启动 ==========
+[Main] 设置应用程序信息...
+[Main] 设置UI样式...
+[Main] 应用深色主题...
+[Main] 深色主题设置完成
+[Main] 创建主窗口...
+[MainWindow] ========== 主窗口构造开始 ==========
+[MainWindow] 设置UI界面...
+[DxvaVP9Decoder] ����DXVA VP9�����������fallback��׼��
+[WebSocketReceiver] WebSocket�������Ѵ���
+VideoDisplayWidget �������
+[MainWindow] UI�����������
+[MainWindow] ����״̬��...
+[MainWindow] ״̬���������
+[MainWindow] ����1����Զ������ý��...
+[MainWindow] ========== �����ڹ������ ==========
+[Main] �����ڴ����ɹ�
+[Main] ��ʾ������...
+libpng warning: iCCP: cHRM chunk does not match sRGB
+[Main] ����������ʾ
+[Main] �����¼�ѭ��...
+[MainWindow] startStreaming() ������
+[MainWindow] ��ʼ�����ý��ϵͳ
+[MainWindow] ========== ���ʱ����Ͽ�ʼ ==========
+[MainWindow] startProcesses() ��ʼ�����ľʽ���
+[MainWindow] Ӧ�ó���Ŀ¼: "G:/c/2025/lunzi/a/build/bin/Release"
+[MainWindow] [���] ��ʼ����ʱ: 0 ms
+[MainWindow] �����Ļ������̣�����WebSocket��������
+[MainWindow] [���] ��ʼ����������̣���ǰ��ʱ: 0 ms
+[MainWindow] �������·��: "G:/c/2025/lunzi/a/build/bin/Release/CaptureProcess.exe"
+[MainWindow] [���] ���̶��󴴽���ɣ���ʱ: 0 ms
+[MainWindow] [���] ��ʼ���������̣���ʱ: 0 ms
+[MainWindow] [���] �ȴ���������У���ʱ: 8 ms
+[MainWindow] �����������ɹ���PID: 4552
+[MainWindow] [���] ������������ɣ��ܺ�ʱ: 9 ms
+[MainWindow] ���Ƕ��ʽ��Ƶ��ʾ���
+[MainWindow] [���] ��ʼ�����Ƶ��ʾ�������ʱ: 9 ms
+��ʼ��VP9������...
+[DxvaVP9Decoder] [���] DXVA VP9��������ʼ����ʼ
+[DxvaVP9Decoder] [���] ��ȡ��������ʱ: 0 ms
+[DxvaVP9Decoder] ��ʼ��VP9�����������ȳ���Ӳ������...
+[DxvaVP9Decoder] [���] ��ʼ����Ӳ����������ʼ������ǰ��ʱ: 0 ms
+[DxvaVP9Decoder] Ӳ����������ʼ����δʵ�֣�ʹ�����fallback
+[DxvaVP9Decoder] [���] Ӳ����������ʼ��ʧ�ܣ���ʱ: 0 ms
+[DxvaVP9Decoder] Ӳ�����ٲ����ã�ʹ���������
+[DxvaVP9Decoder] �л���������룬ԭ��: "Ӳ����ʼ��ʧ��"
+[DxvaVP9Decoder] [���] ��ʼ��ʼ���������������ǰ��ʱ: 0 ms
+[VP9Decoder] [���] VP9��������ʼ����ʼ
+[VP9Decoder] [���] ��ȡ��������ʱ: 0 ms
+[VP9Decoder] ��ʼ��VP9������...
+[VP9Decoder] [���] ��ʼ���ý���������ǰ��ʱ: 0 ms
+[VP9Decoder] ʹ�ý���������: ���߳�ģʽ(ȷ��������)
+[VP9Decoder] �������������: ���߳�ģʽ, ȷ��������
+[VP9Decoder] [���] ������������ɣ���ʱ: 0 ms
+[VP9Decoder] VP9��������ʼ���ɹ�
+[VP9Decoder] [���] VP9��������ʼ���ܺ�ʱ: 0 ms
+[DxvaVP9Decoder] [���] �����������ʼ����ʱ: 0 ms
+[DxvaVP9Decoder] VP9��������ʼ����ɣ�ʹ�� �������
+[DxvaVP9Decoder] [���] DXVA VP9��������ʼ���ܺ�ʱ: 0 ms
+VP9��������ʼ���ɹ�
+��ʼ���ӵ�: "ws://localhost:8765"
+[WebSocketReceiver] ���ӵ�WebSocket������: "ws://localhost:8765"
+[MainWindow] [���] ��Ƶ��ʾ��������ɣ���ʱ: 10 ms
+[MainWindow] ��ľʽ���������
+[MainWindow] ========== ���ʱ����Ͻ������ܺ�ʱ: 10 ms ==========
+[MainWindow] ��ý�������ɣ�״̬��Ϊ������
+[WebSocketReceiver] WebSocket�����ѽ���
+[VP9Decoder] ����֡ 0 ���ݴ�С: 10360 �ֽ� ����: �ǹؼ�֡(P֡)
+[VP9Decoder] ǰ8�ֽ�: "87 01 02 4b 27 1c 12 0e "
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] ����֡ 1 ���ݴ�С: 1904 �ֽ� ����: �ǹؼ�֡(P֡)
+[VP9Decoder] ǰ8�ֽ�: "87 01 02 49 1e 1c 12 0e "
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] ����֡ 2 ���ݴ�С: 1013 �ֽ� ����: �ǹؼ�֡(P֡)
+[VP9Decoder] ǰ8�ֽ�: "87 01 02 4b 17 1c 12 0e "
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] ����֡ 3 ���ݴ�С: 7937 �ֽ� ����: �ǹؼ�֡(P֡)
+[VP9Decoder] ǰ8�ֽ�: "87 01 02 4b 24 1c 12 0e "
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] ����֡ 4 ���ݴ�С: 3692 �ֽ� ����: �ǹؼ�֡(P֡)
+[VP9Decoder] ǰ8�ֽ�: "87 01 02 4b 1b 1c 12 0e "
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 0 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] δ��ȡ����Ч֡����
+[VP9Decoder] [���] ��ʼ����֡ 0
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 7 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] ֡ 0 ��һ������ YUV: 38 128 128 -> RGB: 38 38 38
+[VP9Decoder] [���] YUVתRGB��ʱ: 7 ms
+[VP9Decoder] [���] ֡ 0 �����ܺ�ʱ: 14 ms
+[VP9Decoder] [���] ��ʼ����֡ 1
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 7 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] ֡ 1 ��һ������ YUV: 36 128 128 -> RGB: 36 36 36
+[VP9Decoder] [���] YUVתRGB��ʱ: 8 ms
+[VP9Decoder] [���] ֡ 1 �����ܺ�ʱ: 15 ms
+[VP9Decoder] [���] ��ʼ����֡ 2
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 3 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] ֡ 2 ��һ������ YUV: 36 128 128 -> RGB: 36 36 36
+[VP9Decoder] [���] YUVתRGB��ʱ: 8 ms
+[VP9Decoder] [���] ֡ 2 �����ܺ�ʱ: 11 ms
+[VP9Decoder] [���] ��ʼ����֡ 3
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 3 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] YUVתRGB��ʱ: 7 ms
+[VP9Decoder] [���] ֡ 3 �����ܺ�ʱ: 10 ms
+[VP9Decoder] [���] ��ʼ����֡ 4
+[VP9Decoder] [���] ��ȡ���뻥������ʱ: 0 ms
+[VP9Decoder] [���] VP9�����ʱ: 4 ms
+[VP9Decoder] [���] ��ȡ֡���ݺ�ʱ: 0 ms
+[VP9Decoder] [���] YUVתRGB��ʱ: 7 ms
+[VP9Decoder] [���] ֡ 4 �����ܺ�ʱ: 14 ms

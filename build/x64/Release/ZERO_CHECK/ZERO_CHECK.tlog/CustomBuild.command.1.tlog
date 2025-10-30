@@ -1,0 +1,10 @@
+^G:\C\2025\LUNZI\IRULERDESKPRO\BUILD\CMAKEFILES\CA74B02B403DC076E6017F3DF4176D2C\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SG:/c/2025/lunzi/IrulerDeskpro -BG:/c/2025/lunzi/IrulerDeskpro/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

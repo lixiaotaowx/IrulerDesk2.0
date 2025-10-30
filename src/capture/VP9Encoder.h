@@ -1,0 +1,75 @@
+#ifndef VP9ENCODER_H
+#define VP9ENCODER_H
+
+#include <QObject>
+#include <QByteArray>
+#include <QSize>
+#include <QMutex>
+
+// VP9编码库头文件
+#include <vpx/vpx_encoder.h>
+#include <vpx/vp8cx.h>
+#include <libyuv.h>
+
+class VP9Encoder : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit VP9Encoder(QObject *parent = nullptr);
+    ~VP9Encoder();
+    
+    bool initialize(int width, int height, int fps);
+    void cleanup();
+    
+    QByteArray encode(const QByteArray &frameData);
+    
+    // 编码参数
+    void setBitrate(int bitrate) { m_bitrate = bitrate; }
+    void setKeyFrameInterval(int interval) { m_keyFrameInterval = interval; }
+    
+    // 状态查询
+    bool isInitialized() const { return m_initialized; }
+    QSize getFrameSize() const { return m_frameSize; }
+    int getFrameRate() const { return m_frameRate; }
+    
+signals:
+    void frameEncoded(const QByteArray &encodedData);
+    void error(const QString &errorMessage);
+
+public slots:
+    void forceKeyFrame(); // 强制生成关键帧
+
+private:
+    bool initializeEncoder();
+    bool convertRGBAToYUV420(const QByteArray &rgbaData, uint8_t **yuvPlanes);
+    QByteArray encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane, const uint8_t *vPlane);
+    
+    // VP9编码器相关
+    vpx_codec_ctx_t m_codec;
+    vpx_codec_enc_cfg_t m_config;
+    vpx_image_t m_rawImage;
+    
+    // 编码参数
+    QSize m_frameSize;
+    int m_frameRate;
+    int m_bitrate;
+    int m_keyFrameInterval;
+    
+    // 状态
+    bool m_initialized;
+    int m_frameCount;
+    bool m_forceNextKeyFrame; // 强制下一帧为关键帧
+    
+    // YUV转换缓冲区
+    uint8_t *m_yPlane;
+    uint8_t *m_uPlane;
+    uint8_t *m_vPlane;
+    int m_yPlaneSize;
+    int m_uvPlaneSize;
+    
+    // 线程安全
+    QMutex m_mutex;
+};
+
+#endif // VP9ENCODER_H

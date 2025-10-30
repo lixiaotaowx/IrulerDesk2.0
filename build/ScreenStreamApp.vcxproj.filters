@@ -1,0 +1,81 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build\ScreenStreamApp_autogen\mocs_compilation_Debug.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\MainWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\VideoDisplayWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\VideoWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\TransparentImageList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\AvatarSettingsWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\VP9Decoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\DxvaVP9Decoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\WebSocketReceiver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build\ScreenStreamApp_autogen\mocs_compilation_Release.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build\ScreenStreamApp_autogen\mocs_compilation_MinSizeRel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build\ScreenStreamApp_autogen\mocs_compilation_RelWithDebInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\MainWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\VideoDisplayWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\VideoWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\TransparentImageList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\AvatarSettingsWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\VP9Decoder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\DxvaVP9Decoder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\WebSocketReceiver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="G:\c\2025\lunzi\IrulerDeskpro\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{54E8B6D2-A273-32F7-8F4B-A9F0B833DA19}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{0A5F52CB-405F-3F50-B1DF-3E5EB7CA630E}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -76,8 +76,7 @@ void MouseCapture::checkMousePosition()
         static int positionUpdateCount = 0;
         positionUpdateCount++;
         if (positionUpdateCount % 100 == 0) {
-            qDebug() << "[MouseCapture] 鼠标位置更新:" << currentPosition 
-                     << "，已发送" << positionUpdateCount << "次位置更新";
+            // qDebug() << "[MouseCapture] 鼠标位置更新:" << currentPosition << "，已发送" << positionUpdateCount << "次位置更新"; // 已禁用以提升性能
         }
     }
 }

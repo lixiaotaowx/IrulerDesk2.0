@@ -1,0 +1,10 @@
+^G:\C\2025\LUNZI\IRULERDESKPRO\TEST_TILE_CMAKE\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SG:/c/2025/lunzi/IrulerDeskpro/test_tile_cmake -BG:/c/2025/lunzi/IrulerDeskpro/test_tile_cmake --check-stamp-file G:/c/2025/lunzi/IrulerDeskpro/test_tile_cmake/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

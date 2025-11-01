@@ -1,5 +1,9 @@
 G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/C7JQLWOGWL/moc_VideoDisplayWidget.cpp: G:/c/2025/lunzi/IrulerDeskpro/src/video_components/VideoDisplayWidget.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QHash \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMutex \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QPoint \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QReadWriteLock \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QRect \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QTimer \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20iterator.h \
@@ -35,7 +39,9 @@ G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/C7JQLW
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcontiguouscache.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdarwinhelpers.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdatastream.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdeadlinetimer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdebug.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qelapsedtimer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qendian.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qexceptionhandling.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qflags.h \
@@ -63,6 +69,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/C7JQLW
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmetacontainer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmetatype.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qminmax.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmutex.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnamespace.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnumeric.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qobject.h \
@@ -73,6 +80,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/C7JQLW
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qpair.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qpoint.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qprocessordetection.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qreadwritelock.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qrect.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qrefcount.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qscopedpointer.h \
@@ -113,6 +121,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/C7JQLW
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtnoop.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtpreprocessorsupport.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtresource.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtsan_impl.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qttranslation.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qttypetraits.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtversion.h \

@@ -1,11 +1,15 @@
 G:/c/2025/lunzi/IrulerDeskpro/build/CaptureProcess_autogen/include_Release/6NCFGKZLQE/moc_ScreenCapture.cpp: G:/c/2025/lunzi/IrulerDeskpro/src/capture/ScreenCapture.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QByteArray \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QDebug \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QHash \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMutex \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QRect \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSize \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSizeF \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QTimer \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QVector \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20iterator.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20memory.h \
@@ -73,6 +77,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/CaptureProcess_autogen/include_Release/6NCFG
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmetacontainer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmetatype.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qminmax.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmutex.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnamespace.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnativeinterface.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnumeric.h \
@@ -124,6 +129,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/CaptureProcess_autogen/include_Release/6NCFG
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtnoop.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtpreprocessorsupport.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtresource.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtsan_impl.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qttranslation.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qttypetraits.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtversion.h \
@@ -133,10 +139,12 @@ G:/c/2025/lunzi/IrulerDeskpro/build/CaptureProcess_autogen/include_Release/6NCFG
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qutf8stringview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvariant.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvector.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qversiontagging.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qxptype_traits.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qyieldcpu.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/QGuiApplication \
+  C:/Qt/6.8.3/msvc2022_64/include/QtGui/QImage \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/QPixmap \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/QScreen \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/QTransform \
@@ -159,4 +167,5 @@ G:/c/2025/lunzi/IrulerDeskpro/build/CaptureProcess_autogen/include_Release/6NCFG
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/qtguiglobal.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/qtransform.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/qwindowdefs.h \
-  C:/Qt/6.8.3/msvc2022_64/include/QtGui/qwindowdefs_win.h
+  C:/Qt/6.8.3/msvc2022_64/include/QtGui/qwindowdefs_win.h \
+  G:/c/2025/lunzi/IrulerDeskpro/src/capture/TileManager.h

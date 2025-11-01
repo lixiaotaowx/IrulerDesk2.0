@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\test_tile_cmake\TileTest_autogen\mocs_compilation_Debug.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\simple_tile_test.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\VideoRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\test_tile_cmake\TileTest_autogen\mocs_compilation_Release.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\test_tile_cmake\TileTest_autogen\mocs_compilation_MinSizeRel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\test_tile_cmake\TileTest_autogen\mocs_compilation_RelWithDebInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="G:\c\2025\lunzi\IrulerDeskpro\test_tile_cmake\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{EAAA4FEE-643D-35E5-9282-7B58F5207A9D}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,7 +1,10 @@
 G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/UVLADIE3JM/moc_VideoWindow.cpp: G:/c/2025/lunzi/IrulerDeskpro/src/VideoWindow.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QHash \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMutex \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QPoint \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QReadWriteLock \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QRect \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSize \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSizeF \
@@ -75,6 +78,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/UVLA
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmetacontainer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmetatype.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qminmax.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qmutex.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnamespace.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnativeinterface.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qnumeric.h \
@@ -86,6 +90,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/UVLA
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qpair.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qpoint.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qprocessordetection.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qreadwritelock.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qrect.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qrefcount.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qscopedpointer.h \
@@ -126,6 +131,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/UVLA
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtnoop.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtpreprocessorsupport.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtresource.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtsan_impl.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qttranslation.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qttypetraits.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtversion.h \

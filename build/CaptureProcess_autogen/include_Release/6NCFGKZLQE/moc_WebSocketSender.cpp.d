@@ -8,6 +8,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/CaptureProcess_autogen/include_Release/6NCFG
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QTimer \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QUrl \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QVariant \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QVector \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20iterator.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/q20memory.h \
@@ -133,6 +134,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/CaptureProcess_autogen/include_Release/6NCFG
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qutf8stringview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvariant.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvector.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qversiontagging.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qxptype_traits.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qyieldcpu.h \

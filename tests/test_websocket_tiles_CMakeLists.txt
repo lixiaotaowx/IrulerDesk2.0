@@ -1,0 +1,26 @@
+# 临时测试程序的CMakeLists.txt
+cmake_minimum_required(VERSION 3.16)
+
+# 添加测试可执行文件
+add_executable(TestWebSocketTiles
+    src/capture/test_websocket_tiles.cpp
+    src/capture/WebSocketSender.cpp
+    src/capture/TileManager.cpp
+)
+
+# 设置Qt模块
+target_link_libraries(TestWebSocketTiles
+    Qt6::Core
+    Qt6::WebSockets
+    Qt6::Gui
+)
+
+# 设置包含目录
+target_include_directories(TestWebSocketTiles PRIVATE
+    src/capture
+)
+
+# 启用Qt MOC
+set_target_properties(TestWebSocketTiles PROPERTIES
+    AUTOMOC ON
+)

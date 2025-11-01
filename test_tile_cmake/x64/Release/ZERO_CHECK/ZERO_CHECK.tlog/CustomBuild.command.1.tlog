@@ -1,0 +1,10 @@
+^G:\C\2025\LUNZI\IRULERDESKPRO\TEST_TILE_CMAKE\CMAKEFILES\1AF3E7788EC649E9A2202DF894092A7E\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SG:/c/2025/lunzi/IrulerDeskpro/test_tile_cmake -BG:/c/2025/lunzi/IrulerDeskpro/test_tile_cmake --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file G:/c/2025/lunzi/IrulerDeskpro/test_tile_cmake/TileTest.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

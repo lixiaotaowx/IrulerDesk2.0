@@ -22,6 +22,12 @@
     <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\MouseCapture.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\TileManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\PerformanceMonitor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess_autogen\mocs_compilation_Release.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -46,6 +52,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\MouseCapture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\TileManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\PerformanceMonitor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

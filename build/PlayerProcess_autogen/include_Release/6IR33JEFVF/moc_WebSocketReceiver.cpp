@@ -9,6 +9,7 @@
 #include "../../../../src/player/WebSocketReceiver.h"
 #include <QtCore/qmetatype.h>
 #include <QtCore/QList>
+#include <QtCore/QSet>
 
 #include <QtCore/qtmochelpers.h>
 
@@ -56,6 +57,22 @@ static constexpr auto qt_meta_stringdata_ZN17WebSocketReceiverE = QtMocHelpers::
     "statsUpdated",
     "ReceiverStats",
     "stats",
+    "tileMetadataReceived",
+    "TileMetadata",
+    "metadata",
+    "tileChunkReceived",
+    "TileChunk",
+    "chunk",
+    "tileUpdateReceived",
+    "TileUpdate",
+    "update",
+    "tileCompleted",
+    "tileId",
+    "completeData",
+    "tileDataLost",
+    "QSet<int>",
+    "missingChunks",
+    "retransmissionRequested",
     "onConnected",
     "onDisconnected",
     "onBinaryMessageReceived",
@@ -79,32 +96,38 @@ Q_CONSTINIT static const uint qt_meta_data_ZN17WebSocketReceiverE[] = {
       12,       // revision
        0,       // classname
        0,    0, // classinfo
-      16,   14, // methods
+      22,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
-       8,       // signalCount
+      14,       // signalCount
 
  // signals: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    0,  110,    2, 0x06,    1 /* Public */,
-       3,    0,  111,    2, 0x06,    2 /* Public */,
-       4,    1,  112,    2, 0x06,    3 /* Public */,
-       6,    2,  115,    2, 0x06,    5 /* Public */,
-       8,    2,  120,    2, 0x06,    8 /* Public */,
-      11,    1,  125,    2, 0x06,   11 /* Public */,
-      13,    1,  128,    2, 0x06,   13 /* Public */,
-      15,    1,  131,    2, 0x06,   15 /* Public */,
+       1,    0,  146,    2, 0x06,    1 /* Public */,
+       3,    0,  147,    2, 0x06,    2 /* Public */,
+       4,    1,  148,    2, 0x06,    3 /* Public */,
+       6,    2,  151,    2, 0x06,    5 /* Public */,
+       8,    2,  156,    2, 0x06,    8 /* Public */,
+      11,    1,  161,    2, 0x06,   11 /* Public */,
+      13,    1,  164,    2, 0x06,   13 /* Public */,
+      15,    1,  167,    2, 0x06,   15 /* Public */,
+      18,    1,  170,    2, 0x06,   17 /* Public */,
+      21,    1,  173,    2, 0x06,   19 /* Public */,
+      24,    1,  176,    2, 0x06,   21 /* Public */,
+      27,    2,  179,    2, 0x06,   23 /* Public */,
+      30,    2,  184,    2, 0x06,   26 /* Public */,
+      33,    2,  189,    2, 0x06,   29 /* Public */,
 
  // slots: name, argc, parameters, tag, flags, initial metatype offsets
-      18,    0,  134,    2, 0x08,   17 /* Private */,
-      19,    0,  135,    2, 0x08,   18 /* Private */,
-      20,    1,  136,    2, 0x08,   19 /* Private */,
-      22,    1,  139,    2, 0x08,   21 /* Private */,
-      23,    1,  142,    2, 0x08,   23 /* Private */,
-      25,    1,  145,    2, 0x08,   25 /* Private */,
-      28,    0,  148,    2, 0x08,   27 /* Private */,
-      29,    0,  149,    2, 0x08,   28 /* Private */,
+      34,    0,  194,    2, 0x08,   32 /* Private */,
+      35,    0,  195,    2, 0x08,   33 /* Private */,
+      36,    1,  196,    2, 0x08,   34 /* Private */,
+      38,    1,  199,    2, 0x08,   36 /* Private */,
+      39,    1,  202,    2, 0x08,   38 /* Private */,
+      41,    1,  205,    2, 0x08,   40 /* Private */,
+      44,    0,  208,    2, 0x08,   42 /* Private */,
+      45,    0,  209,    2, 0x08,   43 /* Private */,
 
  // signals: parameters
     QMetaType::Void,
@@ -115,14 +138,20 @@ Q_CONSTINIT static const uint qt_meta_data_ZN17WebSocketReceiverE[] = {
     QMetaType::Void, QMetaType::QString,   12,
     QMetaType::Void, QMetaType::QString,   14,
     QMetaType::Void, 0x80000000 | 16,   17,
+    QMetaType::Void, 0x80000000 | 19,   20,
+    QMetaType::Void, 0x80000000 | 22,   23,
+    QMetaType::Void, 0x80000000 | 25,   26,
+    QMetaType::Void, QMetaType::Int, QMetaType::QByteArray,   28,   29,
+    QMetaType::Void, QMetaType::Int, 0x80000000 | 31,   28,   32,
+    QMetaType::Void, QMetaType::Int, 0x80000000 | 31,   28,   32,
 
  // slots: parameters
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::QByteArray,   21,
-    QMetaType::Void, QMetaType::QString,   21,
-    QMetaType::Void, 0x80000000 | 24,   12,
-    QMetaType::Void, 0x80000000 | 26,   27,
+    QMetaType::Void, QMetaType::QByteArray,   37,
+    QMetaType::Void, QMetaType::QString,   37,
+    QMetaType::Void, 0x80000000 | 40,   12,
+    QMetaType::Void, 0x80000000 | 42,   43,
     QMetaType::Void,
     QMetaType::Void,
 
@@ -162,6 +191,27 @@ Q_CONSTINIT const QMetaObject WebSocketReceiver::staticMetaObject = { {
         // method 'statsUpdated'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<const ReceiverStats &, std::false_type>,
+        // method 'tileMetadataReceived'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const TileMetadata &, std::false_type>,
+        // method 'tileChunkReceived'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const TileChunk &, std::false_type>,
+        // method 'tileUpdateReceived'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const TileUpdate &, std::false_type>,
+        // method 'tileCompleted'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<int, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QByteArray &, std::false_type>,
+        // method 'tileDataLost'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<int, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QSet<int> &, std::false_type>,
+        // method 'retransmissionRequested'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<int, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QSet<int> &, std::false_type>,
         // method 'onConnected'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'onDisconnected'
@@ -199,14 +249,20 @@ void WebSocketReceiver::qt_static_metacall(QObject *_o, QMetaObject::Call _c, in
         case 5: _t->connectionError((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
         case 6: _t->connectionStatusChanged((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
         case 7: _t->statsUpdated((*reinterpret_cast< std::add_pointer_t<ReceiverStats>>(_a[1]))); break;
-        case 8: _t->onConnected(); break;
-        case 9: _t->onDisconnected(); break;
-        case 10: _t->onBinaryMessageReceived((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
-        case 11: _t->onTextMessageReceived((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 12: _t->onError((*reinterpret_cast< std::add_pointer_t<QAbstractSocket::SocketError>>(_a[1]))); break;
-        case 13: _t->onSslErrors((*reinterpret_cast< std::add_pointer_t<QList<QSslError>>>(_a[1]))); break;
-        case 14: _t->attemptReconnect(); break;
-        case 15: _t->updateStats(); break;
+        case 8: _t->tileMetadataReceived((*reinterpret_cast< std::add_pointer_t<TileMetadata>>(_a[1]))); break;
+        case 9: _t->tileChunkReceived((*reinterpret_cast< std::add_pointer_t<TileChunk>>(_a[1]))); break;
+        case 10: _t->tileUpdateReceived((*reinterpret_cast< std::add_pointer_t<TileUpdate>>(_a[1]))); break;
+        case 11: _t->tileCompleted((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[2]))); break;
+        case 12: _t->tileDataLost((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QSet<int>>>(_a[2]))); break;
+        case 13: _t->retransmissionRequested((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QSet<int>>>(_a[2]))); break;
+        case 14: _t->onConnected(); break;
+        case 15: _t->onDisconnected(); break;
+        case 16: _t->onBinaryMessageReceived((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
+        case 17: _t->onTextMessageReceived((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 18: _t->onError((*reinterpret_cast< std::add_pointer_t<QAbstractSocket::SocketError>>(_a[1]))); break;
+        case 19: _t->onSslErrors((*reinterpret_cast< std::add_pointer_t<QList<QSslError>>>(_a[1]))); break;
+        case 20: _t->attemptReconnect(); break;
+        case 21: _t->updateStats(); break;
         default: ;
         }
     }
@@ -216,11 +272,25 @@ void WebSocketReceiver::qt_static_metacall(QObject *_o, QMetaObject::Call _c, in
         case 12:
             switch (*reinterpret_cast<int*>(_a[1])) {
             default: *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType(); break;
+            case 1:
+                *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType::fromType< QSet<int> >(); break;
+            }
+            break;
+        case 13:
+            switch (*reinterpret_cast<int*>(_a[1])) {
+            default: *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType(); break;
+            case 1:
+                *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType::fromType< QSet<int> >(); break;
+            }
+            break;
+        case 18:
+            switch (*reinterpret_cast<int*>(_a[1])) {
+            default: *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType(); break;
             case 0:
                 *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType::fromType< QAbstractSocket::SocketError >(); break;
             }
             break;
-        case 13:
+        case 19:
             switch (*reinterpret_cast<int*>(_a[1])) {
             default: *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType(); break;
             case 0:
@@ -287,6 +357,48 @@ void WebSocketReceiver::qt_static_metacall(QObject *_o, QMetaObject::Call _c, in
                 return;
             }
         }
+        {
+            using _q_method_type = void (WebSocketReceiver::*)(const TileMetadata & );
+            if (_q_method_type _q_method = &WebSocketReceiver::tileMetadataReceived; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 8;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WebSocketReceiver::*)(const TileChunk & );
+            if (_q_method_type _q_method = &WebSocketReceiver::tileChunkReceived; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 9;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WebSocketReceiver::*)(const TileUpdate & );
+            if (_q_method_type _q_method = &WebSocketReceiver::tileUpdateReceived; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 10;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WebSocketReceiver::*)(int , const QByteArray & );
+            if (_q_method_type _q_method = &WebSocketReceiver::tileCompleted; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 11;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WebSocketReceiver::*)(int , const QSet<int> & );
+            if (_q_method_type _q_method = &WebSocketReceiver::tileDataLost; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 12;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (WebSocketReceiver::*)(int , const QSet<int> & );
+            if (_q_method_type _q_method = &WebSocketReceiver::retransmissionRequested; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 13;
+                return;
+            }
+        }
     }
 }
 
@@ -309,14 +421,14 @@ int WebSocketReceiver::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 16)
+        if (_id < 22)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 16;
+        _id -= 22;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 16)
+        if (_id < 22)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 16;
+        _id -= 22;
     }
     return _id;
 }
@@ -373,5 +485,47 @@ void WebSocketReceiver::statsUpdated(const ReceiverStats & _t1)
 {
     void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
     QMetaObject::activate(this, &staticMetaObject, 7, _a);
+}
+
+// SIGNAL 8
+void WebSocketReceiver::tileMetadataReceived(const TileMetadata & _t1)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
+    QMetaObject::activate(this, &staticMetaObject, 8, _a);
+}
+
+// SIGNAL 9
+void WebSocketReceiver::tileChunkReceived(const TileChunk & _t1)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
+    QMetaObject::activate(this, &staticMetaObject, 9, _a);
+}
+
+// SIGNAL 10
+void WebSocketReceiver::tileUpdateReceived(const TileUpdate & _t1)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
+    QMetaObject::activate(this, &staticMetaObject, 10, _a);
+}
+
+// SIGNAL 11
+void WebSocketReceiver::tileCompleted(int _t1, const QByteArray & _t2)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
+    QMetaObject::activate(this, &staticMetaObject, 11, _a);
+}
+
+// SIGNAL 12
+void WebSocketReceiver::tileDataLost(int _t1, const QSet<int> & _t2)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
+    QMetaObject::activate(this, &staticMetaObject, 12, _a);
+}
+
+// SIGNAL 13
+void WebSocketReceiver::retransmissionRequested(int _t1, const QSet<int> & _t2)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
+    QMetaObject::activate(this, &staticMetaObject, 13, _a);
 }
 QT_WARNING_POP

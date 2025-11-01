@@ -1,7 +1,11 @@
 G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/6IR33JEFVF/moc_VideoRenderer.cpp: G:/c/2025/lunzi/IrulerDeskpro/src/player/VideoRenderer.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QDateTime \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QHash \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMap \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMutex \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QObject \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QReadWriteLock \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QRect \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSize \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSizeF \
@@ -27,6 +31,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/6IR33J
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qbytearrayalgorithms.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qbytearraylist.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qbytearrayview.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcalendar.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qchar.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcompare.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcompare_impl.h \
@@ -43,6 +48,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/6IR33J
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcoreevent.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdarwinhelpers.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdatastream.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdatetime.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdeadlinetimer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdebug.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qelapsedtimer.h \
@@ -87,6 +93,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/PlayerProcess_autogen/include_Release/6IR33J
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qpair.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qpoint.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qprocessordetection.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qreadwritelock.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qrect.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qrefcount.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qscopedpointer.h \

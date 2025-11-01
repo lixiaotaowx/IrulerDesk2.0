@@ -2,9 +2,15 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/6IR3
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QByteArray \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QDebug \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QFlags \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QHash \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonArray \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonDocument \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonObject \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMap \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMutex \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QPoint \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSet \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSharedDataPointer \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QString \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QTimer \
@@ -33,6 +39,8 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/6IR3
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qbytearraylist.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qbytearrayview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcalendar.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcborcommon.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcborvalue.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qchar.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcompare.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcompare_impl.h \
@@ -51,6 +59,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/6IR3
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdeadlinetimer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qdebug.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qelapsedtimer.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qendian.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qexceptionhandling.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qflags.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qfloat16.h \
@@ -66,6 +75,10 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/6IR3
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qiodevicebase.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qiterable.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qiterator.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsonarray.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsondocument.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsonobject.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsonvalue.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qlatin1stringview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qlist.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qlocale.h \
@@ -88,6 +101,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/6IR3
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qpoint.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qprocessordetection.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qrefcount.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qregularexpression.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qscopedpointer.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qscopeguard.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qset.h \
@@ -134,6 +148,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build/ScreenStreamApp_autogen/include_Release/6IR3
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtypes.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qurl.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qutf8stringview.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/quuid.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvariant.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qversiontagging.h \

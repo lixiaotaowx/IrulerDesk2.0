@@ -11,6 +11,9 @@ ScreenCapture::ScreenCapture(QObject *parent)
     , m_useD3D11(false)
     , m_primaryScreen(nullptr)
     , m_frameCounter(0)
+    , m_tileEnabled(false)
+    , m_tileDetectionEnabled(true)  // 默认启用瓦片检测
+    , m_tileSize(64, 64)
 {
 }
 
@@ -85,13 +88,18 @@ QByteArray ScreenCapture::captureScreen()
     
     m_frameCounter++;
     
+    QByteArray frameData;
+    
 #ifdef _WIN32
     if (m_useD3D11) {
-        QByteArray d3d11Data;
-        CaptureResult result = captureWithD3D11(d3d11Data);
+        CaptureResult result = captureWithD3D11(frameData);
         
         if (result == Success) {
-            return d3d11Data;
+            // D3D11捕获成功，进行瓦片检测
+            if (m_tileEnabled && m_tileDetectionEnabled && m_tileManager.isInitialized()) {
+                performTileDetection(frameData);
+            }
+            return frameData;
         } else if (result == HardwareError) {
             qWarning() << "[ScreenCapture] D3D11硬件错误，回退到Qt捕获";
             m_useD3D11 = false;
@@ -100,7 +108,14 @@ QByteArray ScreenCapture::captureScreen()
     }
 #endif
     
-    return captureWithQt();
+    frameData = captureWithQt();
+    
+    // Qt捕获成功，进行瓦片检测
+    if (!frameData.isEmpty() && m_tileEnabled && m_tileDetectionEnabled && m_tileManager.isInitialized()) {
+        performTileDetection(frameData);
+    }
+    
+    return frameData;
 }
 
 #ifdef _WIN32
@@ -218,7 +233,7 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     hr = m_dxgiOutputDuplication->AcquireNextFrame(0, &frameInfo, desktopResource.GetAddressOf());
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
         // 没有新帧，返回空数据
-        qDebug() << "[ScreenCapture] D3D11 WAIT_TIMEOUT - 没有新帧";
+        // qDebug() << "[ScreenCapture] D3D11 WAIT_TIMEOUT - 没有新帧"; // 已禁用以提升性能
         return NoNewFrame;
     }
     
@@ -277,7 +292,8 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     // 释放帧
     m_dxgiOutputDuplication->ReleaseFrame();
     
-    qDebug() << "[ScreenCapture] D3D11捕获成功";
+    // 性能优化：减少日志输出频率
+    // qDebug() << "[ScreenCapture] D3D11捕获成功"; // 已禁用以提升性能
     return Success;
 }
 #endif
@@ -314,4 +330,99 @@ QByteArray ScreenCapture::captureWithQt()
     memcpy(frameData.data(), image.constBits(), image.sizeInBytes());
     
     return frameData;
+}
+
+// 瓦片系统相关方法实现
+bool ScreenCapture::initializeTileSystem(const QSize &tileSize)
+{
+    if (!m_initialized) {
+        qWarning() << "[ScreenCapture] 必须先初始化ScreenCapture才能初始化瓦片系统";
+        return false;
+    }
+    
+    // 如果启用自适应瓦片大小，计算最优尺寸
+    QSize actualTileSize = tileSize;
+    if (m_tileManager.isAdaptiveTileSizeEnabled()) {
+        actualTileSize = TileManager::calculateOptimalTileSize(m_screenSize);
+        qDebug() << "[ScreenCapture] 使用自适应瓦片大小:" << actualTileSize;
+    }
+    
+    m_tileSize = actualTileSize;
+    
+    // qDebug() << "[ScreenCapture] 初始化瓦片系统..."; // 已禁用以提升性能
+    qDebug() << "  屏幕尺寸:" << m_screenSize;
+    qDebug() << "  瓦片尺寸:" << m_tileSize;
+    
+    if (m_tileManager.initialize(m_screenSize, m_tileSize.width(), m_tileSize.height())) {
+        // qDebug() << "[ScreenCapture] 瓦片系统初始化成功"; // 已禁用以提升性能
+        m_tileManager.printTileInfo();
+        return true;
+    } else {
+        qCritical() << "[ScreenCapture] 瓦片系统初始化失败";
+        return false;
+    }
+}
+
+// 重载的瓦片系统初始化方法（接受屏幕尺寸和瓦片尺寸）
+void ScreenCapture::initializeTileSystem(const QSize& screenSize, const QSize& tileSize)
+{
+    // 如果启用自适应瓦片大小，计算最优尺寸
+    QSize actualTileSize = tileSize;
+    if (m_tileManager.isAdaptiveTileSizeEnabled()) {
+        actualTileSize = TileManager::calculateOptimalTileSize(screenSize);
+        qDebug() << "[ScreenCapture] 使用自适应瓦片大小:" << actualTileSize;
+    }
+    
+    m_tileSize = actualTileSize;
+    
+    qDebug() << "[ScreenCapture] 初始化瓦片系统 - 屏幕尺寸:" << screenSize << "瓦片大小:" << actualTileSize;
+    
+    m_tileManager.initialize(screenSize, actualTileSize.width(), actualTileSize.height());
+    
+    int totalTiles = m_tileManager.getTileCount();
+    qDebug() << "[ScreenCapture] 瓦片系统初始化完成 - 总瓦片数:" << totalTiles;
+}
+
+int ScreenCapture::getTileCount() const
+{
+    return m_tileManager.getTileCount();
+}
+
+int ScreenCapture::getChangedTileCount() const
+{
+    return m_tileManager.getChangedTileCount();
+}
+
+void ScreenCapture::performTileDetection(const QByteArray &frameData)
+{
+    if (frameData.isEmpty() || !m_tileManager.isInitialized()) {
+        return;
+    }
+    
+    // 将字节数组转换为QImage进行瓦片检测
+    QImage image(reinterpret_cast<const uchar*>(frameData.constData()), 
+                 m_screenSize.width(), m_screenSize.height(), 
+                 QImage::Format_ARGB32);
+    
+    if (image.isNull()) {
+        qWarning() << "[ScreenCapture] 无法从帧数据创建QImage";
+        return;
+    }
+    
+    // 执行瓦片变化检测
+    m_tileManager.compareAndUpdateTiles(image);
+}
+
+// 瓦片检测开关控制方法实现
+void ScreenCapture::setTileDetectionEnabled(bool enabled)
+{
+    if (m_tileDetectionEnabled != enabled) {
+        m_tileDetectionEnabled = enabled;
+        qDebug() << "[ScreenCapture] 瓦片检测" << (enabled ? "已启用" : "已禁用");
+        
+        // 如果禁用瓦片检测，重置瓦片状态
+        if (!enabled && m_tileManager.isInitialized()) {
+            m_tileManager.resetChangeFlags();
+        }
+    }
 }

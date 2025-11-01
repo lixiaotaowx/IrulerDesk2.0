@@ -4,4 +4,6 @@ G:\c\2025\lunzi\IrulerDeskpro\src\capture\VP9Encoder.cpp;G:\c\2025\lunzi\IrulerD
 G:\c\2025\lunzi\IrulerDeskpro\src\capture\WebSocketClient.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess.dir\Release\WebSocketClient.obj
 G:\c\2025\lunzi\IrulerDeskpro\src\capture\WebSocketSender.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess.dir\Release\WebSocketSender.obj
 G:\c\2025\lunzi\IrulerDeskpro\src\capture\MouseCapture.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess.dir\Release\MouseCapture.obj
+G:\c\2025\lunzi\IrulerDeskpro\src\capture\TileManager.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess.dir\Release\TileManager.obj
+G:\c\2025\lunzi\IrulerDeskpro\src\capture\PerformanceMonitor.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess.dir\Release\PerformanceMonitor.obj
 G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess_autogen\mocs_compilation_Release.cpp;G:\c\2025\lunzi\IrulerDeskpro\build\CaptureProcess.dir\Release\mocs_compilation_Release.obj

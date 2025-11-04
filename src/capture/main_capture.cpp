@@ -8,6 +8,8 @@
 #include <QCoreApplication>
 #include <iostream>
 #include <chrono>
+#include <QJsonObject>
+#include <QJsonDocument>
 #ifdef _WIN32
 #include <io.h>
 #include <fcntl.h>
@@ -362,9 +364,7 @@ int main(int argc, char *argv[])
     // qDebug() << "[CaptureProcess] 初始化鼠标捕获模块...";
     MouseCapture *mouseCapture = new MouseCapture(&app);
     
-    // 连接鼠标位置消息到WebSocket发送器
-    QObject::connect(mouseCapture, &MouseCapture::mousePositionMessage,
-                     sender, &WebSocketSender::sendTextMessage);
+    // 鼠标坐标转换的连接将在下面（静态变量声明之后）设置
     // qDebug() << "[CaptureProcess] 鼠标捕获模块初始化成功，已连接到WebSocket发送器";
     
     // 创建定时器进行屏幕捕获 - 优化：减少lambda捕获开销
@@ -419,6 +419,37 @@ int main(int argc, char *argv[])
             overlay->clear();
             // qDebug() << "[CaptureProcess] 停止屏幕捕获和鼠标捕获";
         }
+    });
+
+    // 将系统全局鼠标坐标转换为当前捕获屏幕的局部坐标后发送到观看端
+    QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
+                     [sender](const QPoint &globalPos) {
+        const auto screens = QApplication::screens();
+        if (screens.isEmpty()) {
+            return;
+        }
+        int idx = currentScreenIndex;
+        if (idx < 0 || idx >= screens.size()) {
+            idx = 0;
+        }
+        QScreen *screen = screens[idx];
+        QRect geom = screen->geometry();
+        QPoint local(globalPos.x() - geom.x(), globalPos.y() - geom.y());
+        if (local.x() < 0 || local.y() < 0 || local.x() >= geom.width() || local.y() >= geom.height()) {
+            // 不在当前屏幕范围内则忽略，避免错误叠加
+            return;
+        }
+
+        QJsonObject messageObj;
+        messageObj["type"] = "mouse_position";
+        messageObj["x"] = local.x();
+        messageObj["y"] = local.y();
+        // 使用微秒时间戳，与采集端原实现一致
+        auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        messageObj["timestamp"] = static_cast<qint64>(timestamp);
+        QJsonDocument doc(messageObj);
+        sender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
     });
 
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕

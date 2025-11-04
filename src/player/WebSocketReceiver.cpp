@@ -523,6 +523,43 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     m_webSocket->sendTextMessage(startStreamingJsonString);
 }
 
+void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y)
+{
+    if (!m_connected || !m_webSocket) {
+        qDebug() << "[WebSocketReceiver] 未连接到服务器，无法发送批注事件";
+        return;
+    }
+
+    // 使用最近一次的viewer/target信息进行路由
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qDebug() << "[WebSocketReceiver] 缺少viewer/target信息，批注事件未发送";
+        return;
+    }
+
+    QJsonObject message;
+    message["type"] = "annotation_event";
+    message["phase"] = phase; // "down" / "move" / "up"
+    message["x"] = x;
+    message["y"] = y;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    QString jsonString = doc.toJson(QJsonDocument::Compact);
+
+    qDebug() << "[WebSocketReceiver] 发送批注事件:" << jsonString;
+    m_webSocket->sendTextMessage(jsonString);
+}
+
 // 瓦片消息处理方法实现
 void WebSocketReceiver::processTileMessage(const QJsonObject &header, const QByteArray &binaryData)
 {

@@ -99,7 +99,7 @@ public slots:
     void renderFrameWithTimestamp(const QByteArray &frameData, const QSize &frameSize, qint64 captureTimestamp);
     void updateConnectionStatus(const QString &status);
     void onMousePositionReceived(const QPoint &position, qint64 timestamp); // 新增：鼠标位置接收槽
-    
+
 private slots:
     void onStartStopClicked();
     void updateStatsDisplay();
@@ -108,6 +108,9 @@ private:
     void setupUI();
     void updateButtonText();
     void drawMouseCursor(QPixmap &pixmap, const QPoint &position); // 新增：绘制鼠标光标
+    // 捕获鼠标并映射到源坐标
+    bool eventFilter(QObject *obj, QEvent *event) override;
+    QPoint mapLabelToSource(const QPoint &labelPoint) const;
     
     // 瓦片渲染私有方法
     void updateTileMapping();
@@ -147,6 +150,7 @@ private:
     QPoint m_mousePosition; // 当前鼠标位置
     qint64 m_mouseTimestamp = 0; // 鼠标位置时间戳
     bool m_hasMousePosition = false; // 是否有有效的鼠标位置数据
+    bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）
     
     // 瓦片渲染相关
     TileComposition m_tileComposition;

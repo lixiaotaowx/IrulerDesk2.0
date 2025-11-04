@@ -278,6 +278,13 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     } else if (type == "stop_streaming") {
         qDebug() << "[WebSocketSender] 收到停止推流请求";
         stopStreaming();
+    } else if (type == "annotation_event") {
+        QString phase = obj.value("phase").toString();
+        int x = obj.value("x").toInt();
+        int y = obj.value("y").toInt();
+        QString viewerId = obj.value("viewer_id").toString();
+        qDebug() << "[WebSocketSender] 收到批注事件:" << phase << x << y << "viewer:" << viewerId;
+        emit annotationEventReceived(phase, x, y, viewerId);
     }
 }
 

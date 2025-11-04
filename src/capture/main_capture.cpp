@@ -1,4 +1,4 @@
-#include <QGuiApplication>
+#include <QtWidgets/QApplication>
 #include <QDebug>
 #include <QTimer>
 #include <QFile>
@@ -18,6 +18,7 @@
 #include "WebSocketSender.h"
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
 #include "PerformanceMonitor.h" // 新增：性能监控头文件
+#include "AnnotationOverlay.h"
 
 // 从配置文件读取设备ID
 QString getDeviceIdFromConfig()
@@ -157,7 +158,7 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     
     qDebug() << "[CaptureProcess] ========== 启动屏幕捕获进程 ==========";
     
@@ -313,6 +314,8 @@ int main(int argc, char *argv[])
     // 在编码器准备好后再启动WebSocket发送器
     // qDebug() << "[CaptureProcess] 启动WebSocket发送器...";
     WebSocketSender *sender = new WebSocketSender(&app);
+    // 创建透明批注覆盖层
+    AnnotationOverlay *overlay = new AnnotationOverlay();
     
     // 连接到WebSocket服务器 - 使用推流URL格式
     // 从配置文件读取设备ID和服务器地址，如果没有则使用默认值
@@ -377,22 +380,41 @@ int main(int argc, char *argv[])
     static bool isCapturing = false; // 控制捕获状态
     static bool tileMetadataSent = false; // 瓦片元数据发送标志
     
+    // 连接批注事件到叠加层
+    QObject::connect(sender, &WebSocketSender::annotationEventReceived,
+                     overlay, &AnnotationOverlay::onAnnotationEvent);
+
+    // 对齐叠加层到目标屏幕
+    const auto screens = QApplication::screens();
+    int screenIndex = getScreenIndexFromConfig();
+    QScreen *targetScreen = nullptr;
+    if (screenIndex >= 0 && screenIndex < screens.size()) {
+        targetScreen = screens[screenIndex];
+    } else {
+        targetScreen = QApplication::primaryScreen();
+    }
+    overlay->alignToScreen(targetScreen);
+
     // 连接推流控制信号
-    QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer]() {
+    QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer, overlay]() {
         if (!isCapturing) {
             isCapturing = true;
             tileMetadataSent = false; // 重置瓦片元数据发送标志
             captureTimer->start(33); // 30fps
             staticMouseCapture->startCapture(); // 开始鼠标捕获
+            overlay->show();
+            overlay->raise();
             // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
         }
     });
     
-    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer]() {
+    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, overlay]() {
         if (isCapturing) {
             isCapturing = false;
             captureTimer->stop();
             staticMouseCapture->stopCapture(); // 停止鼠标捕获
+            overlay->hide();
+            overlay->clear();
             // qDebug() << "[CaptureProcess] 停止屏幕捕获和鼠标捕获";
         }
     });

@@ -64,6 +64,8 @@ set(CAPTURE_SOURCES
     src/capture/TileManager.h
     src/capture/PerformanceMonitor.cpp
     src/capture/PerformanceMonitor.h
+    src/capture/AnnotationOverlay.cpp
+    src/capture/AnnotationOverlay.h
 )
 
 # 解码播放进程源文件
@@ -125,6 +127,7 @@ set_target_properties(ScreenStreamApp PROPERTIES
 # 链接捕获进程库
 target_link_libraries(CaptureProcess PRIVATE
     Qt6::Core
+    Qt6::Widgets
     Qt6::WebSockets
     Qt6::Gui
     unofficial::libvpx::libvpx

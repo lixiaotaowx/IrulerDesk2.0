@@ -91,8 +91,8 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
 {
     if (!m_videoWindow) {
         qDebug() << "[VideoReceiving] VideoWindow未初始化";
-    // 直接在主窗口的VideoDisplayWidget中开始接收视频流
-    startVideoReceiving(targetDeviceId);
+        // 直接在主窗口的VideoDisplayWidget中开始接收视频流
+        startVideoReceiving(targetDeviceId);
     }
     
     VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
@@ -110,9 +110,14 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     
     // 使用VideoDisplayWidget开始接收视频流
     videoWidget->startReceiving(serverUrl);
-    
-    // 注意：不再通过VideoDisplayWidget发送watch_request
-    // watch_request已经通过登录通道发送，避免重复发送
+
+    // 为批注事件路由在接收器上记录viewer/target（不依赖登录通道）
+    // 轻微延迟，确保WebSocketReceiver已连接
+    QString viewerId = getDeviceId();
+    QTimer::singleShot(800, [videoWidget, viewerId, targetDeviceId]() {
+        videoWidget->sendWatchRequest(viewerId, targetDeviceId);
+        qDebug() << "[VideoReceiving] 已在接收器记录watch_request用于批注路由，viewer:" << viewerId << " target:" << targetDeviceId;
+    });
 }
 
 void MainWindow::startPlayerProcess(const QString& targetDeviceId)

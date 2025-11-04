@@ -10,6 +10,7 @@
 #include <QMutexLocker>
 #include <QPainter>
 #include <QPolygon>
+#include <QMouseEvent>
 #include <windows.h>
 
 VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
@@ -141,6 +142,9 @@ void VideoDisplayWidget::setupUI()
     m_videoLabel->setMinimumSize(320, 240); // 减小最小尺寸
     m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // 允许扩展
     m_videoLabel->setScaledContents(false); // 禁用自动缩放，保持原始比例
+    // 启用鼠标跟踪并安装事件过滤器，用于批注坐标采集
+    m_videoLabel->setMouseTracking(true);
+    m_videoLabel->installEventFilter(this);
     m_mainLayout->addWidget(m_videoLabel, 1); // 添加拉伸因子，让视频区域占据更多空间
     
     // 控制区域
@@ -677,4 +681,85 @@ void VideoDisplayWidget::cleanupOldTiles()
     
     // 更新统计信息
     m_stats.totalTiles = m_tileComposition.tiles.size();
+}
+
+// 将标签坐标映射到源帧坐标（考虑保持比例与居中）
+QPoint VideoDisplayWidget::mapLabelToSource(const QPoint &labelPoint) const
+{
+    if (!m_videoLabel) return QPoint(-1, -1);
+    const QSize frameSize = m_stats.frameSize;
+    const QSize labelSize = m_videoLabel->size();
+    if (frameSize.isEmpty() || labelSize.isEmpty()) return QPoint(-1, -1);
+
+    const double sx = static_cast<double>(labelSize.width()) / static_cast<double>(frameSize.width());
+    const double sy = static_cast<double>(labelSize.height()) / static_cast<double>(frameSize.height());
+    const double scale = (sx < sy ? sx : sy);
+    const int scaledW = static_cast<int>(frameSize.width() * scale);
+    const int scaledH = static_cast<int>(frameSize.height() * scale);
+    const int offsetX = (labelSize.width() - scaledW) / 2;
+    const int offsetY = (labelSize.height() - scaledH) / 2;
+
+    // 若鼠标在黑边区域，则认为不在视频区域内
+    if (labelPoint.x() < offsetX || labelPoint.y() < offsetY ||
+        labelPoint.x() > offsetX + scaledW || labelPoint.y() > offsetY + scaledH) {
+        return QPoint(-1, -1);
+    }
+
+    const double srcXf = (static_cast<double>(labelPoint.x() - offsetX)) / scale;
+    const double srcYf = (static_cast<double>(labelPoint.y() - offsetY)) / scale;
+    int srcX = static_cast<int>(srcXf);
+    int srcY = static_cast<int>(srcYf);
+
+    // 夹取到源帧范围内
+    if (srcX < 0) srcX = 0;
+    if (srcY < 0) srcY = 0;
+    if (srcX >= frameSize.width()) srcX = frameSize.width() - 1;
+    if (srcY >= frameSize.height()) srcY = frameSize.height() - 1;
+
+    return QPoint(srcX, srcY);
+}
+
+// 捕获鼠标事件并发送批注事件
+bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_videoLabel) {
+        switch (event->type()) {
+        case QEvent::MouseButtonPress: {
+            QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            QPoint src = mapLabelToSource(me->pos());
+            if (src.x() >= 0) {
+                m_isAnnotating = true;
+                if (m_receiver) {
+                    m_receiver->sendAnnotationEvent("down", src.x(), src.y());
+                }
+            }
+            return true; // 消费事件
+        }
+        case QEvent::MouseMove: {
+            QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            if (m_isAnnotating) {
+                QPoint src = mapLabelToSource(me->pos());
+                if (src.x() >= 0 && m_receiver) {
+                    m_receiver->sendAnnotationEvent("move", src.x(), src.y());
+                }
+                return true;
+            }
+            break;
+        }
+        case QEvent::MouseButtonRelease: {
+            QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            QPoint src = mapLabelToSource(me->pos());
+            if (src.x() >= 0) {
+                if (m_receiver) {
+                    m_receiver->sendAnnotationEvent("up", src.x(), src.y());
+                }
+            }
+            m_isAnnotating = false;
+            return true;
+        }
+        default:
+            break;
+        }
+    }
+    return QWidget::eventFilter(obj, event);
 }

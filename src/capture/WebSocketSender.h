@@ -87,6 +87,9 @@ signals:
     void tileUpdateSent(int updatedTileCount);
     void tileMetadataSent(int totalTileCount);
 
+    // 远程批注事件（观看端发来）
+    void annotationEventReceived(const QString &phase, int x, int y, const QString &viewerId);
+
 private slots:
     void onConnected();
     void onDisconnected();

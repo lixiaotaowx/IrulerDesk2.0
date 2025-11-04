@@ -62,6 +62,8 @@ public:
     
     // 发送观看请求
     void sendWatchRequest(const QString &viewerId, const QString &targetId);
+    // 发送远程批注事件：phase为"down"/"move"/"up"，坐标为源屏幕坐标
+    void sendAnnotationEvent(const QString &phase, int x, int y);
     
     // 断开连接
     void disconnectFromServer();

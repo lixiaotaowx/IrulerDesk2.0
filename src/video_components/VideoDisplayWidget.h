@@ -80,6 +80,9 @@ public:
 
     // 显示切换中提示
     void showSwitchingIndicator(const QString &message = QStringLiteral("切换中..."));
+
+    // 按索引切屏（供系统设置列表直接调用，保持会话不断流）
+    void sendSwitchScreenIndex(int index);
     void setAutoResize(bool autoResize) { m_autoResize = autoResize; }
     
     // 瓦片渲染方法
@@ -104,6 +107,7 @@ public slots:
     // 批注控制：撤销上一笔与清屏
     void sendUndo();
     void sendClear();
+    void sendCloseOverlay();
 
 private slots:
     void onStartStopClicked();

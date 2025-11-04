@@ -379,6 +379,8 @@ int main(int argc, char *argv[])
     static WebSocketSender *staticSender = sender; // 新增：静态WebSocket发送器指针
     static bool isCapturing = false; // 控制捕获状态
     static bool tileMetadataSent = false; // 瓦片元数据发送标志
+    static int currentScreenIndex = getScreenIndexFromConfig(); // 当前屏幕索引
+    static bool isSwitching = false; // 屏幕热切换中标志（不断流）
     
     // 连接批注事件到叠加层
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
@@ -418,9 +420,70 @@ int main(int argc, char *argv[])
             // qDebug() << "[CaptureProcess] 停止屏幕捕获和鼠标捕获";
         }
     });
+
+    // 处理观看端切换屏幕请求：滚动切换到下一屏幕
+    QObject::connect(sender, &WebSocketSender::switchScreenRequested, [overlay](const QString &direction, int targetIndex) {
+        const auto screens = QApplication::screens();
+        if (screens.isEmpty()) {
+            qWarning() << "[CaptureProcess] 无可用屏幕，无法切换";
+            return;
+        }
+
+        // 计算目标屏幕索引
+        if (direction == "index" && targetIndex >= 0 && targetIndex < screens.size()) {
+            currentScreenIndex = targetIndex;
+        } else {
+            // 默认滚动到下一屏幕
+            currentScreenIndex = (currentScreenIndex + 1) % screens.size();
+        }
+        qDebug() << "[CaptureProcess] 切换到屏幕索引:" << currentScreenIndex << ", direction=" << direction << ", targetIndex=" << targetIndex;
+        
+        // 标记正在切换以避免捕获循环继续抓帧（不断流，仅暂时不发帧）
+        isSwitching = true;
+
+        // 重新初始化屏幕捕获到新屏幕
+        staticCapture->cleanup();
+        staticCapture->setTargetScreenIndex(currentScreenIndex);
+        if (!staticCapture->initialize()) {
+            qCritical() << "[CaptureProcess] 切屏后初始化屏幕捕获失败";
+            isSwitching = false;
+            return;
+        }
+
+        QSize newSize = staticCapture->getScreenSize();
+
+        // 重新初始化瓦片系统（保持自适应设置）
+        TileManager &tm = staticCapture->getTileManager();
+        tm.setAdaptiveTileSize(true);
+        QSize optimalSize = TileManager::calculateOptimalTileSize(newSize);
+        staticCapture->initializeTileSystem(newSize, optimalSize);
+        tileMetadataSent = false; // 切屏后需要重新发送瓦片元数据
+
+        // 重新初始化编码器以匹配新分辨率
+        staticEncoder->cleanup();
+        if (!staticEncoder->initialize(newSize.width(), newSize.height(), 60)) {
+            qCritical() << "[CaptureProcess] 切屏后编码器初始化失败";
+            isSwitching = false;
+            return;
+        }
+        staticEncoder->forceKeyFrame();
+
+        // 对齐批注覆盖层到新屏幕
+        QScreen *target = (currentScreenIndex >= 0 && currentScreenIndex < screens.size())
+                            ? screens[currentScreenIndex]
+                            : QApplication::primaryScreen();
+        overlay->alignToScreen(target);
+        overlay->show();
+        overlay->raise();
+        overlay->clear();
+        
+        // 切换完成，恢复捕获循环发帧
+        isSwitching = false;
+    });
     
     QObject::connect(captureTimer, &QTimer::timeout, []() {
         if (!isCapturing) return; // 只有在推流状态下才捕获
+        if (isSwitching) return;   // 热切换过程中不断流，但暂时不抓帧
         
         auto captureStartTime = std::chrono::high_resolution_clock::now();
         QByteArray frameData = staticCapture->captureScreen();

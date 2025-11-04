@@ -161,14 +161,8 @@ void VideoWindow::mousePressEvent(QMouseEvent *event)
         event->accept();
         return;
     }
-    // 右键：全局触发清屏（任意窗口位置）
-    if (event->button() == Qt::RightButton) {
-        if (m_videoDisplayWidget) {
-            m_videoDisplayWidget->sendClear();
-        }
-        event->accept();
-        return;
-    }
+    // 右键由VideoDisplayWidget处理其上下文菜单，这里不拦截
+    QWidget::mousePressEvent(event);
 }
 
 void VideoWindow::mouseMoveEvent(QMouseEvent *event)
@@ -213,19 +207,8 @@ bool VideoWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
     if (!msg) {
         return QWidget::nativeEvent(eventType, message, result);
     }
-    switch (msg->message) {
-    case WM_RBUTTONDOWN:
-    case WM_RBUTTONUP: {
-        if (m_videoDisplayWidget) {
-            qDebug() << "[VideoWindow] WM_RBUTTON* 捕获，触发清屏";
-            m_videoDisplayWidget->sendClear();
-        }
-        if (result) *result = 0;
-        return true; // 消费原生右键事件
-    }
-    default:
-        break;
-    }
+    // 不再拦截原生右键事件，交由Qt事件系统与VideoDisplayWidget处理
+    Q_UNUSED(msg);
     return QWidget::nativeEvent(eventType, message, result);
 }
 

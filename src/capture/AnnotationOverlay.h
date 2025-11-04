@@ -16,6 +16,7 @@ public:
 
 public slots:
     void onAnnotationEvent(const QString &phase, int x, int y, const QString &viewerId);
+    void hideOverlay();
 
 protected:
     void paintEvent(QPaintEvent *event) override;

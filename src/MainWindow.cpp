@@ -1462,6 +1462,7 @@ void MainWindow::onClearMarksRequested()
 {
     qDebug() << "[MainWindow] 收到清理标记请求";
     if (m_videoWindow && m_videoWindow->getVideoDisplayWidget()) {
+        // 改回仅清理标记，保持画板可继续绘制
         m_videoWindow->getVideoDisplayWidget()->sendClear();
     } else {
         qWarning() << "[MainWindow] 视频窗口未就绪，无法清理标记";
@@ -1482,53 +1483,21 @@ void MainWindow::onExitRequested()
 void MainWindow::onScreenSelected(int index)
 {
     qDebug() << "[MainWindow] 用户选择屏幕索引:" << index;
-    saveScreenIndexToConfig(index);
 
-    // 仅重启捕获进程，立即切换源头
-    QString appDir = QApplication::applicationDirPath();
-    QString captureExe = appDir + "/CaptureProcess.exe";
-
-    if (m_captureProcess) {
-        qDebug() << "[MainWindow] 正在重启捕获进程以应用屏幕切换";
-        m_captureProcess->terminate();
-        if (!m_captureProcess->waitForFinished(2000)) {
-            m_captureProcess->kill();
-        }
-        m_captureProcess->deleteLater();
-        m_captureProcess = nullptr;
-    }
-
-    m_captureProcess = new QProcess(this);
-    connect(m_captureProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &MainWindow::onCaptureProcessFinished);
-    m_captureProcess->start(captureExe);
-
-    // 切换源时在视频窗口显示“切换中...”提示
+    // 改为热切换：通过播放器端WebSocket发送按索引切屏消息，不修改配置、不重启采集进程
     if (m_videoWindow) {
         auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
         if (videoWidget) {
-            videoWidget->showSwitchingIndicator(QStringLiteral("切换中..."));
+            // 视频窗口提示“切换中...”，并发送索引切换请求（会话不断流）
+            videoWidget->sendSwitchScreenIndex(index);
         }
     }
 
-    // 源切换后，主动重发观看请求，确保立即恢复推流并刷新播放
-    if (!m_currentTargetId.isEmpty()) {
-        qDebug() << "[MainWindow] 屏幕切换后准备重发观看请求，目标设备ID:" << m_currentTargetId;
-        // 为避免采集进程尚未完全初始化导致请求过早，轻微延迟后发送
-        QTimer::singleShot(800, this, [this]() {
-            if (!m_currentTargetId.isEmpty()) {
-                qDebug() << "[MainWindow] 重发watch_request以恢复推流，目标设备ID:" << m_currentTargetId;
-                sendWatchRequest(m_currentTargetId);
-            }
-        });
-    }
-
-    // 等待首帧到达后通知系统设置窗口关闭
+    // 等待首帧到达后通知系统设置窗口关闭（沿用原有首帧确认逻辑）
     if (m_videoWindow) {
         auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
         if (videoWidget) {
             m_isScreenSwitching = true;
-            // 断开旧连接以避免重复
             if (m_switchFrameConn) {
                 QObject::disconnect(m_switchFrameConn);
             }

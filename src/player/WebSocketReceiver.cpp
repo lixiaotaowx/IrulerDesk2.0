@@ -555,8 +555,87 @@ void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y)
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
+    // 降低日志噪音：不打印高频的 move 事件，仅统计；其他关键阶段简要打印
+    static int moveEventCount = 0;
+    if (phase == "move") {
+        moveEventCount++;
+        // 仅在调试模式下，每200次 move 打印一次统计，避免刷屏
+        #ifdef QT_DEBUG
+        if (moveEventCount % 200 == 0) {
+            qDebug() << "[WebSocketReceiver] 批注move事件累计:" << moveEventCount;
+        }
+        #endif
+    } else {
+        // 关键阶段打印简要信息（不输出完整JSON）
+        qDebug() << "[WebSocketReceiver] 发送批注事件:" << phase << "(" << x << "," << y << ")";
+    }
+    m_webSocket->sendTextMessage(jsonString);
+}
 
-    qDebug() << "[WebSocketReceiver] 发送批注事件:" << jsonString;
+void WebSocketReceiver::sendSwitchScreenNext()
+{
+    if (!m_connected || !m_webSocket) {
+        qDebug() << "[WebSocketReceiver] 未连接到服务器，无法发送切屏请求";
+        return;
+    }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qDebug() << "[WebSocketReceiver] 缺少viewer/target信息，切屏请求未发送";
+        return;
+    }
+
+    QJsonObject message;
+    message["type"] = "switch_screen";
+    message["direction"] = "next";
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    QString jsonString = doc.toJson(QJsonDocument::Compact);
+    qDebug() << "[WebSocketReceiver] 发送切换屏幕请求: next";
+    m_webSocket->sendTextMessage(jsonString);
+}
+
+void WebSocketReceiver::sendSwitchScreenIndex(int index)
+{
+    if (!m_connected || !m_webSocket) {
+        qDebug() << "[WebSocketReceiver] 未连接到服务器，无法发送切屏索引请求";
+        return;
+    }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qDebug() << "[WebSocketReceiver] 缺少viewer/target信息，切屏索引请求未发送";
+        return;
+    }
+
+    QJsonObject message;
+    message["type"] = "switch_screen";
+    message["direction"] = "index";
+    message["index"] = index;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    QString jsonString = doc.toJson(QJsonDocument::Compact);
+    qDebug() << "[WebSocketReceiver] 发送切换屏幕索引请求:" << index;
     m_webSocket->sendTextMessage(jsonString);
 }
 

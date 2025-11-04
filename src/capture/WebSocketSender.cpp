@@ -285,6 +285,12 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         QString viewerId = obj.value("viewer_id").toString();
         qDebug() << "[WebSocketSender] 收到批注事件:" << phase << x << y << "viewer:" << viewerId;
         emit annotationEventReceived(phase, x, y, viewerId);
+    } else if (type == "switch_screen") {
+        QString direction = obj.value("direction").toString();
+        int index = obj.value("index").toInt(-1);
+        qDebug() << "[WebSocketSender] 收到切换屏幕请求: direction=" << direction << ", index=" << index;
+        // 发射信号，由 main_capture 处理切换逻辑
+        emit switchScreenRequested(direction, index);
     }
 }
 

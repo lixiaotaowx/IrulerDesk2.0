@@ -12,6 +12,8 @@
 #include <QPolygon>
 #include <QMouseEvent>
 #include <QShortcut>
+#include <QMenu>
+#include <QAction>
 #include <windows.h>
 
 VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
@@ -434,6 +436,15 @@ void VideoDisplayWidget::showSwitchingIndicator(const QString &message)
     m_statusLabel->setText(QString("状态: %1").arg(message));
 }
 
+void VideoDisplayWidget::sendSwitchScreenIndex(int index)
+{
+    // 显示切换提示并通过接收器发送索引切屏请求
+    showSwitchingIndicator(QStringLiteral("切换中..."));
+    if (m_receiver) {
+        m_receiver->sendSwitchScreenIndex(index);
+    }
+}
+
 void VideoDisplayWidget::renderFrameWithTimestamp(const QByteArray &frameData, const QSize &frameSize, qint64 captureTimestamp)
 {
     // 存储捕获时间戳
@@ -757,8 +768,19 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
                                (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
             if (isSecondary) {
-                if (m_receiver) {
-                    m_receiver->sendAnnotationEvent("clear", 0, 0);
+                // 右键弹出上下文菜单
+                QMenu menu(this);
+                QAction *clearAction = menu.addAction(QStringLiteral("清理绘制"));
+                QAction *switchAction = menu.addAction(QStringLiteral("切换屏幕"));
+                QAction *chosen = menu.exec(me->globalPosition().toPoint());
+                if (chosen == clearAction) {
+                    sendClear();
+                } else if (chosen == switchAction) {
+                    // 显示切换提示并发送切屏请求
+                    showSwitchingIndicator(QStringLiteral("切换中..."));
+                    if (m_receiver) {
+                        m_receiver->sendSwitchScreenNext();
+                    }
                 }
                 m_isAnnotating = false;
                 return true; // 消费右键事件
@@ -797,8 +819,19 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             return true;
         }
         case QEvent::ContextMenu: {
-            if (m_receiver) {
-                m_receiver->sendAnnotationEvent("clear", 0, 0);
+            // 键盘菜单键或长按触发的上下文菜单
+            QContextMenuEvent *ce = static_cast<QContextMenuEvent*>(event);
+            QMenu menu(this);
+            QAction *clearAction = menu.addAction(QStringLiteral("清理绘制"));
+            QAction *switchAction = menu.addAction(QStringLiteral("切换屏幕"));
+            QAction *chosen = menu.exec(ce->globalPos());
+            if (chosen == clearAction) {
+                sendClear();
+            } else if (chosen == switchAction) {
+                showSwitchingIndicator(QStringLiteral("切换中..."));
+                if (m_receiver) {
+                    m_receiver->sendSwitchScreenNext();
+                }
             }
             m_isAnnotating = false;
             return true;
@@ -837,4 +870,12 @@ void VideoDisplayWidget::sendClear()
         m_receiver->sendAnnotationEvent("clear", 0, 0);
     }
     m_isAnnotating = false;
+}
+
+void VideoDisplayWidget::sendCloseOverlay()
+{
+    if (m_receiver) {
+        qDebug() << "[VideoDisplayWidget] sendCloseOverlay() 调用";
+        m_receiver->sendAnnotationEvent("overlay_close", 0, 0);
+    }
 }

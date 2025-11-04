@@ -55,8 +55,19 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
         // 清空所有笔划
         clear();
         return; // clear内部已调用update
+    } else if (phase == "overlay_close") {
+        // 关闭透明画板（隐藏并清空）
+        hide();
+        clear();
+        return;
     }
     update();
+}
+
+void AnnotationOverlay::hideOverlay()
+{
+    hide();
+    clear();
 }
 
 void AnnotationOverlay::paintEvent(QPaintEvent *event)

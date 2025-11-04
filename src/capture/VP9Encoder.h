@@ -28,10 +28,18 @@ public:
     void setBitrate(int bitrate) { m_bitrate = bitrate; }
     void setKeyFrameInterval(int interval) { m_keyFrameInterval = interval; }
     
+    // 静态检测参数
+    void setStaticThreshold(double threshold) { m_staticThreshold = threshold; }
+    void setStaticBitrateReduction(double reduction) { m_staticBitrateReduction = reduction; }
+    void setEnableStaticDetection(bool enable) { m_enableStaticDetection = enable; }
+    void setSkipStaticFrames(bool skip) { m_skipStaticFrames = skip; }
+    
     // 状态查询
     bool isInitialized() const { return m_initialized; }
     QSize getFrameSize() const { return m_frameSize; }
     int getFrameRate() const { return m_frameRate; }
+    double getStaticThreshold() const { return m_staticThreshold; }
+    bool isStaticDetectionEnabled() const { return m_enableStaticDetection; }
     
 signals:
     void frameEncoded(const QByteArray &encodedData);
@@ -45,6 +53,11 @@ private:
     bool convertRGBAToYUV420(const QByteArray &rgbaData, uint8_t **yuvPlanes);
     QByteArray encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane, const uint8_t *vPlane);
     
+    // 静态检测相关方法
+    double calculateFrameDifference(const QByteArray &currentFrame, const QByteArray &previousFrame);
+    bool isFrameStatic(const QByteArray &frameData);
+    void adjustBitrateForStaticContent(bool isStatic);
+    
     // VP9编码器相关
     vpx_codec_ctx_t m_codec;
     vpx_codec_enc_cfg_t m_config;
@@ -55,6 +68,16 @@ private:
     int m_frameRate;
     int m_bitrate;
     int m_keyFrameInterval;
+    
+    // 静态检测参数
+    bool m_enableStaticDetection;
+    double m_staticThreshold;           // 静态检测阈值 (0.0-1.0)
+    double m_staticBitrateReduction;    // 静态内容码率减少比例 (0.0-1.0)
+    bool m_skipStaticFrames;            // 是否跳过静态帧
+    QByteArray m_previousFrameData;     // 上一帧数据用于比较
+    bool m_lastFrameWasStatic;          // 上一帧是否为静态
+    int m_staticFrameCount;             // 连续静态帧计数
+    int m_originalBitrate;              // 原始码率备份
     
     // 状态
     bool m_initialized;

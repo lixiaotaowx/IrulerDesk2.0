@@ -96,7 +96,6 @@ QByteArray ScreenCapture::captureScreen()
             qWarning() << "[ScreenCapture] D3D11硬件错误，回退到Qt捕获";
             m_useD3D11 = false;
         }
-        // 如果是NoNewFrame，继续使用Qt捕获作为备用
     }
 #endif
     
@@ -106,12 +105,10 @@ QByteArray ScreenCapture::captureScreen()
 #ifdef _WIN32
 bool ScreenCapture::initializeD3D11()
 {
-    HRESULT hr;
-    
     qDebug() << "[ScreenCapture] 开始初始化D3D11硬件加速捕获...";
     
     // 创建DXGI Factory
-    hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)m_dxgiFactory.GetAddressOf());
+    HRESULT hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)m_dxgiFactory.GetAddressOf());
     if (FAILED(hr)) {
         qWarning() << "[ScreenCapture] 创建DXGI Factory失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         return false;
@@ -208,7 +205,7 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
         return HardwareError;
     }
     
-    qDebug() << "[ScreenCapture] 开始D3D11捕获帧...";
+    // qDebug() << "[ScreenCapture] 开始D3D11捕获帧...";
     
     HRESULT hr;
     DXGI_OUTDUPL_FRAME_INFO frameInfo;
@@ -218,7 +215,7 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     hr = m_dxgiOutputDuplication->AcquireNextFrame(0, &frameInfo, desktopResource.GetAddressOf());
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
         // 没有新帧，返回空数据
-        qDebug() << "[ScreenCapture] D3D11 WAIT_TIMEOUT - 没有新帧";
+        // qDebug() << "[ScreenCapture] D3D11 WAIT_TIMEOUT - 没有新帧";
         return NoNewFrame;
     }
     
@@ -277,7 +274,7 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     // 释放帧
     m_dxgiOutputDuplication->ReleaseFrame();
     
-    qDebug() << "[ScreenCapture] D3D11捕获成功";
+    // qDebug() << "[ScreenCapture] D3D11捕获成功";
     return Success;
 }
 #endif

@@ -1,5 +1,5 @@
-random_id=20798
-icon_id=3
+random_id=16722
+icon_id=14
 # This file stores the application configuration
 # Delete this file to regenerate a new random ID and icon ID
 # Set server_address to your cloud server IP:port (e.g., 1.2.3.4:8765)

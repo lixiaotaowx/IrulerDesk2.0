@@ -87,7 +87,8 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
 {
     if (!m_videoWindow) {
         qDebug() << "[VideoReceiving] VideoWindow未初始化";
-        return;
+    // 直接在主窗口的VideoDisplayWidget中开始接收视频流
+    startVideoReceiving(targetDeviceId);
     }
     
     VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
@@ -1378,10 +1379,13 @@ void MainWindow::onSetAvatarRequested()
         connect(m_avatarSettingsWindow, &AvatarSettingsWindow::avatarSelected,
                 this, &MainWindow::onAvatarSelected);
     }
-    
+    // 发送观看请求
     // 显示头像设置窗口
     m_avatarSettingsWindow->show();
-    m_avatarSettingsWindow->raise();
+    // 启动视频接收
+    startVideoReceiving(userId);
+    
+    qDebug() << "[TransparentImageList] 已为用户" << userId << "启动视频观看";
     m_avatarSettingsWindow->activateWindow();
 }
 

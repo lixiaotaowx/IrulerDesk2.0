@@ -90,10 +90,10 @@ void WebSocketSender::sendFrame(const QByteArray &frameData)
             
             emit frameSent(frameData.size());
             
-            // 每100帧输出一次统计信息
-            if (m_totalFramesSent % 100 == 0) {
-                qDebug() << "[WebSocketSender] 已发送" << m_totalFramesSent << "帧，总字节数:" << m_totalBytesSent;
-            }
+            // 移除频繁的帧发送统计输出以提升性能
+            // if (m_totalFramesSent % 100 == 0) {
+            //     qDebug() << "[WebSocketSender] 已发送" << m_totalFramesSent << "帧，总字节数:" << m_totalBytesSent;
+            // }
         } else {
             qDebug() << "[WebSocketSender] 发送帧数据失败";
         }
@@ -109,12 +109,12 @@ void WebSocketSender::sendTextMessage(const QString &message)
     if (m_connected && m_webSocket) {
         qint64 bytesSent = m_webSocket->sendTextMessage(message);
         if (bytesSent > 0) {
-            // 每100条文本消息输出一次统计信息（避免鼠标消息日志过多）
-            static int textMessageCount = 0;
-            textMessageCount++;
-            if (textMessageCount % 100 == 0) {
-                qDebug() << "[WebSocketSender] 已发送" << textMessageCount << "条文本消息";
-            }
+            // 移除频繁的文本消息统计输出以提升性能
+            // static int textMessageCount = 0;
+            // textMessageCount++;
+            // if (textMessageCount % 100 == 0) {
+            //     qDebug() << "[WebSocketSender] 已发送" << textMessageCount << "条文本消息";
+            // }
         } else {
             qDebug() << "[WebSocketSender] 发送文本消息失败:" << message.left(50);
         }
@@ -230,7 +230,6 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     // 解析JSON消息
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
-    
     if (error.error != QJsonParseError::NoError) {
         qDebug() << "[WebSocketSender] JSON解析失败:" << error.errorString();
         return;

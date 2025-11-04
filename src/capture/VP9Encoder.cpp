@@ -8,9 +8,9 @@
 
 VP9Encoder::VP9Encoder(QObject *parent)
     : QObject(parent)
-    , m_frameRate(30)  // 恢复30fps以获得流畅画面
-    , m_bitrate(800000) // 800 kbps，优化编码速度
-    , m_keyFrameInterval(30) // 30帧关键帧间隔，减少闪烁
+    , m_frameRate(30)  // 保持30fps流畅度
+    , m_bitrate(300000) // 降低到300 kbps，最低可看清质量
+    , m_keyFrameInterval(30) // 30帧关键帧间隔
     , m_initialized(false)
     , m_frameCount(0)
     , m_forceNextKeyFrame(false) // 初始化强制关键帧标志
@@ -19,6 +19,14 @@ VP9Encoder::VP9Encoder(QObject *parent)
     , m_vPlane(nullptr)
     , m_yPlaneSize(0)
     , m_uvPlaneSize(0)
+    // 静态检测参数初始化 - 更激进的流量节省
+    , m_enableStaticDetection(true)      // 启用静态检测
+    , m_staticThreshold(0.01)            // 降低到1%变化阈值，更敏感
+    , m_staticBitrateReduction(0.15)     // 静态内容码率减少85%，更激进
+    , m_skipStaticFrames(false)          // 不跳帧，只降码率
+    , m_lastFrameWasStatic(false)
+    , m_staticFrameCount(0)
+    , m_originalBitrate(300000)
 {
     memset(&m_codec, 0, sizeof(m_codec));
     memset(&m_config, 0, sizeof(m_config));
@@ -42,6 +50,7 @@ bool VP9Encoder::initialize(int width, int height, int fps)
     
     m_frameSize = QSize(width, height);
     m_frameRate = fps;
+    m_originalBitrate = m_bitrate;  // 保存原始码率
     
     // 分配YUV缓冲区
     m_yPlaneSize = width * height;
@@ -116,6 +125,27 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     auto encodeStartTime = std::chrono::high_resolution_clock::now();
     auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(encodeStartTime.time_since_epoch()).count();
     
+    // 静态检测逻辑
+    bool isStatic = false;
+    if (m_enableStaticDetection && !m_previousFrameData.isEmpty()) {
+        isStatic = isFrameStatic(frameData);
+        adjustBitrateForStaticContent(isStatic);
+        
+        // 静态检测调试日志（已禁用以提升性能）
+        // static int logCounter = 0;
+        // if (++logCounter % 30 == 0) { // 每30帧输出一次日志
+        //     qDebug() << "[VP9Encoder] 静态检测状态 - 当前帧:" << (isStatic ? "静态" : "动态") 
+        //              << "连续静态帧数:" << m_staticFrameCount 
+        //              << "当前码率:" << m_bitrate;
+        // }
+        
+        // 如果启用跳帧且当前帧为静态，则跳过编码
+        if (m_skipStaticFrames && isStatic && m_staticFrameCount > 3) {
+            // qDebug() << "[VP9Encoder] 跳过静态帧，连续静态帧数:" << m_staticFrameCount;
+            return QByteArray(); // 返回空数据表示跳帧
+        }
+    }
+    
     // 转换RGBA到YUV420
     uint8_t *yuvPlanes[3] = { m_yPlane, m_uPlane, m_vPlane };
     if (!convertRGBAToYUV420(frameData, yuvPlanes)) {
@@ -130,6 +160,11 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     QByteArray encodedData = encodeFrame(m_yPlane, m_uPlane, m_vPlane);
     if (!encodedData.isEmpty()) {
         emit frameEncoded(encodedData);
+        
+        // 保存当前帧数据用于下次比较
+        if (m_enableStaticDetection) {
+            m_previousFrameData = frameData;
+        }
     } else {
         // 如果编码失败，回退帧计数器
         m_frameCount--;
@@ -188,29 +223,29 @@ bool VP9Encoder::initializeEncoder()
     
     qDebug() << "[VP9Encoder] 调整后分辨率:" << width << "x" << height;
     
-    // 优化实时编码参数 - 提升传输流畅度
+    // 优化实时编码参数 - 最低可看清质量设置
     m_config.g_w = width;
     m_config.g_h = height;
     m_config.g_timebase.num = 1;
     m_config.g_timebase.den = m_frameRate;
     m_config.rc_target_bitrate = m_bitrate / 1000; // kbps
-    m_config.g_error_resilient = 1; // 启用错误恢复以提高实时传输稳定性
-    m_config.g_pass = VPX_RC_ONE_PASS; // 单遍编码适合实时应用
-    m_config.g_lag_in_frames = 0; // 零延迟，适合实时编码
+    m_config.g_error_resilient = 1; // 启用错误恢复
+    m_config.g_pass = VPX_RC_ONE_PASS; // 单遍编码
+    m_config.g_lag_in_frames = 0; // 零延迟
     m_config.rc_end_usage = VPX_CBR; // 恒定比特率模式
-    // 优化量化器范围 - 改善画质模式
-    m_config.rc_min_quantizer = 4;  // 提高最低画质
-    m_config.rc_max_quantizer = 40; // 降低最大量化器，改善画质
+    // 调整量化器范围 - 最低质量但可看清
+    m_config.rc_min_quantizer = 10;  // 提高最低量化器，降低质量
+    m_config.rc_max_quantizer = 56; // 提高最大量化器，进一步降低质量
     // 优化缓冲区设置 - 极低延迟配置
-    m_config.rc_undershoot_pct = 100; // 最大下冲容忍度，优先速度
-    m_config.rc_overshoot_pct = 100; // 最大上冲容忍度，优先速度
+    m_config.rc_undershoot_pct = 100; // 最大下冲容忍度
+    m_config.rc_overshoot_pct = 100; // 最大上冲容忍度
     m_config.rc_buf_initial_sz = 10; // 极小初始缓冲区
     m_config.rc_buf_optimal_sz = 20; // 极小最优缓冲区
     m_config.rc_buf_sz = 30; // 极小总缓冲区大小
-    // 关键帧设置 - 优化策略：减少关键帧间隔以降低延迟
+    // 关键帧设置 - 减少关键帧频率以节省流量
     m_config.kf_mode = VPX_KF_AUTO;
     m_config.kf_min_dist = 0;
-    m_config.kf_max_dist = 20; // 每20帧一个关键帧，减少延迟
+    m_config.kf_max_dist = 60; // 每60帧一个关键帧，节省流量
     
     // 更新实际使用的分辨率
     m_frameSize = QSize(width, height);
@@ -253,6 +288,20 @@ bool VP9Encoder::initializeEncoder()
     ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_AQ_MODE, 3);
     if (ctrl_res != VPX_CODEC_OK) {
         qWarning() << "[VP9Encoder] 设置自适应量化模式失败:" << vpx_codec_err_to_string(ctrl_res);
+    }
+    
+    // 设置静态阈值参数 - VP9特有的静态检测优化
+    ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_STATIC_THRESHOLD, 1);
+    if (ctrl_res != VPX_CODEC_OK) {
+        qWarning() << "[VP9Encoder] 设置静态阈值失败:" << vpx_codec_err_to_string(ctrl_res);
+    } else {
+        qDebug() << "[VP9Encoder] VP9静态阈值已启用";
+    }
+    
+    // 启用噪声敏感度设置以改善静态内容编码
+    ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_NOISE_SENSITIVITY, 1);
+    if (ctrl_res != VPX_CODEC_OK) {
+        qWarning() << "[VP9Encoder] 设置噪声敏感度失败:" << vpx_codec_err_to_string(ctrl_res);
     }
     
     // 设置实时模式 - 禁用自动替代参考帧
@@ -413,8 +462,119 @@ QByteArray VP9Encoder::encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane,
             // }
             
             debugFrameCount++; // 每次编码都递增计数器
+            break;
         }
     }
     
     return encodedData;
+}
+
+// 静态检测相关方法实现
+double VP9Encoder::calculateFrameDifference(const QByteArray &currentFrame, const QByteArray &previousFrame)
+{
+    if (currentFrame.size() != previousFrame.size() || currentFrame.isEmpty()) {
+        return 1.0; // 完全不同
+    }
+    
+    const int frameSize = currentFrame.size();
+    const uint8_t *current = reinterpret_cast<const uint8_t*>(currentFrame.constData());
+    const uint8_t *previous = reinterpret_cast<const uint8_t*>(previousFrame.constData());
+    
+    // 采样检测以提高性能 - 每16个像素检测一个
+    const int sampleStep = 16 * 4; // RGBA格式，每个像素4字节，每16个像素采样
+    int totalSamples = 0;
+    int differentSamples = 0;
+    
+    for (int i = 0; i < frameSize; i += sampleStep) {
+        totalSamples++;
+        
+        // 计算RGB差异（忽略Alpha通道）
+        int rDiff = abs(current[i] - previous[i]);
+        int gDiff = abs(current[i + 1] - previous[i + 1]);
+        int bDiff = abs(current[i + 2] - previous[i + 2]);
+        
+        // 如果任何颜色通道差异超过阈值，认为像素发生变化
+        if (rDiff > 8 || gDiff > 8 || bDiff > 8) {
+            differentSamples++;
+        }
+    }
+    
+    return totalSamples > 0 ? (double)differentSamples / totalSamples : 0.0;
+}
+
+bool VP9Encoder::isFrameStatic(const QByteArray &frameData)
+{
+    if (m_previousFrameData.isEmpty()) {
+        m_previousFrameData = frameData;
+        m_lastFrameWasStatic = false;
+        m_staticFrameCount = 0;
+        return false;
+    }
+    
+    double difference = calculateFrameDifference(frameData, m_previousFrameData);
+    bool isStatic = difference < m_staticThreshold;
+    
+    if (isStatic) {
+        if (m_lastFrameWasStatic) {
+            m_staticFrameCount++;
+        } else {
+            m_staticFrameCount = 1;
+            qDebug() << "[VP9Encoder] 开始检测到静态内容，差异:" << QString::number(difference, 'f', 4) 
+                     << "阈值:" << m_staticThreshold;
+        }
+    } else {
+        if (m_lastFrameWasStatic && m_staticFrameCount > 0) {
+            qDebug() << "[VP9Encoder] 静态内容结束，连续静态帧数:" << m_staticFrameCount 
+                     << "差异:" << QString::number(difference, 'f', 4);
+        }
+        m_staticFrameCount = 0;
+    }
+    
+    m_lastFrameWasStatic = isStatic;
+    
+    // 每100帧输出一次静态检测统计（用于调试）
+    static int staticDebugCounter = 0;
+    if (++staticDebugCounter % 100 == 0) {
+        qDebug() << "[VP9Encoder] 静态检测统计 - 差异:" << QString::number(difference, 'f', 4) 
+                 << "阈值:" << m_staticThreshold 
+                 << "静态:" << (isStatic ? "是" : "否")
+                 << "连续静态帧:" << m_staticFrameCount;
+    }
+    
+    return isStatic;
+}
+
+void VP9Encoder::adjustBitrateForStaticContent(bool isStatic)
+{
+    if (!m_enableStaticDetection) {
+        return;
+    }
+    
+    int targetBitrate;
+    if (isStatic && m_staticFrameCount > 3) { // 降低触发阈值，更快响应
+        // 静态内容使用更低的码率 - 85%减少
+        targetBitrate = static_cast<int>(m_originalBitrate * m_staticBitrateReduction);
+        qDebug() << "[VP9Encoder] 检测到静态内容，降低码率到:" << targetBitrate << "bps (减少85%)";
+    } else {
+        // 动态内容使用原始码率
+        targetBitrate = m_originalBitrate;
+        if (!isStatic && m_bitrate != m_originalBitrate) {
+            qDebug() << "[VP9Encoder] 检测到动态内容，恢复码率到:" << targetBitrate << "bps";
+        }
+    }
+    
+    // 只有当码率需要改变时才更新
+    if (targetBitrate != m_bitrate) {
+        m_bitrate = targetBitrate;
+        
+        // 动态更新编码器码率
+        m_config.rc_target_bitrate = m_bitrate / 1000; // kbps
+        vpx_codec_err_t res = vpx_codec_enc_config_set(&m_codec, &m_config);
+        if (res != VPX_CODEC_OK) {
+            qWarning() << "[VP9Encoder] 动态调整码率失败:" << vpx_codec_err_to_string(res);
+        } else {
+            qDebug() << "[VP9Encoder] 码率调整成功 -" << (isStatic ? "静态" : "动态") 
+                     << "内容，新码率:" << m_bitrate << "bps";
+        }
+    }
 }

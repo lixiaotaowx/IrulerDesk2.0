@@ -160,6 +160,13 @@ void WebSocketReceiver::onConnected()
     qDebug() << "[WebSocketReceiver] 对端地址:" << m_webSocket->peerAddress().toString() << ":" << m_webSocket->peerPort();
     emit connected();
     emit connectionStatusChanged("已连接");
+
+    // 重连后自动重发观看请求，确保推流立即恢复
+    if (m_autoResendWatchRequest && !m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+        qDebug() << "[WebSocketReceiver] 重连后自动重发观看请求: viewer=" << m_lastViewerId << " target=" << m_lastTargetId;
+        // 直接使用该类的接口以保持逻辑一致
+        sendWatchRequest(m_lastViewerId, m_lastTargetId);
+    }
 }
 
 void WebSocketReceiver::onDisconnected()
@@ -485,7 +492,14 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
         qDebug() << "[WebSocketReceiver] 当前状态:" << (m_webSocket ? m_webSocket->state() : QAbstractSocket::UnconnectedState) << "目标URL:" << m_serverUrl;
         return;
     }
-    
+
+    // 记录最近一次观看请求信息，用于重连后自动重发
+    {
+        QMutexLocker locker(&m_mutex);
+        m_lastViewerId = viewerId;
+        m_lastTargetId = targetId;
+    }
+
     // 构造观看请求消息
     QJsonObject message;
     message["type"] = "watch_request";

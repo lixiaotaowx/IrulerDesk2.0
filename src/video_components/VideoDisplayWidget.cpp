@@ -408,6 +408,13 @@ void VideoDisplayWidget::updateButtonText()
     m_startStopButton->setText(m_isReceiving ? "停止接收" : "开始接收");
 }
 
+void VideoDisplayWidget::showSwitchingIndicator(const QString &message)
+{
+    // 在视频区域显示切换提示，同时更新状态栏文案
+    m_videoLabel->setText(message);
+    m_statusLabel->setText(QString("状态: %1").arg(message));
+}
+
 void VideoDisplayWidget::renderFrameWithTimestamp(const QByteArray &frameData, const QSize &frameSize, qint64 captureTimestamp)
 {
     // 存储捕获时间戳

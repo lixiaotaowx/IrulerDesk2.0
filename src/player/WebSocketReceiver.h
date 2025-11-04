@@ -180,9 +180,14 @@ private:
     int m_tileTimeoutMs;
     int m_maxRetransmissionAttempts;
     QHash<int, int> m_retransmissionCounts; // tileId -> attempt count
-    
+
     QMutex m_mutex;
     QMutex m_tileMutex;
+
+    // 最近一次观看请求信息，用于重连后自动重发
+    QString m_lastViewerId;
+    QString m_lastTargetId;
+    bool m_autoResendWatchRequest = true;
 };
 
 #endif // WEBSOCKETRECEIVER_H

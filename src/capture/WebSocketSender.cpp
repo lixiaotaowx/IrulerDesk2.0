@@ -125,21 +125,12 @@ void WebSocketSender::sendTextMessage(const QString &message)
     if (m_connected && m_webSocket) {
         qint64 bytesSent = m_webSocket->sendTextMessage(message);
         if (bytesSent > 0) {
-<<<<<<< HEAD
-            // 移除频繁的文本消息统计输出以提升性能
-            // static int textMessageCount = 0;
-            // textMessageCount++;
-            // if (textMessageCount % 100 == 0) {
-            //     qDebug() << "[WebSocketSender] 已发送" << textMessageCount << "条文本消息";
-            // }
-=======
             // 每100条文本消息输出一次统计信息（避免鼠标消息日志过多）
             static int textMessageCount = 0;
             textMessageCount++;
             if (textMessageCount % 100 == 0) {
                 // qDebug() << "[WebSocketSender] 已发送" << textMessageCount << "条文本消息"; // 已禁用以提升性能
             }
->>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
         } else {
             // qDebug() << "[WebSocketSender] 发送文本消息失败:" << message.left(50); // 已禁用以提升性能
         }

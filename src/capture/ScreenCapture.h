@@ -37,6 +37,7 @@ public:
     
     QByteArray captureScreen();
     QSize getScreenSize() const { return m_screenSize; }
+    void setTargetScreenIndex(int index) { m_targetScreenIndex = index; }
     
     // 瓦片相关方法
     bool initializeTileSystem(const QSize &tileSize = QSize(64, 64));
@@ -94,6 +95,7 @@ private:
     // Qt备用捕获
     QScreen *m_primaryScreen;
     int m_frameCounter;
+    int m_targetScreenIndex;
 };
 
 #endif // SCREENCAPTURE_H

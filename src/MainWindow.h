@@ -58,6 +58,8 @@ private slots:
     void onUserImageClicked(const QString &userId, const QString &userName);
     void showMainList();
     void onSetAvatarRequested();  // 新增：设置头像槽函数
+    void onSystemSettingsRequested(); // 新增：打开系统设置
+    void onScreenSelected(int index); // 新增：屏幕选择槽
     void onAvatarSelected(int iconId);  // 新增：头像选择完成槽函数
 
 private:
@@ -77,6 +79,7 @@ private:
     void saveDeviceIdToConfig(const QString& deviceId);  // 保存设备ID到配置文件
     QString getServerAddress() const;  // 获取服务器地址
     void saveServerAddressToConfig(const QString& serverAddress);  // 保存服务器地址到配置文件
+    void saveScreenIndexToConfig(int screenIndex); // 新增：保存屏幕索引到配置
     
     // 登录系统相关方法
     void initializeLoginSystem();
@@ -102,6 +105,7 @@ private:
     
     // 头像设置窗口
     AvatarSettingsWindow *m_avatarSettingsWindow;
+    class SystemSettingsWindow* m_systemSettingsWindow; // 前向声明：系统设置窗口
     
     // 状态管理
     QLabel *m_statusLabel;
@@ -123,6 +127,8 @@ private:
     QString m_userId;
     QString m_userName;
     bool m_isLoggedIn;
+    // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
+    QString m_currentTargetId;
 };
 
 #endif // MAINWINDOW_H

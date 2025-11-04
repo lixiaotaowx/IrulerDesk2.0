@@ -14,6 +14,7 @@ ScreenCapture::ScreenCapture(QObject *parent)
     , m_tileEnabled(false)
     , m_tileDetectionEnabled(true)  // 默认启用瓦片检测
     , m_tileSize(64, 64)
+    , m_targetScreenIndex(-1)
 {
 }
 
@@ -26,8 +27,15 @@ bool ScreenCapture::initialize()
 {
     qDebug() << "[ScreenCapture] 初始化屏幕捕获...";
     
-    // 获取主屏幕信息
-    m_primaryScreen = QGuiApplication::primaryScreen();
+    // 选择目标屏幕（默认主屏幕；如设置了索引则使用对应屏幕）
+    const auto screens = QGuiApplication::screens();
+    if (m_targetScreenIndex >= 0 && m_targetScreenIndex < screens.size()) {
+        m_primaryScreen = screens[m_targetScreenIndex];
+        qDebug() << "[ScreenCapture] 使用配置的屏幕索引:" << m_targetScreenIndex;
+    } else {
+        m_primaryScreen = QGuiApplication::primaryScreen();
+        qDebug() << "[ScreenCapture] 使用主屏幕（未指定索引或越界）";
+    }
     if (!m_primaryScreen) {
         qCritical() << "[ScreenCapture] 无法获取主屏幕";
         return false;
@@ -159,14 +167,43 @@ bool ScreenCapture::initializeD3D11()
     }
     qDebug() << "[ScreenCapture] D3D11设备创建成功";
     
-    // 获取输出
-    hr = m_dxgiAdapter->EnumOutputs(0, m_dxgiOutput.GetAddressOf());
+    // 选择对应DXGI输出：根据Qt屏幕geometry匹配
+    int selectedOutputIndex = 0;
+    RECT targetRect = { m_primaryScreen->geometry().x(), m_primaryScreen->geometry().y(),
+                        m_primaryScreen->geometry().x() + m_primaryScreen->geometry().width(),
+                        m_primaryScreen->geometry().y() + m_primaryScreen->geometry().height() };
+    for (int i = 0; i < 8; ++i) {
+        ComPtr<IDXGIOutput> out;
+        HRESULT hrEnum = m_dxgiAdapter->EnumOutputs(i, out.GetAddressOf());
+        if (FAILED(hrEnum)) {
+            break; // 无更多输出
+        }
+        DXGI_OUTPUT_DESC desc;
+        if (SUCCEEDED(out->GetDesc(&desc))) {
+            int w = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
+            int h = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
+            if (desc.DesktopCoordinates.left == targetRect.left &&
+                desc.DesktopCoordinates.top == targetRect.top &&
+                w == (targetRect.right - targetRect.left) &&
+                h == (targetRect.bottom - targetRect.top)) {
+                m_dxgiOutput = out; // 选择匹配输出
+                selectedOutputIndex = i;
+                break;
+            }
+        }
+    }
+    if (!m_dxgiOutput) {
+        // 未匹配到则回退使用第0个输出
+        hr = m_dxgiAdapter->EnumOutputs(0, m_dxgiOutput.GetAddressOf());
+    } else {
+        hr = S_OK;
+    }
     if (FAILED(hr)) {
         qWarning() << "[ScreenCapture] 获取DXGI输出失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         qWarning() << "[ScreenCapture] 可能原因：没有连接显示器或显卡驱动问题";
         return false;
     }
-    qDebug() << "[ScreenCapture] DXGI输出获取成功";
+    qDebug() << "[ScreenCapture] DXGI输出获取成功，索引:" << selectedOutputIndex;
     
     // 获取Output1接口
     hr = m_dxgiOutput->QueryInterface(__uuidof(IDXGIOutput1), (void**)m_dxgiOutput1.GetAddressOf());
@@ -230,11 +267,7 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     hr = m_dxgiOutputDuplication->AcquireNextFrame(0, &frameInfo, desktopResource.GetAddressOf());
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
         // 没有新帧，返回空数据
-<<<<<<< HEAD
         // qDebug() << "[ScreenCapture] D3D11 WAIT_TIMEOUT - 没有新帧";
-=======
-        // qDebug() << "[ScreenCapture] D3D11 WAIT_TIMEOUT - 没有新帧"; // 已禁用以提升性能
->>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
         return NoNewFrame;
     }
     
@@ -293,12 +326,7 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     // 释放帧
     m_dxgiOutputDuplication->ReleaseFrame();
     
-<<<<<<< HEAD
     // qDebug() << "[ScreenCapture] D3D11捕获成功";
-=======
-    // 性能优化：减少日志输出频率
-    // qDebug() << "[ScreenCapture] D3D11捕获成功"; // 已禁用以提升性能
->>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
     return Success;
 }
 #endif

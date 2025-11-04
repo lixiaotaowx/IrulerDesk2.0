@@ -77,6 +77,9 @@ public:
     
     // 设置显示模式
     void setShowControls(bool show);
+
+    // 显示切换中提示
+    void showSwitchingIndicator(const QString &message = QStringLiteral("切换中..."));
     void setAutoResize(bool autoResize) { m_autoResize = autoResize; }
     
     // 瓦片渲染方法

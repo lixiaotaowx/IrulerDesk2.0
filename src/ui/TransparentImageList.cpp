@@ -576,14 +576,24 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
             QString userId = label->property("userId").toString();
             qDebug() << "[TransparentImageList] 鼠标点击事件 - 对象:" << obj << "用户ID:" << userId << "按钮:" << mouseEvent->button();
             if (!userId.isEmpty()) {
-                // 只有左键点击才触发视频播放
+                // 左键：触发视频播放；右键：弹出上下文菜单
                 if (mouseEvent->button() == Qt::LeftButton) {
                     qDebug() << "[TransparentImageList] 左键点击用户:" << userId;
                     onImageClicked(userId);
+                    return true; // 消耗左键事件
+                } else if (mouseEvent->button() == Qt::RightButton) {
+                    QMenu contextMenu(this);
+                    QAction *showMainWindowAction = contextMenu.addAction("显示主窗口");
+                    connect(showMainWindowAction, &QAction::triggered, this, &TransparentImageList::showMainListRequested);
+                    QAction *setAvatarAction = contextMenu.addAction("设置头像");
+                    connect(setAvatarAction, &QAction::triggered, this, &TransparentImageList::setAvatarRequested);
+                    QAction *systemSettingsAction = contextMenu.addAction("系统设置");
+                    connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
+                    contextMenu.exec(label->mapToGlobal(mouseEvent->pos()));
+                    return true; // 消耗右键事件
                 } else {
-                    qDebug() << "[TransparentImageList] 非左键点击，忽略";
+                    return false; // 其他按键，不拦截，交由默认处理
                 }
-                return true;
             } else {
                 qDebug() << "[TransparentImageList] 用户ID为空，忽略点击";
             }
@@ -627,6 +637,9 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
     
     QAction *setAvatarAction = contextMenu.addAction("设置头像");
     connect(setAvatarAction, &QAction::triggered, this, &TransparentImageList::setAvatarRequested);
+
+    QAction *systemSettingsAction = contextMenu.addAction("系统设置");
+    connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
     
     contextMenu.exec(event->globalPos());
 }

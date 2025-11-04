@@ -43,6 +43,8 @@ set(MAIN_SOURCES
     src/ui/TransparentImageList.h
     src/ui/AvatarSettingsWindow.cpp
     src/ui/AvatarSettingsWindow.h
+    src/ui/SystemSettingsWindow.cpp
+    src/ui/SystemSettingsWindow.h
 )
 
 # 屏幕捕获编码进程源文件

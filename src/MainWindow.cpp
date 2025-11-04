@@ -2,6 +2,7 @@
 #include "VideoWindow.h"
 #include "ui/TransparentImageList.h"
 #include "ui/AvatarSettingsWindow.h"
+#include "ui/SystemSettingsWindow.h"
 #include <QApplication>
 #include <QMessageBox>
 #include <QDir>
@@ -65,6 +66,9 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
         qDebug() << "[WatchRequest] 登录WebSocket未连接，无法发送观看请求";
         return;
     }
+    // 记录当前正在观看的目标设备ID，便于在源切换后重发
+    m_currentTargetId = targetDeviceId;
+    qDebug() << "[WatchRequest] 记录当前目标设备ID:" << m_currentTargetId;
     
     // 构建观看请求消息
     QJsonObject watchRequest;
@@ -362,6 +366,9 @@ void MainWindow::setupUI()
     // 连接透明图片列表的设置头像信号
     connect(m_transparentImageList, &TransparentImageList::setAvatarRequested,
             this, &MainWindow::onSetAvatarRequested);
+    // 连接透明图片列表的系统设置信号
+    connect(m_transparentImageList, &TransparentImageList::systemSettingsRequested,
+            this, &MainWindow::onSystemSettingsRequested);
     
     qDebug() << "[MainWindow] ========== UI设置完成 ==========";
 }
@@ -1382,10 +1389,14 @@ void MainWindow::onSetAvatarRequested()
     // 发送观看请求
     // 显示头像设置窗口
     m_avatarSettingsWindow->show();
-    // 启动视频接收
-    startVideoReceiving(userId);
-    
-    qDebug() << "[TransparentImageList] 已为用户" << userId << "启动视频观看";
+    // 启动视频接收（使用当前选中的用户ID）
+    QString currentUserId = m_transparentImageList ? m_transparentImageList->getCurrentUserId() : QString();
+    if (!currentUserId.isEmpty()) {
+        startVideoReceiving(currentUserId);
+        qDebug() << "[TransparentImageList] 已为用户" << currentUserId << "启动视频观看";
+    } else {
+        qWarning() << "[MainWindow] 当前用户ID为空，无法启动视频观看";
+    }
     m_avatarSettingsWindow->activateWindow();
 }
 
@@ -1423,4 +1434,100 @@ void MainWindow::onAvatarSelected(int iconId)
     // if (m_avatarSettingsWindow) {
     //     m_avatarSettingsWindow->hide();
     // }
+}
+
+void MainWindow::onSystemSettingsRequested()
+{
+    qDebug() << "[MainWindow] 收到系统设置请求";
+    if (!m_systemSettingsWindow) {
+        m_systemSettingsWindow = new SystemSettingsWindow(this);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::screenSelected,
+                this, &MainWindow::onScreenSelected);
+    }
+    m_systemSettingsWindow->show();
+}
+
+void MainWindow::onScreenSelected(int index)
+{
+    qDebug() << "[MainWindow] 用户选择屏幕索引:" << index;
+    saveScreenIndexToConfig(index);
+
+    // 仅重启捕获进程，立即切换源头
+    QString appDir = QApplication::applicationDirPath();
+    QString captureExe = appDir + "/CaptureProcess.exe";
+
+    if (m_captureProcess) {
+        qDebug() << "[MainWindow] 正在重启捕获进程以应用屏幕切换";
+        m_captureProcess->terminate();
+        if (!m_captureProcess->waitForFinished(2000)) {
+            m_captureProcess->kill();
+        }
+        m_captureProcess->deleteLater();
+        m_captureProcess = nullptr;
+    }
+
+    m_captureProcess = new QProcess(this);
+    connect(m_captureProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &MainWindow::onCaptureProcessFinished);
+    m_captureProcess->start(captureExe);
+
+    // 切换源时在视频窗口显示“切换中...”提示
+    if (m_videoWindow) {
+        auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
+        if (videoWidget) {
+            videoWidget->showSwitchingIndicator(QStringLiteral("切换中..."));
+        }
+    }
+
+    // 源切换后，主动重发观看请求，确保立即恢复推流并刷新播放
+    if (!m_currentTargetId.isEmpty()) {
+        qDebug() << "[MainWindow] 屏幕切换后准备重发观看请求，目标设备ID:" << m_currentTargetId;
+        // 为避免采集进程尚未完全初始化导致请求过早，轻微延迟后发送
+        QTimer::singleShot(800, this, [this]() {
+            if (!m_currentTargetId.isEmpty()) {
+                qDebug() << "[MainWindow] 重发watch_request以恢复推流，目标设备ID:" << m_currentTargetId;
+                sendWatchRequest(m_currentTargetId);
+            }
+        });
+    }
+}
+
+void MainWindow::saveScreenIndexToConfig(int screenIndex)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+
+    QStringList configLines;
+    bool exists = false;
+
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("screen_index=")) {
+                configLines << QString("screen_index=%1").arg(screenIndex);
+                exists = true;
+            } else if (!line.startsWith("#")) {
+                configLines << line;
+            }
+        }
+        configFile.close();
+    }
+
+    if (!exists) {
+        configLines << QString("screen_index=%1").arg(screenIndex);
+    }
+
+    configLines << "# Select which screen to capture: 0-based index";
+
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString& line : configLines) {
+            out << line << "\n";
+        }
+        configFile.close();
+        qDebug() << "[MainWindow] 已保存screen_index到配置:" << screenIndex;
+    } else {
+        qWarning() << "[MainWindow] 无法写入配置文件:" << configFilePath;
+    }
 }

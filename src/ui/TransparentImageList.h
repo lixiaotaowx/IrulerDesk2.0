@@ -63,6 +63,7 @@ signals:
     void userImageClicked(const QString &userId, const QString &userName);
     void showMainListRequested();
     void setAvatarRequested();  // 新增：设置头像请求信号
+    void systemSettingsRequested(); // 新增：系统设置请求信号
 
 private:
     struct UserImageItem {

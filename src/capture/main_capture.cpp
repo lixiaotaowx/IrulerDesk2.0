@@ -110,6 +110,35 @@ QString getServerAddressFromConfig()
     return "123.207.222.92:8765";
 }
 
+// 新增：读取屏幕索引
+int getScreenIndexFromConfig()
+{
+    QStringList configPaths;
+    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/app_config.txt";
+    configPaths << QDir::currentPath() + "/config/app_config.txt";
+    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+
+    for (const QString& path : configPaths) {
+        QFile configFile(path);
+        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&configFile);
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (line.startsWith("screen_index=")) {
+                    bool ok = false;
+                    int idx = line.mid(QString("screen_index=").length()).toInt(&ok);
+                    if (ok && idx >= 0) {
+                        configFile.close();
+                        return idx;
+                    }
+                }
+            }
+            configFile.close();
+        }
+    }
+    return 0; // 默认主屏索引0
+}
+
 int main(int argc, char *argv[])
 {
 #ifdef _WIN32
@@ -133,8 +162,8 @@ int main(int argc, char *argv[])
     qDebug() << "[CaptureProcess] ========== 启动屏幕捕获进程 ==========";
     
     // 创建屏幕捕获对象
-    // qDebug() << "[CaptureProcess] 初始化屏幕捕获模块...";
     ScreenCapture *capture = new ScreenCapture(&app);
+    capture->setTargetScreenIndex(getScreenIndexFromConfig());
     if (!capture->initialize()) {
         qCritical() << "[CaptureProcess] 屏幕捕获初始化失败";
         return -1;
@@ -145,7 +174,7 @@ int main(int argc, char *argv[])
     qDebug() << "[Main] 初始化瓦片系统...";
     
     // 演示不同瓦片大小的性能对比
-    QSize screenSize = QSize(1920, 1080); // 假设屏幕尺寸
+    QSize screenSize = capture->getScreenSize();
     
     qDebug() << "[Main] === 瓦片大小性能分析 ===";
     qDebug() << "[Main] 64x64瓦片数量:" << (1920/64 + 1) * (1080/64 + 1) << "个";
@@ -260,15 +289,9 @@ int main(int argc, char *argv[])
     // ==================== 序列化测试结束 ====================
     
     // 创建VP9编码器
-<<<<<<< HEAD
-    QSize screenSize = capture->getScreenSize();
-    // qDebug() << "[CaptureProcess] 屏幕尺寸:" << screenSize.width() << "x" << screenSize.height();
-    // qDebug() << "[CaptureProcess] 初始化VP9编码器...";
-=======
     QSize actualScreenSize = capture->getScreenSize();
     qDebug() << "[CaptureProcess] 屏幕尺寸:" << actualScreenSize.width() << "x" << actualScreenSize.height();
     qDebug() << "[CaptureProcess] 初始化VP9编码器...";
->>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
     VP9Encoder *encoder = new VP9Encoder(&app);
     if (!encoder->initialize(actualScreenSize.width(), actualScreenSize.height(), 60)) {
         qCritical() << "[CaptureProcess] VP9编码器初始化失败";
@@ -356,20 +379,13 @@ int main(int argc, char *argv[])
     
     // 连接推流控制信号
     QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer]() {
-<<<<<<< HEAD
-        staticMouseCapture->startCapture();
-        isCapturing = true;
-        captureTimer->start(16); // 60fps = 16ms间隔
-        // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
-=======
         if (!isCapturing) {
             isCapturing = true;
             tileMetadataSent = false; // 重置瓦片元数据发送标志
             captureTimer->start(33); // 30fps
             staticMouseCapture->startCapture(); // 开始鼠标捕获
-            qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
+            // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
         }
->>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
     });
     
     QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer]() {
@@ -387,18 +403,13 @@ int main(int argc, char *argv[])
         auto captureStartTime = std::chrono::high_resolution_clock::now();
         QByteArray frameData = staticCapture->captureScreen();
         if (!frameData.isEmpty()) {
-            auto captureEndTime = std::chrono::high_resolution_clock::now();
-            auto captureLatency = std::chrono::duration_cast<std::chrono::microseconds>(captureEndTime - captureStartTime).count();
-<<<<<<< HEAD
-            
-            frameCount++;
-            // 只在延迟过高时输出警告
-            if (captureLatency > 20000) { // 超过20ms时输出警告
-                qDebug() << "[延迟监控] 屏幕捕获耗时过长:" << captureLatency << "μs";
-            }
-=======
-            // qDebug() << "[延迟监控] 屏幕捕获完成，时间戳:" << timestamp << "μs，捕获耗时:" << captureLatency << "μs"; // 已禁用以提升性能
->>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
+        auto captureEndTime = std::chrono::high_resolution_clock::now();
+        auto captureLatency = std::chrono::duration_cast<std::chrono::microseconds>(captureEndTime - captureStartTime).count();
+        frameCount++;
+        // 只在延迟过高时输出警告
+        if (captureLatency > 20000) { // 超过20ms时输出警告
+            qDebug() << "[延迟监控] 屏幕捕获耗时过长:" << captureLatency << "μs";
+        }
             
             // 瓦片检测和发送逻辑
             if (staticCapture->isTileDetectionEnabled()) {

@@ -58,6 +58,10 @@ set(CAPTURE_SOURCES
     src/capture/WebSocketSender.h
     src/capture/MouseCapture.cpp
     src/capture/MouseCapture.h
+    src/capture/TileManager.cpp
+    src/capture/TileManager.h
+    src/capture/PerformanceMonitor.cpp
+    src/capture/PerformanceMonitor.h
 )
 
 # 解码播放进程源文件
@@ -185,3 +189,7 @@ if(WIN32)
         COMMENT "Copying avatar files to output directory"
     )
 endif()
+
+# 可选：添加测试子目录（仅在需要时启用）
+# 取消注释下面这行来编译测试程序：
+add_subdirectory(tests)

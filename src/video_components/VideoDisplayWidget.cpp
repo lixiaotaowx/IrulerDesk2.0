@@ -18,6 +18,9 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     , m_showControls(true)
     , m_autoResize(false)
     , m_serverUrl("")  // 默认为空，将通过startReceiving方法设置正确的服务器URL
+    , m_tileMode(false)  // 默认关闭瓦片模式
+    , m_tileTimeout(5000)  // 瓦片超时时间5秒
+    , m_compositionInProgress(false)
 {
     // 设置控制台编码
     SetConsoleOutputCP(CP_UTF8);
@@ -69,10 +72,52 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     connect(m_receiver.get(), &WebSocketReceiver::mousePositionReceived,
             this, &VideoDisplayWidget::onMousePositionReceived);
     
+    // 连接瓦片相关信号
+    connect(m_receiver.get(), &WebSocketReceiver::tileCompleted,
+            this, [this](int tileId, const QByteArray &completeData) {
+                // 计算瓦片在屏幕上的位置
+                QRect sourceRect = calculateTileSourceRect(tileId);
+                qint64 timestamp = QDateTime::currentMSecsSinceEpoch();
+                
+                // 渲染瓦片
+                renderTile(tileId, completeData, sourceRect, timestamp);
+                
+                qDebug() << "[VideoDisplayWidget] 接收到完整瓦片" << tileId << "，数据大小:" << completeData.size();
+            });
+    
+    connect(m_receiver.get(), &WebSocketReceiver::tileUpdateReceived,
+            this, [this](const WebSocketReceiver::TileUpdate &update) {
+                QRect updateRect(update.x, update.y, update.width, update.height);
+                updateTile(update.tileId, update.deltaData, updateRect, update.timestamp);
+                
+                qDebug() << "[VideoDisplayWidget] 接收到瓦片更新" << update.tileId;
+            });
+    
+    connect(m_receiver.get(), &WebSocketReceiver::tileMetadataReceived,
+            this, [this](const WebSocketReceiver::TileMetadata &metadata) {
+                // 如果是第一个瓦片元数据，设置瓦片配置
+                if (m_tileComposition.frameSize.isEmpty()) {
+                    // 根据瓦片信息推算完整帧大小
+                    QSize frameSize(metadata.x + metadata.width, metadata.y + metadata.height);
+                    QSize tileSize(metadata.width, metadata.height);
+                    setTileConfiguration(frameSize, tileSize);
+                    
+                    // 启用瓦片模式
+                    setTileMode(true);
+                    
+                    qDebug() << "[VideoDisplayWidget] 启用瓦片模式，帧大小:" << frameSize << "，瓦片大小:" << tileSize;
+                }
+            });
+    
     // 统计定时器
     m_statsTimer = new QTimer(this);
     connect(m_statsTimer, &QTimer::timeout, this, &VideoDisplayWidget::updateStatsDisplay);
     m_statsTimer->start(1000); // 每秒更新一次统计
+    
+    // 瓦片清理定时器
+    m_tileCleanupTimer = new QTimer(this);
+    connect(m_tileCleanupTimer, &QTimer::timeout, this, &VideoDisplayWidget::cleanupOldTiles);
+    m_tileCleanupTimer->start(2000); // 每2秒清理一次过期瓦片
     
     qDebug() << "VideoDisplayWidget 创建完成";
 }
@@ -417,4 +462,212 @@ void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position
     painter.setPen(pen);
     painter.setBrush(Qt::NoBrush);
     painter.drawPolygon(arrow);
+}
+
+// ==================== 瓦片渲染相关方法实现 ====================
+
+void VideoDisplayWidget::renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp)
+{
+    QWriteLocker locker(&m_tileReadWriteLock);
+    
+    // 创建瓦片数据
+    TileData tile;
+    tile.tileId = tileId;
+    tile.sourceRect = sourceRect;
+    tile.targetRect = calculateTileTargetRect(tileId);
+    tile.timestamp = timestamp;
+    tile.isDirty = true;
+    
+    // 将字节数据转换为QPixmap
+    QPixmap pixmap;
+    if (pixmap.loadFromData(tileData)) {
+        tile.pixmap = pixmap;
+        
+        // 更新瓦片映射
+        m_tileComposition.tiles[tileId] = tile;
+        m_tileComposition.lastUpdateTime = QDateTime::currentMSecsSinceEpoch();
+        
+        // 更新统计信息
+        m_stats.totalTiles = m_tileComposition.tiles.size();
+        m_stats.lastTileUpdate = timestamp;
+        
+        qDebug() << "[VideoDisplayWidget] 渲染瓦片" << tileId << "，源区域:" << sourceRect << "，时间戳:" << timestamp;
+        
+        // 触发合成
+        if (m_tileMode) {
+            composeTiles();
+        }
+    } else {
+        qWarning() << "[VideoDisplayWidget] 瓦片数据解析失败，瓦片ID:" << tileId;
+    }
+}
+
+void VideoDisplayWidget::updateTile(int tileId, const QByteArray &deltaData, const QRect &updateRect, qint64 timestamp)
+{
+    QWriteLocker locker(&m_tileReadWriteLock);
+    
+    auto it = m_tileComposition.tiles.find(tileId);
+    if (it != m_tileComposition.tiles.end()) {
+        TileData &tile = it.value();
+        
+        // 应用增量更新（这里简化处理，实际应该应用差分数据）
+        QPixmap deltaPixmap;
+        if (deltaPixmap.loadFromData(deltaData)) {
+            // 在现有瓦片上绘制增量数据
+            QPainter painter(&tile.pixmap);
+            painter.drawPixmap(updateRect.topLeft(), deltaPixmap);
+            
+            tile.timestamp = timestamp;
+            tile.isDirty = true;
+            
+            qDebug() << "[VideoDisplayWidget] 更新瓦片" << tileId << "，更新区域:" << updateRect << "，时间戳:" << timestamp;
+            
+            // 触发合成
+            if (m_tileMode) {
+                composeTiles();
+            }
+        }
+    } else {
+        qWarning() << "[VideoDisplayWidget] 尝试更新不存在的瓦片:" << tileId;
+    }
+}
+
+void VideoDisplayWidget::setTileConfiguration(const QSize &frameSize, const QSize &tileSize)
+{
+    QWriteLocker locker(&m_tileReadWriteLock);
+    
+    m_tileComposition.frameSize = frameSize;
+    m_tileComposition.tileSize = tileSize;
+    m_tileComposition.tilesPerRow = (frameSize.width() + tileSize.width() - 1) / tileSize.width();
+    m_tileComposition.tilesPerColumn = (frameSize.height() + tileSize.height() - 1) / tileSize.height();
+    
+    // 清空现有瓦片
+    m_tileComposition.tiles.clear();
+    
+    // 初始化合成帧
+    m_compositeFrame = QPixmap(frameSize);
+    m_compositeFrame.fill(Qt::black);
+    
+    qDebug() << "[VideoDisplayWidget] 设置瓦片配置 - 帧大小:" << frameSize 
+             << "，瓦片大小:" << tileSize 
+             << "，瓦片网格:" << m_tileComposition.tilesPerRow << "x" << m_tileComposition.tilesPerColumn;
+}
+
+void VideoDisplayWidget::clearTiles()
+{
+    QWriteLocker locker(&m_tileReadWriteLock);
+    
+    m_tileComposition.tiles.clear();
+    m_compositeFrame.fill(Qt::black);
+    
+    // 重置统计信息
+    m_stats.totalTiles = 0;
+    m_stats.activeTiles = 0;
+    m_stats.dirtyTiles = 0;
+    
+    qDebug() << "[VideoDisplayWidget] 清空所有瓦片";
+}
+
+void VideoDisplayWidget::composeTiles()
+{
+    if (m_compositionInProgress.exchange(true)) {
+        return; // 已经在合成中，避免重复合成
+    }
+    
+    QReadLocker locker(&m_tileReadWriteLock);
+    
+    if (m_compositeFrame.isNull()) {
+        m_compositionInProgress = false;
+        return;
+    }
+    
+    QPainter painter(&m_compositeFrame);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    
+    int dirtyCount = 0;
+    int activeCount = 0;
+    
+    // 遍历所有瓦片并合成
+    for (auto it = m_tileComposition.tiles.begin(); it != m_tileComposition.tiles.end(); ++it) {
+        const TileData &tile = it.value();
+        activeCount++;
+        
+        if (tile.isDirty) {
+            dirtyCount++;
+            painter.drawPixmap(tile.targetRect, tile.pixmap);
+            
+            // 标记为已处理（注意：这里需要去掉const才能修改）
+            const_cast<TileData&>(tile).isDirty = false;
+        }
+    }
+    
+    // 更新统计信息
+    m_stats.activeTiles = activeCount;
+    m_stats.dirtyTiles = dirtyCount;
+    
+    // 如果有鼠标位置，绘制鼠标光标
+    if (m_hasMousePosition) {
+        drawMouseCursor(m_compositeFrame, m_mousePosition);
+    }
+    
+    // 更新显示
+    QMetaObject::invokeMethod(this, [this]() {
+        if (m_videoLabel && !m_compositeFrame.isNull()) {
+            QPixmap scaledPixmap = m_compositeFrame.scaled(m_videoLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            m_videoLabel->setPixmap(scaledPixmap);
+            m_stats.framesDisplayed++;
+        }
+    }, Qt::QueuedConnection);
+    
+    m_compositionInProgress = false;
+}
+
+QRect VideoDisplayWidget::calculateTileTargetRect(int tileId) const
+{
+    if (m_tileComposition.tilesPerRow <= 0) {
+        return QRect();
+    }
+    
+    int row = tileId / m_tileComposition.tilesPerRow;
+    int col = tileId % m_tileComposition.tilesPerRow;
+    
+    int x = col * m_tileComposition.tileSize.width();
+    int y = row * m_tileComposition.tileSize.height();
+    
+    return QRect(x, y, m_tileComposition.tileSize.width(), m_tileComposition.tileSize.height());
+}
+
+QRect VideoDisplayWidget::calculateTileSourceRect(int tileId) const
+{
+    // 源区域与目标区域相同（1:1映射）
+    return calculateTileTargetRect(tileId);
+}
+
+void VideoDisplayWidget::markTilesDirty()
+{
+    QWriteLocker locker(&m_tileReadWriteLock);
+    
+    for (auto it = m_tileComposition.tiles.begin(); it != m_tileComposition.tiles.end(); ++it) {
+        it.value().isDirty = true;
+    }
+}
+
+void VideoDisplayWidget::cleanupOldTiles()
+{
+    QWriteLocker locker(&m_tileReadWriteLock);
+    
+    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+    
+    auto it = m_tileComposition.tiles.begin();
+    while (it != m_tileComposition.tiles.end()) {
+        if (currentTime - it.value().timestamp > m_tileTimeout) {
+            qDebug() << "[VideoDisplayWidget] 清理过期瓦片:" << it.key();
+            it = m_tileComposition.tiles.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // 更新统计信息
+    m_stats.totalTiles = m_tileComposition.tiles.size();
 }

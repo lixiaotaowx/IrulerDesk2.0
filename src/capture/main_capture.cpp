@@ -17,6 +17,7 @@
 #include "VP9Encoder.h"
 #include "WebSocketSender.h"
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
+#include "PerformanceMonitor.h" // 新增：性能监控头文件
 
 // 从配置文件读取设备ID
 QString getDeviceIdFromConfig()
@@ -140,12 +141,136 @@ int main(int argc, char *argv[])
     }
     // qDebug() << "[CaptureProcess] 屏幕捕获模块初始化成功";
     
+    // 初始化瓦片系统
+    qDebug() << "[Main] 初始化瓦片系统...";
+    
+    // 演示不同瓦片大小的性能对比
+    QSize screenSize = QSize(1920, 1080); // 假设屏幕尺寸
+    
+    qDebug() << "[Main] === 瓦片大小性能分析 ===";
+    qDebug() << "[Main] 64x64瓦片数量:" << (1920/64 + 1) * (1080/64 + 1) << "个";
+    qDebug() << "[Main] 96x96瓦片数量:" << (1920/96 + 1) * (1080/96 + 1) << "个";
+    qDebug() << "[Main] 128x128瓦片数量:" << (1920/128 + 1) * (1080/128 + 1) << "个";
+    
+    // 计算推荐的瓦片大小
+    QSize optimalSize = TileManager::calculateOptimalTileSize(screenSize);
+    int recommendedCount = TileManager::getRecommendedTileCount(screenSize);
+    qDebug() << "[Main] 推荐瓦片大小:" << optimalSize << "瓦片数量:" << recommendedCount << "个";
+    
+    // 启用自适应瓦片大小
+    capture->getTileManager().setAdaptiveTileSize(true);
+    qDebug() << "[Main] 已启用自适应瓦片大小";
+    
+    // 使用推荐的瓦片大小初始化
+    capture->initializeTileSystem(screenSize, optimalSize);
+    capture->enableTileCapture(true);
+    
+    // 演示瓦片检测开关控制
+    qDebug() << "[Main] 瓦片检测开关演示:";
+    qDebug() << "[Main] 当前瓦片检测状态:" << (capture->isTileDetectionEnabled() ? "启用" : "禁用");
+    
+    // 可以通过以下方式控制瓦片检测
+    // capture->setTileDetectionEnabled(false);  // 禁用瓦片检测
+    // capture->toggleTileDetection();           // 切换瓦片检测状态
+    
+    qDebug() << "[Main] 瓦片系统初始化完成";
+    qDebug() << "[Main] 总瓦片数:" << capture->getTileCount();
+    qDebug() << "[Main] 瓦片检测已启用";
+    
+    // ==================== 瓦片序列化功能测试 ====================
+    qDebug() << "[Main] 开始测试瓦片序列化功能...";
+    
+    // 获取瓦片管理器进行测试
+    TileManager& tileManager = capture->getTileManager();
+    
+    // 测试1: 序列化单个瓦片信息
+    qDebug() << "[Main] ========== 测试1: 序列化单个瓦片信息 ==========";
+    const QVector<TileInfo>& allTiles = tileManager.getTiles();
+    if (!allTiles.isEmpty()) {
+        // 创建一个测试瓦片，设置有效的哈希值
+        TileInfo originalTile = allTiles.first();
+        originalTile.hash = 0x12345678; // 设置一个有效的测试哈希值
+        qDebug() << "[Main] 原始瓦片信息: x=" << originalTile.x << "y=" << originalTile.y 
+                 << "width=" << originalTile.width << "height=" << originalTile.height 
+                 << "hash=" << originalTile.hash;
+        
+        QByteArray tileInfoData = tileManager.serializeTileInfo(originalTile);
+        qDebug() << "[Main] 瓦片信息序列化数据大小:" << tileInfoData.size() << "字节";
+        
+        if (tileInfoData.isEmpty()) {
+            qDebug() << "[Main] 错误: 序列化数据为空";
+        } else {
+            // 反序列化测试
+            TileInfo deserializedTile = tileManager.deserializeTileInfo(tileInfoData);
+            qDebug() << "[Main] 反序列化瓦片信息: x=" << deserializedTile.x << "y=" << deserializedTile.y 
+                     << "width=" << deserializedTile.width << "height=" << deserializedTile.height 
+                     << "hash=" << deserializedTile.hash;
+            
+            bool infoTestPassed = (deserializedTile.x == originalTile.x && 
+                                   deserializedTile.y == originalTile.y &&
+                                   deserializedTile.width == originalTile.width &&
+                                   deserializedTile.height == originalTile.height &&
+                                   deserializedTile.hash == originalTile.hash);
+            qDebug() << "[Main] 瓦片信息序列化测试结果:" << (infoTestPassed ? "✓ 通过" : "✗ 失败");
+        }
+    } else {
+        qDebug() << "[Main] 错误: 没有可用的瓦片进行测试";
+    }
+    
+    // 测试2: 序列化瓦片数据（模拟场景）
+    qDebug() << "[Main] ========== 测试2: 序列化瓦片数据 ==========";
+    QVector<int> testIndices = {0, 1, 2}; // 测试前3个瓦片
+    QImage testImage(100, 100, QImage::Format_RGB32);
+    testImage.fill(Qt::blue); // 填充蓝色作为测试数据
+    qDebug() << "[Main] 测试图像信息: 大小=" << testImage.size() << "格式=" << testImage.format();
+    
+    QByteArray serializedData = tileManager.serializeTileData(testIndices, testImage);
+    qDebug() << "[Main] 瓦片数据序列化大小:" << serializedData.size() << "字节";
+    
+    if (serializedData.isEmpty()) {
+        qDebug() << "[Main] 错误: 序列化数据为空";
+    } else {
+        // 反序列化测试
+        QVector<TileInfo> deserializedTiles;
+        QVector<QImage> deserializedImages;
+        bool deserializeSuccess = tileManager.deserializeTileData(serializedData, deserializedTiles, deserializedImages);
+        
+        qDebug() << "[Main] 瓦片数据反序列化结果:" << (deserializeSuccess ? "✓ 成功" : "✗ 失败");
+        qDebug() << "[Main] 反序列化瓦片数:" << deserializedTiles.size() << "期望:" << testIndices.size();
+        qDebug() << "[Main] 反序列化图像数:" << deserializedImages.size() << "期望:" << testIndices.size();
+        
+        // 验证数据完整性
+        bool dataIntegrityTest = (deserializedTiles.size() == testIndices.size() && 
+                                  deserializedImages.size() == testIndices.size());
+        qDebug() << "[Main] 数据完整性测试结果:" << (dataIntegrityTest ? "✓ 通过" : "✗ 失败");
+        
+        // 验证图像数据
+        if (!deserializedImages.isEmpty()) {
+            const QImage& firstImage = deserializedImages.first();
+            qDebug() << "[Main] 第一个反序列化图像: 大小=" << firstImage.size() << "格式=" << firstImage.format();
+            bool imageDataValid = (firstImage.size() == testImage.size() && 
+                                   firstImage.format() == testImage.format());
+            qDebug() << "[Main] 图像数据验证:" << (imageDataValid ? "✓ 通过" : "✗ 失败");
+        }
+    }
+    
+    qDebug() << "[Main] ========================================";
+    qDebug() << "[Main] 瓦片序列化功能测试完成";
+    qDebug() << "[Main] ========================================";
+    // ==================== 序列化测试结束 ====================
+    
     // 创建VP9编码器
+<<<<<<< HEAD
     QSize screenSize = capture->getScreenSize();
     // qDebug() << "[CaptureProcess] 屏幕尺寸:" << screenSize.width() << "x" << screenSize.height();
     // qDebug() << "[CaptureProcess] 初始化VP9编码器...";
+=======
+    QSize actualScreenSize = capture->getScreenSize();
+    qDebug() << "[CaptureProcess] 屏幕尺寸:" << actualScreenSize.width() << "x" << actualScreenSize.height();
+    qDebug() << "[CaptureProcess] 初始化VP9编码器...";
+>>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
     VP9Encoder *encoder = new VP9Encoder(&app);
-    if (!encoder->initialize(screenSize.width(), screenSize.height(), 60)) {
+    if (!encoder->initialize(actualScreenSize.width(), actualScreenSize.height(), 60)) {
         qCritical() << "[CaptureProcess] VP9编码器初始化失败";
         return -1;
     }
@@ -179,6 +304,24 @@ int main(int argc, char *argv[])
     }
     // qDebug() << "[CaptureProcess] 正在连接到WebSocket服务器:" << serverUrl;
     
+    // 创建性能监控器
+    qDebug() << "[CaptureProcess] 初始化性能监控器...";
+    PerformanceMonitor *perfMonitor = new PerformanceMonitor(&app);
+    
+    // 注册WebSocketSender到性能监控器
+    perfMonitor->registerWebSocketSender(sender);
+    
+    // 注册TileManager到性能监控器
+    perfMonitor->registerTileManager(&capture->getTileManager());
+    
+    // 设置性能监控参数
+    perfMonitor->setVerboseLogging(true);   // 启用详细日志
+    
+    // 启动性能监控（直接传递10秒间隔）
+    perfMonitor->startMonitoring(10000); // 每10秒输出一次性能报告
+    qDebug() << "[CaptureProcess] 性能监控器已启动，报告间隔: 10秒";
+    qDebug() << "[CaptureProcess] 已注册WebSocketSender和TileManager到性能监控器";
+    
     // 连接信号槽
     // qDebug() << "[CaptureProcess] 连接编码器和服务器信号槽...";
     QObject::connect(encoder, &VP9Encoder::frameEncoded,
@@ -207,14 +350,26 @@ int main(int argc, char *argv[])
     static ScreenCapture *staticCapture = capture;
     static VP9Encoder *staticEncoder = encoder;
     static MouseCapture *staticMouseCapture = mouseCapture; // 新增：静态鼠标捕获指针
+    static WebSocketSender *staticSender = sender; // 新增：静态WebSocket发送器指针
     static bool isCapturing = false; // 控制捕获状态
+    static bool tileMetadataSent = false; // 瓦片元数据发送标志
     
     // 连接推流控制信号
     QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer]() {
+<<<<<<< HEAD
         staticMouseCapture->startCapture();
         isCapturing = true;
         captureTimer->start(16); // 60fps = 16ms间隔
         // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
+=======
+        if (!isCapturing) {
+            isCapturing = true;
+            tileMetadataSent = false; // 重置瓦片元数据发送标志
+            captureTimer->start(33); // 30fps
+            staticMouseCapture->startCapture(); // 开始鼠标捕获
+            qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
+        }
+>>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
     });
     
     QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer]() {
@@ -234,13 +389,63 @@ int main(int argc, char *argv[])
         if (!frameData.isEmpty()) {
             auto captureEndTime = std::chrono::high_resolution_clock::now();
             auto captureLatency = std::chrono::duration_cast<std::chrono::microseconds>(captureEndTime - captureStartTime).count();
+<<<<<<< HEAD
             
             frameCount++;
             // 只在延迟过高时输出警告
             if (captureLatency > 20000) { // 超过20ms时输出警告
                 qDebug() << "[延迟监控] 屏幕捕获耗时过长:" << captureLatency << "μs";
             }
+=======
+            // qDebug() << "[延迟监控] 屏幕捕获完成，时间戳:" << timestamp << "μs，捕获耗时:" << captureLatency << "μs"; // 已禁用以提升性能
+>>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
             
+            // 瓦片检测和发送逻辑
+            if (staticCapture->isTileDetectionEnabled()) {
+                // 执行瓦片检测
+                staticCapture->performTileDetection(frameData);
+                
+                // 发送瓦片元数据（仅在第一次或瓦片配置改变时）
+                if (!tileMetadataSent) {
+                    TileManager& tileManager = staticCapture->getTileManager();
+                    if (tileManager.isInitialized()) {
+                        QVector<TileInfo> allTiles = tileManager.getAllTiles();
+                        if (!allTiles.isEmpty()) {
+                            staticSender->sendTileMetadata(allTiles);
+                            tileMetadataSent = true;
+                            qDebug() << "[CaptureProcess] 发送瓦片元数据，总瓦片数:" << allTiles.size();
+                        }
+                    }
+                }
+                
+                // 发送变化的瓦片数据
+                TileManager& tileManager = staticCapture->getTileManager();
+                QVector<TileInfo> changedTiles = tileManager.getChangedTiles();
+                if (!changedTiles.isEmpty()) {
+                    // 获取变化瓦片的索引
+                    QVector<int> changedIndices;
+                    for (const TileInfo& tile : changedTiles) {
+                        changedIndices.append(tile.x / tileManager.getTileWidth() * tileManager.getTileCountY() + 
+                                            tile.y / tileManager.getTileHeight());
+                    }
+                    
+                    // 将帧数据转换为QImage进行瓦片提取
+                    QSize screenSize = staticCapture->getScreenSize();
+                    QImage frameImage(reinterpret_cast<const uchar*>(frameData.constData()), 
+                                    screenSize.width(), screenSize.height(), 
+                                    QImage::Format_ARGB32);
+                    
+                    // 序列化变化的瓦片数据
+                    QByteArray serializedData = tileManager.serializeTileData(changedIndices, frameImage);
+                    if (!serializedData.isEmpty()) {
+                        staticSender->sendTileData(changedIndices, serializedData);
+                        qDebug() << "[CaptureProcess] 发送变化瓦片数据，瓦片数:" << changedIndices.size() 
+                                << "数据大小:" << serializedData.size() << "字节";
+                    }
+                }
+            }
+            
+            // 继续正常的VP9编码流程
             staticEncoder->encode(frameData);
         }
     });

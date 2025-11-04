@@ -72,6 +72,7 @@ void MouseCapture::checkMousePosition()
         QString jsonMessage = createMousePositionMessage(currentPosition);
         emit mousePositionMessage(jsonMessage);
         
+<<<<<<< HEAD
         // 移除频繁的鼠标位置更新调试输出以提升性能
         // static int positionUpdateCount = 0;
         // positionUpdateCount++;
@@ -79,6 +80,14 @@ void MouseCapture::checkMousePosition()
         //     qDebug() << "[MouseCapture] 鼠标位置更新:" << currentPosition 
         //              << "，已发送" << positionUpdateCount << "次位置更新";
         // }
+=======
+        // 每100次位置更新输出一次调试信息（避免日志过多）
+        static int positionUpdateCount = 0;
+        positionUpdateCount++;
+        if (positionUpdateCount % 100 == 0) {
+            // qDebug() << "[MouseCapture] 鼠标位置更新:" << currentPosition << "，已发送" << positionUpdateCount << "次位置更新"; // 已禁用以提升性能
+        }
+>>>>>>> 4356bdf52bdea2b7793d9e79a78c3cd93a2305da
     }
 }
 

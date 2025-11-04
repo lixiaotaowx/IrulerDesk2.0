@@ -1,0 +1,21 @@
+# Build and generated artifacts
+/build/
+/test_tile_cmake/
+/.qt/
+
+# CMake and Qt autogen
+/CMakeFiles/
+/CMakeCache.txt
+/*_autogen/
+
+# Binaries and intermediates
+*.exe
+*.dll
+*.obj
+*.pdb
+*.tlog
+*.log
+
+# MSVC project intermediates in build folders
+/build/bin/
+/build/x64/

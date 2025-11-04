@@ -1,5 +1,0 @@
-G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/ScreenStreamApp.dir
-G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/CaptureProcess.dir
-G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/PlayerProcess.dir
-G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/ALL_BUILD.dir
-G:/c/2025/lunzi/IrulerDeskpro/build/CMakeFiles/ZERO_CHECK.dir

@@ -43,6 +43,18 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
             m_strokes.push_back(m_currentStroke);
             m_currentStroke.clear();
         }
+    } else if (phase == "undo") {
+        // 撤销上一笔
+        if (!m_currentStroke.isEmpty()) {
+            // 正在绘制时撤销当前笔
+            m_currentStroke.clear();
+        } else if (!m_strokes.isEmpty()) {
+            m_strokes.removeLast();
+        }
+    } else if (phase == "clear") {
+        // 清空所有笔划
+        clear();
+        return; // clear内部已调用update
     }
     update();
 }

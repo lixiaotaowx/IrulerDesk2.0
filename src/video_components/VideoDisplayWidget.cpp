@@ -11,6 +11,7 @@
 #include <QPainter>
 #include <QPolygon>
 #include <QMouseEvent>
+#include <QShortcut>
 #include <windows.h>
 
 VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
@@ -26,6 +27,13 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 设置控制台编码
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+    // 检测系统是否交换了鼠标左右键（Windows）
+#ifdef _WIN32
+    m_mouseButtonsSwapped = (GetSystemMetrics(SM_SWAPBUTTON) != 0);
+    qDebug() << "[VideoDisplayWidget] 鼠标左右键交换:" << m_mouseButtonsSwapped;
+#else
+    m_mouseButtonsSwapped = false;
+#endif
     
     setupUI();
     
@@ -144,8 +152,15 @@ void VideoDisplayWidget::setupUI()
     m_videoLabel->setScaledContents(false); // 禁用自动缩放，保持原始比例
     // 启用鼠标跟踪并安装事件过滤器，用于批注坐标采集
     m_videoLabel->setMouseTracking(true);
+    m_videoLabel->setFocusPolicy(Qt::StrongFocus); // 允许接收键盘事件（用于Ctrl+Z撤销）
+    m_videoLabel->setContextMenuPolicy(Qt::NoContextMenu); // 禁用默认右键菜单，避免干扰
     m_videoLabel->installEventFilter(this);
     m_mainLayout->addWidget(m_videoLabel, 1); // 添加拉伸因子，让视频区域占据更多空间
+
+    // 键盘快捷键：Ctrl+Z 撤销（窗口级）
+    QShortcut *undoShortcut = new QShortcut(QKeySequence::Undo, this);
+    undoShortcut->setContext(Qt::WindowShortcut);
+    connect(undoShortcut, &QShortcut::activated, this, &VideoDisplayWidget::sendUndo);
     
     // 控制区域
     m_controlLayout = new QHBoxLayout();
@@ -724,10 +739,32 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj == m_videoLabel) {
         switch (event->type()) {
+        case QEvent::MouseButtonDblClick: {
+            QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
+                               (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
+            if (isPrimary) {
+                emit fullscreenToggleRequested();
+                return true; // 消费双击事件，避免影响批注
+            }
+            break;
+        }
         case QEvent::MouseButtonPress: {
             QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            // 次键：清屏（考虑系统交换左右键）
+            bool isSecondary = (!m_mouseButtonsSwapped && me->button() == Qt::RightButton) ||
+                               (m_mouseButtonsSwapped && me->button() == Qt::LeftButton);
+            bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
+                               (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
+            if (isSecondary) {
+                if (m_receiver) {
+                    m_receiver->sendAnnotationEvent("clear", 0, 0);
+                }
+                m_isAnnotating = false;
+                return true; // 消费右键事件
+            }
             QPoint src = mapLabelToSource(me->pos());
-            if (src.x() >= 0) {
+            if (src.x() >= 0 && isPrimary) { // 仅主键开始绘制（随系统设置）
                 m_isAnnotating = true;
                 if (m_receiver) {
                     m_receiver->sendAnnotationEvent("down", src.x(), src.y());
@@ -749,7 +786,9 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
         case QEvent::MouseButtonRelease: {
             QMouseEvent *me = static_cast<QMouseEvent*>(event);
             QPoint src = mapLabelToSource(me->pos());
-            if (src.x() >= 0) {
+            bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
+                               (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
+            if (src.x() >= 0 && isPrimary) { // 仅主键结束绘制
                 if (m_receiver) {
                     m_receiver->sendAnnotationEvent("up", src.x(), src.y());
                 }
@@ -757,9 +796,45 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             m_isAnnotating = false;
             return true;
         }
+        case QEvent::ContextMenu: {
+            if (m_receiver) {
+                m_receiver->sendAnnotationEvent("clear", 0, 0);
+            }
+            m_isAnnotating = false;
+            return true;
+        }
+        case QEvent::KeyPress: {
+            QKeyEvent *ke = static_cast<QKeyEvent*>(event);
+            if ((ke->modifiers() & Qt::ControlModifier) && ke->key() == Qt::Key_Z) {
+                if (m_receiver) {
+                    m_receiver->sendAnnotationEvent("undo", 0, 0);
+                }
+                return true; // 消费Ctrl+Z
+            }
+            break;
+        }
         default:
             break;
         }
     }
     return QWidget::eventFilter(obj, event);
+}
+
+// 撤销上一笔
+void VideoDisplayWidget::sendUndo()
+{
+    if (m_receiver) {
+        qDebug() << "[VideoDisplayWidget] sendUndo() 调用";
+        m_receiver->sendAnnotationEvent("undo", 0, 0);
+    }
+}
+
+// 清屏
+void VideoDisplayWidget::sendClear()
+{
+    if (m_receiver) {
+        qDebug() << "[VideoDisplayWidget] sendClear() 调用";
+        m_receiver->sendAnnotationEvent("clear", 0, 0);
+    }
+    m_isAnnotating = false;
 }

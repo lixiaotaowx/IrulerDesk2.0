@@ -26,11 +26,13 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private slots:
     void onMinimizeClicked();
     void onMaximizeClicked();
     void onCloseClicked();
+    void toggleFullscreen();
 
 private:
     void setupUI();

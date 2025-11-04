@@ -93,12 +93,17 @@ signals:
     void connectionStatusChanged(const QString &status);
     void frameReceived();
     void statsUpdated(const VideoStats &stats);
+    // 双击视频区域触发全屏切换
+    void fullscreenToggleRequested();
     
 public slots:
     void renderFrame(const QByteArray &frameData, const QSize &frameSize);
     void renderFrameWithTimestamp(const QByteArray &frameData, const QSize &frameSize, qint64 captureTimestamp);
     void updateConnectionStatus(const QString &status);
     void onMousePositionReceived(const QPoint &position, qint64 timestamp); // 新增：鼠标位置接收槽
+    // 批注控制：撤销上一笔与清屏
+    void sendUndo();
+    void sendClear();
 
 private slots:
     void onStartStopClicked();
@@ -151,6 +156,7 @@ private:
     qint64 m_mouseTimestamp = 0; // 鼠标位置时间戳
     bool m_hasMousePosition = false; // 是否有有效的鼠标位置数据
     bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）
+    bool m_mouseButtonsSwapped = false; // 系统是否交换了鼠标左右键
     
     // 瓦片渲染相关
     TileComposition m_tileComposition;

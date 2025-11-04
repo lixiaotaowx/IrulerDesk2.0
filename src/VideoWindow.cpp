@@ -3,6 +3,7 @@
 #include <QScreen>
 #include <QGuiApplication>
 #include <QDebug>
+#include <windows.h>
 
 VideoWindow::VideoWindow(QWidget *parent)
     : QWidget(parent)
@@ -66,6 +67,9 @@ void VideoWindow::setupUI()
         "    border: none;"
         "}"
     );
+    // 双击全屏切换
+    connect(m_videoDisplayWidget, &VideoDisplayWidget::fullscreenToggleRequested,
+            this, &VideoWindow::toggleFullscreen);
     
     m_mainLayout->addWidget(m_videoDisplayWidget, 1);
 }
@@ -155,6 +159,15 @@ void VideoWindow::mousePressEvent(QMouseEvent *event)
         m_dragging = true;
         m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
         event->accept();
+        return;
+    }
+    // 右键：全局触发清屏（任意窗口位置）
+    if (event->button() == Qt::RightButton) {
+        if (m_videoDisplayWidget) {
+            m_videoDisplayWidget->sendClear();
+        }
+        event->accept();
+        return;
     }
 }
 
@@ -192,6 +205,30 @@ void VideoWindow::onMinimizeClicked()
     showMinimized();
 }
 
+// 原生事件拦截：确保物理右键（即便系统交换左右键）仍触发清屏
+bool VideoWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+    Q_UNUSED(eventType);
+    MSG *msg = static_cast<MSG*>(message);
+    if (!msg) {
+        return QWidget::nativeEvent(eventType, message, result);
+    }
+    switch (msg->message) {
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP: {
+        if (m_videoDisplayWidget) {
+            qDebug() << "[VideoWindow] WM_RBUTTON* 捕获，触发清屏";
+            m_videoDisplayWidget->sendClear();
+        }
+        if (result) *result = 0;
+        return true; // 消费原生右键事件
+    }
+    default:
+        break;
+    }
+    return QWidget::nativeEvent(eventType, message, result);
+}
+
 void VideoWindow::onMaximizeClicked()
 {
     if (m_isMaximized) {
@@ -214,4 +251,17 @@ void VideoWindow::onMaximizeClicked()
 void VideoWindow::onCloseClicked()
 {
     hide();
+}
+
+void VideoWindow::toggleFullscreen()
+{
+    if (isFullScreen()) {
+        showNormal();
+        if (m_titleBar) m_titleBar->show();
+    } else {
+        // 记录当前几何以便恢复
+        m_normalGeometry = geometry();
+        showFullScreen();
+        if (m_titleBar) m_titleBar->hide();
+    }
 }

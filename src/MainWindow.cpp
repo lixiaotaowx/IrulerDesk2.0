@@ -26,6 +26,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_videoWindow(nullptr)
     , m_transparentImageList(nullptr)
     , m_avatarSettingsWindow(nullptr)
+    , m_systemSettingsWindow(nullptr)
     , m_statusLabel(nullptr)
     , m_isStreaming(false)
     , m_captureProcess(nullptr)
@@ -374,6 +375,11 @@ void MainWindow::setupUI()
     // 连接透明图片列表的系统设置信号
     connect(m_transparentImageList, &TransparentImageList::systemSettingsRequested,
             this, &MainWindow::onSystemSettingsRequested);
+    // 新增：连接透明图片列表的清理标记与退出信号
+    connect(m_transparentImageList, &TransparentImageList::clearMarksRequested,
+            this, &MainWindow::onClearMarksRequested);
+    connect(m_transparentImageList, &TransparentImageList::exitRequested,
+            this, &MainWindow::onExitRequested);
     
     qDebug() << "[MainWindow] ========== UI设置完成 ==========";
 }
@@ -1452,6 +1458,27 @@ void MainWindow::onSystemSettingsRequested()
     m_systemSettingsWindow->show();
 }
 
+void MainWindow::onClearMarksRequested()
+{
+    qDebug() << "[MainWindow] 收到清理标记请求";
+    if (m_videoWindow && m_videoWindow->getVideoDisplayWidget()) {
+        m_videoWindow->getVideoDisplayWidget()->sendClear();
+    } else {
+        qWarning() << "[MainWindow] 视频窗口未就绪，无法清理标记";
+    }
+}
+
+void MainWindow::onExitRequested()
+{
+    qDebug() << "[MainWindow] 收到退出请求";
+    // 尽量优雅地停止推流与相关进程
+    stopStreaming();
+    if (m_videoWindow) {
+        m_videoWindow->hide();
+    }
+    QCoreApplication::quit();
+}
+
 void MainWindow::onScreenSelected(int index)
 {
     qDebug() << "[MainWindow] 用户选择屏幕索引:" << index;
@@ -1494,6 +1521,29 @@ void MainWindow::onScreenSelected(int index)
                 sendWatchRequest(m_currentTargetId);
             }
         });
+    }
+
+    // 等待首帧到达后通知系统设置窗口关闭
+    if (m_videoWindow) {
+        auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
+        if (videoWidget) {
+            m_isScreenSwitching = true;
+            // 断开旧连接以避免重复
+            if (m_switchFrameConn) {
+                QObject::disconnect(m_switchFrameConn);
+            }
+            m_switchFrameConn = connect(videoWidget, &VideoDisplayWidget::frameReceived, this, [this]() {
+                if (m_isScreenSwitching) {
+                    m_isScreenSwitching = false;
+                    if (m_systemSettingsWindow) {
+                        m_systemSettingsWindow->notifySwitchSucceeded();
+                    }
+                    if (m_switchFrameConn) {
+                        QObject::disconnect(m_switchFrameConn);
+                    }
+                }
+            });
+        }
     }
 }
 

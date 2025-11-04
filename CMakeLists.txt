@@ -32,53 +32,53 @@ find_package(libyuv REQUIRED)
 
 # 主程序源文件
 set(MAIN_SOURCES
-    src/main.cpp
-    src/MainWindow.cpp
-    src/MainWindow.h
-    src/video_components/VideoDisplayWidget.cpp
-    src/video_components/VideoDisplayWidget.h
-    src/VideoWindow.cpp
-    src/VideoWindow.h
-    src/ui/TransparentImageList.cpp
-    src/ui/TransparentImageList.h
-    src/ui/AvatarSettingsWindow.cpp
-    src/ui/AvatarSettingsWindow.h
-    src/ui/SystemSettingsWindow.cpp
-    src/ui/SystemSettingsWindow.h
+    src/main.cpp                          # 程序入口：初始化应用并启动主窗口
+    src/MainWindow.cpp                    # 主窗口实现：主界面布局、交互逻辑、控制流程
+    src/MainWindow.h                      # 主窗口声明：成员与信号槽声明
+    src/video_components/VideoDisplayWidget.cpp # 视频显示控件实现：绘制视频帧与批注事件处理
+    src/video_components/VideoDisplayWidget.h   # 视频显示控件声明：接口与状态
+    src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件
+    src/VideoWindow.h                     # 独立视频窗口声明：公开接口与成员
+    src/ui/TransparentImageList.cpp       # 透明贴图列表实现：管理/选择叠加贴图资源
+    src/ui/TransparentImageList.h         # 透明贴图列表声明：信号槽与模型接口
+    src/ui/AvatarSettingsWindow.cpp       # 头像设置窗口实现：用户头像资源的配置与预览
+    src/ui/AvatarSettingsWindow.h         # 头像设置窗口声明：UI与交互接口
+    src/ui/SystemSettingsWindow.cpp       # 系统设置窗口实现：应用参数与行为配置
+    src/ui/SystemSettingsWindow.h         # 系统设置窗口声明：设置项与信号槽
 )
 
 # 屏幕捕获编码进程源文件
 set(CAPTURE_SOURCES
-    src/capture/main_capture.cpp
-    src/capture/ScreenCapture.cpp
-    src/capture/ScreenCapture.h
-    src/capture/VP9Encoder.cpp
-    src/capture/VP9Encoder.h
-    src/capture/WebSocketClient.cpp
-    src/capture/WebSocketClient.h
-    src/capture/WebSocketSender.cpp
-    src/capture/WebSocketSender.h
-    src/capture/MouseCapture.cpp
-    src/capture/MouseCapture.h
-    src/capture/TileManager.cpp
-    src/capture/TileManager.h
-    src/capture/PerformanceMonitor.cpp
-    src/capture/PerformanceMonitor.h
-    src/capture/AnnotationOverlay.cpp
-    src/capture/AnnotationOverlay.h
+    src/capture/main_capture.cpp          # 捕获进程入口：初始化捕获、编码与传输流程
+    src/capture/ScreenCapture.cpp         # 屏幕捕获实现：抓取屏幕帧/区域
+    src/capture/ScreenCapture.h           # 屏幕捕获声明
+    src/capture/VP9Encoder.cpp            # VP9 编码器实现：将原始帧编码为 VP9
+    src/capture/VP9Encoder.h              # VP9 编码器声明
+    src/capture/WebSocketClient.cpp       # WebSocket 客户端实现：连接服务器、维护会话
+    src/capture/WebSocketClient.h         # WebSocket 客户端声明
+    src/capture/WebSocketSender.cpp       # WebSocket 发送端实现：发送瓦片/帧/批注事件
+    src/capture/WebSocketSender.h         # WebSocket 发送端声明
+    src/capture/MouseCapture.cpp          # 鼠标捕获实现：记录鼠标位置与状态用于批注
+    src/capture/MouseCapture.h            # 鼠标捕获声明
+    src/capture/TileManager.cpp           # 瓦片管理实现：切片/合并/调度传输
+    src/capture/TileManager.h             # 瓦片管理声明
+    src/capture/PerformanceMonitor.cpp    # 性能监控实现：统计编码/网络/帧率指标
+    src/capture/PerformanceMonitor.h      # 性能监控声明
+    src/capture/AnnotationOverlay.cpp     # 批注叠加层实现：在采集端绘制/组合批注图层
+    src/capture/AnnotationOverlay.h       # 批注叠加层声明
 )
 
 # 解码播放进程源文件
 set(PLAYER_SOURCES
-    src/player/main_player.cpp
-    src/player/VP9Decoder.cpp
-    src/player/VP9Decoder.h
-    src/player/DxvaVP9Decoder.cpp
-    src/player/DxvaVP9Decoder.h
-    src/player/VideoRenderer.cpp
-    src/player/VideoRenderer.h
-    src/player/WebSocketReceiver.cpp
-    src/player/WebSocketReceiver.h
+    src/player/main_player.cpp            # 播放器进程入口：初始化解码与渲染管线
+    src/player/VP9Decoder.cpp             # VP9 软件解码器实现
+    src/player/VP9Decoder.h               # VP9 软件解码器声明
+    src/player/DxvaVP9Decoder.cpp         # DXVA 硬件加速 VP9 解码实现
+    src/player/DxvaVP9Decoder.h           # DXVA VP9 解码器声明
+    src/player/VideoRenderer.cpp          # 视频渲染器实现：呈现解码后的帧/瓦片
+    src/player/VideoRenderer.h            # 视频渲染器声明
+    src/player/WebSocketReceiver.cpp      # WebSocket 接收端实现：接收瓦片与批注事件
+    src/player/WebSocketReceiver.h        # WebSocket 接收端声明
 )
 
 
@@ -86,14 +86,14 @@ set(PLAYER_SOURCES
 
 # 视频组件库源文件
 set(VIDEO_COMPONENTS_SOURCES
-    src/video_components/VideoDisplayWidget.cpp
-    src/video_components/VideoDisplayWidget.h
-    src/player/VP9Decoder.cpp
-    src/player/VP9Decoder.h
-    src/player/DxvaVP9Decoder.cpp
-    src/player/DxvaVP9Decoder.h
-    src/player/WebSocketReceiver.cpp
-    src/player/WebSocketReceiver.h
+    src/video_components/VideoDisplayWidget.cpp # 视频显示与批注控件实现（复用到播放器）
+    src/video_components/VideoDisplayWidget.h   # 视频显示与批注控件声明
+    src/player/VP9Decoder.cpp                   # VP9 软件解码器实现
+    src/player/VP9Decoder.h                     # VP9 软件解码器声明
+    src/player/DxvaVP9Decoder.cpp               # 基于 DXVA 的硬件加速 VP9 解码实现
+    src/player/DxvaVP9Decoder.h                 # DXVA VP9 解码器声明
+    src/player/WebSocketReceiver.cpp            # WebSocket 接收端实现：接收瓦片与批注事件
+    src/player/WebSocketReceiver.h              # WebSocket 接收端声明
 )
 
 # 创建主程序可执行文件
@@ -196,5 +196,4 @@ if(WIN32)
 endif()
 
 # 可选：添加测试子目录（仅在需要时启用）
-# 取消注释下面这行来编译测试程序：
-add_subdirectory(tests)
+# 通过选项控制是否编译测试（默认关闭）

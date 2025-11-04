@@ -61,6 +61,8 @@ private slots:
     void onSystemSettingsRequested(); // 新增：打开系统设置
     void onScreenSelected(int index); // 新增：屏幕选择槽
     void onAvatarSelected(int iconId);  // 新增：头像选择完成槽函数
+    void onClearMarksRequested(); // 新增：清理标记槽函数
+    void onExitRequested();       // 新增：退出槽函数
 
 private:
     void setupUI();
@@ -110,6 +112,8 @@ private:
     // 状态管理
     QLabel *m_statusLabel;
     bool m_isStreaming;
+    bool m_isScreenSwitching = false; // 屏幕切换进行中标记
+    QMetaObject::Connection m_switchFrameConn; // 首帧到达监听连接
     
     // 进程管理
     QProcess *m_captureProcess;

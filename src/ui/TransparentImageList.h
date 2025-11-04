@@ -64,6 +64,8 @@ signals:
     void showMainListRequested();
     void setAvatarRequested();  // 新增：设置头像请求信号
     void systemSettingsRequested(); // 新增：系统设置请求信号
+    void clearMarksRequested(); // 新增：清理标记请求
+    void exitRequested();       // 新增：退出请求
 
 private:
     struct UserImageItem {

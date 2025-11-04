@@ -589,6 +589,11 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     connect(setAvatarAction, &QAction::triggered, this, &TransparentImageList::setAvatarRequested);
                     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
                     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
+                    // 新增右键菜单项
+                    QAction *clearMarksAction = contextMenu.addAction("清理标记");
+                    connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
+                    QAction *exitAction = contextMenu.addAction("退出");
+                    connect(exitAction, &QAction::triggered, this, &TransparentImageList::exitRequested);
                     contextMenu.exec(label->mapToGlobal(mouseEvent->pos()));
                     return true; // 消耗右键事件
                 } else {
@@ -640,6 +645,12 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
 
     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
+    
+    // 新增右键菜单项（窗口泛用菜单）
+    QAction *clearMarksAction = contextMenu.addAction("清理标记");
+    connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
+    QAction *exitAction = contextMenu.addAction("退出");
+    connect(exitAction, &QAction::triggered, this, &TransparentImageList::exitRequested);
     
     contextMenu.exec(event->globalPos());
 }

@@ -10,7 +10,9 @@
 #include <chrono>
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <algorithm>
 #ifdef _WIN32
+#define NOMINMAX
 #include <io.h>
 #include <fcntl.h>
 #include <windows.h>
@@ -21,6 +23,36 @@
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
 #include "PerformanceMonitor.h" // 新增：性能监控头文件
 #include "AnnotationOverlay.h"
+
+// 新增：读取本地默认质量设置
+QString getLocalQualityFromConfig()
+{
+    QStringList configPaths;
+    // 覆盖多种位置，兼容现有读取策略
+    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
+    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/app_config.txt";
+    configPaths << QDir::currentPath() + "/config/app_config.txt";
+    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+
+    for (const QString& path : configPaths) {
+        QFile configFile(path);
+        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&configFile);
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (line.startsWith("local_quality=")) {
+                    QString q = line.mid(QString("local_quality=").length()).toLower();
+                    configFile.close();
+                    if (q == "low" || q == "medium" || q == "high") {
+                        return q;
+                    }
+                }
+            }
+            configFile.close();
+        }
+    }
+    return "medium"; // 默认中画质
+}
 
 // 从配置文件读取设备ID
 QString getDeviceIdFromConfig()
@@ -381,6 +413,66 @@ int main(int argc, char *argv[])
     static bool tileMetadataSent = false; // 瓦片元数据发送标志
     static int currentScreenIndex = getScreenIndexFromConfig(); // 当前屏幕索引
     static bool isSwitching = false; // 屏幕热切换中标志（不断流）
+    // 新增：质量控制相关静态状态
+    static QString currentQuality = getLocalQualityFromConfig();
+    static QSize targetEncodeSize = staticEncoder->getFrameSize();
+
+    // 新增：质量应用方法
+    auto applyQualitySetting = [&](const QString &qualityRaw) {
+        QString q = qualityRaw.toLower();
+        if (q != "low" && q != "medium" && q != "high") {
+            q = "medium";
+        }
+        currentQuality = q;
+
+        // 目标编码分辨率计算（低质720p，保持纵横比，不上采样）
+        QSize orig = staticCapture->getScreenSize();
+        QSize desired = orig;
+        if (q == "low") {
+            double fw = 1280.0 / orig.width();
+            double fh = 720.0 / orig.height();
+            double factor = std::min(fw, fh);
+            if (factor < 1.0) {
+                desired = QSize(qRound(orig.width() * factor), qRound(orig.height() * factor));
+            } else {
+                desired = orig;
+            }
+            // 禁用瓦片检测（低质）
+            staticCapture->setTileDetectionEnabled(false);
+        } else {
+            // 中/高质启用瓦片检测
+            staticCapture->setTileDetectionEnabled(true);
+            desired = orig;
+        }
+
+        // 重新初始化编码器以匹配目标分辨率
+        staticEncoder->cleanup();
+        if (!staticEncoder->initialize(desired.width(), desired.height(), 60)) {
+            qCritical() << "[CaptureProcess] 质量切换后编码器初始化失败";
+            return; // 保持旧状态以避免崩溃
+        }
+        targetEncodeSize = staticEncoder->getFrameSize();
+
+        // 按质量调整码率
+        if (q == "low") {
+            staticEncoder->setBitrate(200000); // 200 kbps
+        } else if (q == "medium") {
+            staticEncoder->setBitrate(300000); // 300 kbps
+        } else { // high
+            staticEncoder->setBitrate(1200000); // 1.2 Mbps
+        }
+
+        // 重置瓦片元数据发送标志（在启用检测的情况下会重新发送）
+        tileMetadataSent = false;
+        // 强制关键帧以快速稳定画面
+        staticEncoder->forceKeyFrame();
+
+        qDebug() << "[CaptureProcess] 已应用质量设置:" << q
+                 << "目标编码分辨率:" << targetEncodeSize.width() << "x" << targetEncodeSize.height();
+    };
+
+    // 启动时应用默认质量（来自配置）
+    applyQualitySetting(currentQuality);
     
     // 连接批注事件到叠加层
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
@@ -511,6 +603,12 @@ int main(int argc, char *argv[])
         // 切换完成，恢复捕获循环发帧
         isSwitching = false;
     });
+
+    // 新增：处理质量变更请求
+    QObject::connect(sender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
+        qDebug() << "[CaptureProcess] 收到质量变更请求:" << quality;
+        applyQualitySetting(quality);
+    });
     
     QObject::connect(captureTimer, &QTimer::timeout, []() {
         if (!isCapturing) return; // 只有在推流状态下才捕获
@@ -570,6 +668,19 @@ int main(int argc, char *argv[])
                                 << "数据大小:" << serializedData.size() << "字节";
                     }
                 }
+            }
+
+            // 如果编码目标分辨率与屏幕尺寸不同（例如低质720p），进行缩放
+            const QSize encSize = staticEncoder->getFrameSize();
+            const QSize capSize = staticCapture->getScreenSize();
+            if (encSize != capSize) {
+                QImage src(reinterpret_cast<const uchar*>(frameData.constData()),
+                           capSize.width(), capSize.height(), QImage::Format_ARGB32);
+                QImage scaled = src.scaled(encSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                QByteArray scaledData;
+                scaledData.resize(scaled.sizeInBytes());
+                memcpy(scaledData.data(), scaled.constBits(), scaled.sizeInBytes());
+                frameData = scaledData;
             }
             
             // 继续正常的VP9编码流程

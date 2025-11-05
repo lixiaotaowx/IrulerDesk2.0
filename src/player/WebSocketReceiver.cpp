@@ -639,6 +639,44 @@ void WebSocketReceiver::sendSwitchScreenIndex(int index)
     m_webSocket->sendTextMessage(jsonString);
 }
 
+void WebSocketReceiver::sendSetQuality(const QString &quality)
+{
+    if (!m_connected || !m_webSocket) {
+        qDebug() << "[WebSocketReceiver] 未连接到服务器，无法发送质量设置";
+        return;
+    }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qDebug() << "[WebSocketReceiver] 缺少viewer/target信息，质量设置未发送";
+        return;
+    }
+
+    QString normalized = quality.toLower();
+    if (normalized != "low" && normalized != "medium" && normalized != "high") {
+        normalized = "medium";
+    }
+
+    QJsonObject message;
+    message["type"] = "set_quality";
+    message["quality"] = normalized;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    QString jsonString = doc.toJson(QJsonDocument::Compact);
+    qDebug() << "[WebSocketReceiver] 发送质量设置:" << normalized;
+    m_webSocket->sendTextMessage(jsonString);
+}
+
 // 瓦片消息处理方法实现
 void WebSocketReceiver::processTileMessage(const QJsonObject &header, const QByteArray &binaryData)
 {

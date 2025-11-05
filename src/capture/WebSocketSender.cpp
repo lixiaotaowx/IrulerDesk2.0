@@ -291,6 +291,10 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         qDebug() << "[WebSocketSender] 收到切换屏幕请求: direction=" << direction << ", index=" << index;
         // 发射信号，由 main_capture 处理切换逻辑
         emit switchScreenRequested(direction, index);
+    } else if (type == "set_quality") {
+        QString quality = obj.value("quality").toString();
+        qDebug() << "[WebSocketSender] 收到质量设置请求: " << quality;
+        emit qualityChangeRequested(quality);
     }
 }
 

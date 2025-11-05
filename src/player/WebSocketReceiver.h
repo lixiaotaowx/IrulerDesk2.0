@@ -68,6 +68,8 @@ public:
     void sendSwitchScreenNext();
     // 按索引切换屏幕（不断流热切换，不修改配置）
     void sendSwitchScreenIndex(int index);
+    // 发送质量设置（高/中/低）控制被观看者的编码质量
+    void sendSetQuality(const QString &quality);
     
     // 断开连接
     void disconnectFromServer();

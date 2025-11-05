@@ -772,6 +772,11 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 QMenu menu(this);
                 QAction *clearAction = menu.addAction(QStringLiteral("清理绘制"));
                 QAction *switchAction = menu.addAction(QStringLiteral("切换屏幕"));
+                // 质量子菜单
+                QMenu *qualityMenu = menu.addMenu(QStringLiteral("质量"));
+                QAction *qualityHigh = qualityMenu->addAction(QStringLiteral("高"));
+                QAction *qualityMedium = qualityMenu->addAction(QStringLiteral("中"));
+                QAction *qualityLow = qualityMenu->addAction(QStringLiteral("低"));
                 QAction *chosen = menu.exec(me->globalPosition().toPoint());
                 if (chosen == clearAction) {
                     sendClear();
@@ -781,6 +786,12 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                     if (m_receiver) {
                         m_receiver->sendSwitchScreenNext();
                     }
+                } else if (chosen == qualityHigh) {
+                    if (m_receiver) m_receiver->sendSetQuality("high");
+                } else if (chosen == qualityMedium) {
+                    if (m_receiver) m_receiver->sendSetQuality("medium");
+                } else if (chosen == qualityLow) {
+                    if (m_receiver) m_receiver->sendSetQuality("low");
                 }
                 m_isAnnotating = false;
                 return true; // 消费右键事件
@@ -824,6 +835,10 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             QMenu menu(this);
             QAction *clearAction = menu.addAction(QStringLiteral("清理绘制"));
             QAction *switchAction = menu.addAction(QStringLiteral("切换屏幕"));
+            QMenu *qualityMenu = menu.addMenu(QStringLiteral("质量"));
+            QAction *qualityHigh = qualityMenu->addAction(QStringLiteral("高"));
+            QAction *qualityMedium = qualityMenu->addAction(QStringLiteral("中"));
+            QAction *qualityLow = qualityMenu->addAction(QStringLiteral("低"));
             QAction *chosen = menu.exec(ce->globalPos());
             if (chosen == clearAction) {
                 sendClear();
@@ -832,6 +847,12 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 if (m_receiver) {
                     m_receiver->sendSwitchScreenNext();
                 }
+            } else if (chosen == qualityHigh) {
+                if (m_receiver) m_receiver->sendSetQuality("high");
+            } else if (chosen == qualityMedium) {
+                if (m_receiver) m_receiver->sendSetQuality("medium");
+            } else if (chosen == qualityLow) {
+                if (m_receiver) m_receiver->sendSetQuality("low");
             }
             m_isAnnotating = false;
             return true;

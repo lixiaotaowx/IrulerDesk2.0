@@ -1,18 +1,31 @@
 ﻿#include "SystemSettingsWindow.h"
 #include <QGuiApplication>
+#include <QApplication>
 #include <QScreen>
+#include <QFile>
+#include <QTextStream>
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     : QDialog(parent), m_list(new QListWidget(this))
 {
     setWindowTitle("系统设置 - 屏幕切换");
     setModal(true);
-    resize(360, 300);
+    resize(380, 420);
 
     QVBoxLayout* layout = new QVBoxLayout(this);
     QLabel* tip = new QLabel("选择一个屏幕作为推流源", this);
     layout->addWidget(tip);
     layout->addWidget(m_list);
+
+    // 在屏幕列表下面添加质量选择控件
+    setupQualityControls();
+    layout->addWidget(m_qualityLabel);
+    QHBoxLayout* qualityRow = new QHBoxLayout();
+    qualityRow->addWidget(m_lowBtn);
+    qualityRow->addWidget(m_mediumBtn);
+    qualityRow->addWidget(m_highBtn);
+    qualityRow->addStretch();
+    layout->addLayout(qualityRow);
 
     populateScreens();
 
@@ -89,6 +102,50 @@ void SystemSettingsWindow::populateScreens()
         item->setData(Qt::UserRole, i);
         m_list->addItem(item);
     }
+}
+
+void SystemSettingsWindow::setupQualityControls()
+{
+    m_qualityLabel = new QLabel("视频质量：", this);
+    m_qualityLabel->setStyleSheet("QLabel { font-size: 13px; }");
+    m_qualityGroup = new QButtonGroup(this);
+    m_lowBtn = new QRadioButton("低", this);
+    m_mediumBtn = new QRadioButton("中", this);
+    m_highBtn = new QRadioButton("高", this);
+    m_qualityGroup->addButton(m_lowBtn);
+    m_qualityGroup->addButton(m_mediumBtn);
+    m_qualityGroup->addButton(m_highBtn);
+    m_mediumBtn->setChecked(true);
+
+    // 从配置读取默认本地质量
+    QString appDir = QApplication::applicationDirPath();
+    QString configPath = appDir + "/config/app_config.txt";
+    QFile f(configPath);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("local_quality=")) {
+                QString q = line.mid(QString("local_quality=").length()).trimmed();
+                if (q == "low") m_lowBtn->setChecked(true);
+                else if (q == "high") m_highBtn->setChecked(true);
+                else m_mediumBtn->setChecked(true);
+                break;
+            }
+        }
+        f.close();
+    }
+
+    // 变更时发出信号
+    auto emitQuality = [this]() {
+        QString q = "medium";
+        if (m_lowBtn->isChecked()) q = "low";
+        else if (m_highBtn->isChecked()) q = "high";
+        emit localQualitySelected(q);
+    };
+    connect(m_lowBtn, &QRadioButton::toggled, this, [emitQuality](bool checked){ if (checked) emitQuality(); });
+    connect(m_mediumBtn, &QRadioButton::toggled, this, [emitQuality](bool checked){ if (checked) emitQuality(); });
+    connect(m_highBtn, &QRadioButton::toggled, this, [emitQuality](bool checked){ if (checked) emitQuality(); });
 }
 
 void SystemSettingsWindow::notifySwitchSucceeded()

@@ -1454,6 +1454,8 @@ void MainWindow::onSystemSettingsRequested()
         m_systemSettingsWindow = new SystemSettingsWindow(this);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::screenSelected,
                 this, &MainWindow::onScreenSelected);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::localQualitySelected,
+                this, &MainWindow::onLocalQualitySelected);
     }
     m_systemSettingsWindow->show();
 }
@@ -1553,5 +1555,54 @@ void MainWindow::saveScreenIndexToConfig(int screenIndex)
         qDebug() << "[MainWindow] 已保存screen_index到配置:" << screenIndex;
     } else {
         qWarning() << "[MainWindow] 无法写入配置文件:" << configFilePath;
+    }
+}
+
+void MainWindow::onLocalQualitySelected(const QString& quality)
+{
+    qDebug() << "[MainWindow] 本地质量选择:" << quality;
+    saveLocalQualityToConfig(quality);
+    if (m_statusLabel) {
+        m_statusLabel->setText(QString("本地质量设置为: %1").arg(quality));
+    }
+}
+
+void MainWindow::saveLocalQualityToConfig(const QString& quality)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+
+    QStringList configLines;
+    bool exists = false;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        exists = true;
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            configLines << in.readLine();
+        }
+        configFile.close();
+    }
+
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("local_quality=")) {
+            configLines[i] = QString("local_quality=%1").arg(quality);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        configLines << QString("local_quality=%1").arg(quality);
+    }
+
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString& line : configLines) {
+            out << line << "\n";
+        }
+        configFile.close();
+        qDebug() << "[MainWindow] 已保存local_quality到配置:" << quality << " 路径:" << configFilePath;
+    } else {
+        qWarning() << "[MainWindow] 保存local_quality失败，无法打开配置文件:" << configFilePath;
     }
 }

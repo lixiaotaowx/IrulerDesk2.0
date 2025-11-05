@@ -72,6 +72,10 @@ private:
     
     // 配置文件相关方法
     QString getConfigFilePath() const;
+public slots:
+    void onLocalQualitySelected(const QString& quality);
+private:
+    void saveLocalQualityToConfig(const QString& quality);
     int loadOrGenerateRandomId();
     void saveRandomIdToConfig(int randomId);
     int loadOrGenerateIconId();  // 新增：读取或生成icon ID

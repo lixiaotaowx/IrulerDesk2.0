@@ -1,5 +1,4 @@
 #include <QtWidgets/QApplication>
-#include <QDebug>
 #include <QTimer>
 #include <QFile>
 #include <QTextStream>
@@ -11,6 +10,10 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <algorithm>
+#include <QtMultimedia/QAudioFormat>
+#include <QtMultimedia/QAudioSource>
+#include <QtMultimedia/QMediaDevices>
+#include <opus/opus.h>
 #ifdef _WIN32
 #define NOMINMAX
 #include <io.h>
@@ -23,6 +26,7 @@
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
 #include "PerformanceMonitor.h" // 新增：性能监控头文件
 #include "AnnotationOverlay.h"
+
 
 // 新增：读取本地默认质量设置
 QString getLocalQualityFromConfig()
@@ -194,142 +198,123 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     
-    qDebug() << "[CaptureProcess] ========== 启动屏幕捕获进程 ==========";
+    
     
     // 创建屏幕捕获对象
     ScreenCapture *capture = new ScreenCapture(&app);
     capture->setTargetScreenIndex(getScreenIndexFromConfig());
     if (!capture->initialize()) {
-        qCritical() << "[CaptureProcess] 屏幕捕获初始化失败";
         return -1;
     }
     // qDebug() << "[CaptureProcess] 屏幕捕获模块初始化成功";
     
     // 初始化瓦片系统
-    qDebug() << "[Main] 初始化瓦片系统...";
+    
     
     // 演示不同瓦片大小的性能对比
     QSize screenSize = capture->getScreenSize();
     
-    qDebug() << "[Main] === 瓦片大小性能分析 ===";
-    qDebug() << "[Main] 64x64瓦片数量:" << (1920/64 + 1) * (1080/64 + 1) << "个";
-    qDebug() << "[Main] 96x96瓦片数量:" << (1920/96 + 1) * (1080/96 + 1) << "个";
-    qDebug() << "[Main] 128x128瓦片数量:" << (1920/128 + 1) * (1080/128 + 1) << "个";
+    
     
     // 计算推荐的瓦片大小
     QSize optimalSize = TileManager::calculateOptimalTileSize(screenSize);
     int recommendedCount = TileManager::getRecommendedTileCount(screenSize);
-    qDebug() << "[Main] 推荐瓦片大小:" << optimalSize << "瓦片数量:" << recommendedCount << "个";
+    
     
     // 启用自适应瓦片大小
     capture->getTileManager().setAdaptiveTileSize(true);
-    qDebug() << "[Main] 已启用自适应瓦片大小";
+    
     
     // 使用推荐的瓦片大小初始化
     capture->initializeTileSystem(screenSize, optimalSize);
     capture->enableTileCapture(true);
     
     // 演示瓦片检测开关控制
-    qDebug() << "[Main] 瓦片检测开关演示:";
-    qDebug() << "[Main] 当前瓦片检测状态:" << (capture->isTileDetectionEnabled() ? "启用" : "禁用");
+    
     
     // 可以通过以下方式控制瓦片检测
     // capture->setTileDetectionEnabled(false);  // 禁用瓦片检测
     // capture->toggleTileDetection();           // 切换瓦片检测状态
     
-    qDebug() << "[Main] 瓦片系统初始化完成";
-    qDebug() << "[Main] 总瓦片数:" << capture->getTileCount();
-    qDebug() << "[Main] 瓦片检测已启用";
+    
     
     // ==================== 瓦片序列化功能测试 ====================
-    qDebug() << "[Main] 开始测试瓦片序列化功能...";
+    
     
     // 获取瓦片管理器进行测试
     TileManager& tileManager = capture->getTileManager();
     
     // 测试1: 序列化单个瓦片信息
-    qDebug() << "[Main] ========== 测试1: 序列化单个瓦片信息 ==========";
+    
     const QVector<TileInfo>& allTiles = tileManager.getTiles();
     if (!allTiles.isEmpty()) {
         // 创建一个测试瓦片，设置有效的哈希值
         TileInfo originalTile = allTiles.first();
         originalTile.hash = 0x12345678; // 设置一个有效的测试哈希值
-        qDebug() << "[Main] 原始瓦片信息: x=" << originalTile.x << "y=" << originalTile.y 
-                 << "width=" << originalTile.width << "height=" << originalTile.height 
-                 << "hash=" << originalTile.hash;
         
         QByteArray tileInfoData = tileManager.serializeTileInfo(originalTile);
-        qDebug() << "[Main] 瓦片信息序列化数据大小:" << tileInfoData.size() << "字节";
+    
         
         if (tileInfoData.isEmpty()) {
-            qDebug() << "[Main] 错误: 序列化数据为空";
+    
         } else {
             // 反序列化测试
             TileInfo deserializedTile = tileManager.deserializeTileInfo(tileInfoData);
-            qDebug() << "[Main] 反序列化瓦片信息: x=" << deserializedTile.x << "y=" << deserializedTile.y 
-                     << "width=" << deserializedTile.width << "height=" << deserializedTile.height 
-                     << "hash=" << deserializedTile.hash;
             
             bool infoTestPassed = (deserializedTile.x == originalTile.x && 
                                    deserializedTile.y == originalTile.y &&
                                    deserializedTile.width == originalTile.width &&
                                    deserializedTile.height == originalTile.height &&
                                    deserializedTile.hash == originalTile.hash);
-            qDebug() << "[Main] 瓦片信息序列化测试结果:" << (infoTestPassed ? "✓ 通过" : "✗ 失败");
+    
         }
     } else {
-        qDebug() << "[Main] 错误: 没有可用的瓦片进行测试";
+    
     }
     
     // 测试2: 序列化瓦片数据（模拟场景）
-    qDebug() << "[Main] ========== 测试2: 序列化瓦片数据 ==========";
+    
     QVector<int> testIndices = {0, 1, 2}; // 测试前3个瓦片
     QImage testImage(100, 100, QImage::Format_RGB32);
     testImage.fill(Qt::blue); // 填充蓝色作为测试数据
-    qDebug() << "[Main] 测试图像信息: 大小=" << testImage.size() << "格式=" << testImage.format();
+    
     
     QByteArray serializedData = tileManager.serializeTileData(testIndices, testImage);
-    qDebug() << "[Main] 瓦片数据序列化大小:" << serializedData.size() << "字节";
+    
     
     if (serializedData.isEmpty()) {
-        qDebug() << "[Main] 错误: 序列化数据为空";
+    
     } else {
         // 反序列化测试
         QVector<TileInfo> deserializedTiles;
         QVector<QImage> deserializedImages;
         bool deserializeSuccess = tileManager.deserializeTileData(serializedData, deserializedTiles, deserializedImages);
         
-        qDebug() << "[Main] 瓦片数据反序列化结果:" << (deserializeSuccess ? "✓ 成功" : "✗ 失败");
-        qDebug() << "[Main] 反序列化瓦片数:" << deserializedTiles.size() << "期望:" << testIndices.size();
-        qDebug() << "[Main] 反序列化图像数:" << deserializedImages.size() << "期望:" << testIndices.size();
+    
         
         // 验证数据完整性
         bool dataIntegrityTest = (deserializedTiles.size() == testIndices.size() && 
                                   deserializedImages.size() == testIndices.size());
-        qDebug() << "[Main] 数据完整性测试结果:" << (dataIntegrityTest ? "✓ 通过" : "✗ 失败");
+    
         
         // 验证图像数据
         if (!deserializedImages.isEmpty()) {
             const QImage& firstImage = deserializedImages.first();
-            qDebug() << "[Main] 第一个反序列化图像: 大小=" << firstImage.size() << "格式=" << firstImage.format();
+    
             bool imageDataValid = (firstImage.size() == testImage.size() && 
                                    firstImage.format() == testImage.format());
-            qDebug() << "[Main] 图像数据验证:" << (imageDataValid ? "✓ 通过" : "✗ 失败");
+    
         }
     }
     
-    qDebug() << "[Main] ========================================";
-    qDebug() << "[Main] 瓦片序列化功能测试完成";
-    qDebug() << "[Main] ========================================";
+    
     // ==================== 序列化测试结束 ====================
     
     // 创建VP9编码器
     QSize actualScreenSize = capture->getScreenSize();
-    qDebug() << "[CaptureProcess] 屏幕尺寸:" << actualScreenSize.width() << "x" << actualScreenSize.height();
-    qDebug() << "[CaptureProcess] 初始化VP9编码器...";
+    
     VP9Encoder *encoder = new VP9Encoder(&app);
     if (!encoder->initialize(actualScreenSize.width(), actualScreenSize.height(), 60)) {
-        qCritical() << "[CaptureProcess] VP9编码器初始化失败";
         return -1;
     }
     // qDebug() << "[CaptureProcess] VP9编码器初始化成功";
@@ -359,13 +344,12 @@ int main(int argc, char *argv[])
     // qDebug() << "[CaptureProcess] 使用服务器地址:" << serverAddress;
     QString serverUrl = QString("ws://%1/publish/%2").arg(serverAddress, deviceId);
     if (!sender->connectToServer(serverUrl)) {
-        qCritical() << "[CaptureProcess] 连接到WebSocket服务器失败";
         return -1;
     }
     // qDebug() << "[CaptureProcess] 正在连接到WebSocket服务器:" << serverUrl;
     
     // 创建性能监控器
-    qDebug() << "[CaptureProcess] 初始化性能监控器...";
+    
     PerformanceMonitor *perfMonitor = new PerformanceMonitor(&app);
     
     // 注册WebSocketSender到性能监控器
@@ -375,12 +359,11 @@ int main(int argc, char *argv[])
     perfMonitor->registerTileManager(&capture->getTileManager());
     
     // 设置性能监控参数
-    perfMonitor->setVerboseLogging(true);   // 启用详细日志
+    perfMonitor->setVerboseLogging(false);   
     
     // 启动性能监控（直接传递10秒间隔）
     perfMonitor->startMonitoring(10000); // 每10秒输出一次性能报告
-    qDebug() << "[CaptureProcess] 性能监控器已启动，报告间隔: 10秒";
-    qDebug() << "[CaptureProcess] 已注册WebSocketSender和TileManager到性能监控器";
+    
     
     // 连接信号槽
     // qDebug() << "[CaptureProcess] 连接编码器和服务器信号槽...";
@@ -417,6 +400,136 @@ int main(int argc, char *argv[])
     static QString currentQuality = getLocalQualityFromConfig();
     static QSize targetEncodeSize = staticEncoder->getFrameSize();
 
+    // 新增：音频发送（改为麦克风采集，基于文本消息）
+    QTimer *audioTimer = new QTimer(&app);
+    audioTimer->setInterval(20); // 20ms 一帧
+    static double audioPhase = 0.0;
+    static int audioSampleRate = 16000; // 目标：16kHz 单声道 16bit PCM
+    static const int audioChannels = 1;
+    static const int audioBitsPerSample = 16;
+    static OpusEncoder *opusEnc = nullptr;
+    static int opusSampleRate = audioSampleRate;
+    static int opusFrameSize = 0; // samples per 20ms
+
+    // 麦克风采集初始化
+    QAudioFormat micFormat;
+    micFormat.setSampleRate(audioSampleRate);
+    micFormat.setChannelCount(audioChannels);
+    micFormat.setSampleFormat(QAudioFormat::Int16);
+
+    QAudioDevice inDev = QMediaDevices::defaultAudioInput();
+    if (!inDev.isFormatSupported(micFormat)) {
+        QAudioFormat preferred = inDev.preferredFormat();
+        if (preferred.sampleFormat() == QAudioFormat::Int16) {
+            micFormat = preferred;
+            audioSampleRate = micFormat.sampleRate();
+        } else {
+            // 如果不支持 Int16，则仍使用首选格式，但可能与播放器不匹配
+            std::cout << "[Capture] Warning: default input does not support Int16, using preferred format." << std::endl;
+            micFormat = preferred;
+            audioSampleRate = micFormat.sampleRate();
+        }
+    }
+
+    QAudioSource *audioSource = new QAudioSource(inDev, micFormat, &app);
+    QIODevice *audioInput = nullptr;
+    // 同步 Opus 编码器所用的采样率与帧长（20ms）
+    opusSampleRate = micFormat.sampleRate();
+    opusFrameSize = opusSampleRate / 50;
+
+    QObject::connect(audioTimer, &QTimer::timeout, [&]() {
+        if (!audioInput) return;
+
+        // 源格式字节宽度
+        int srcBytesPerSample = 2; // 默认 Int16
+        switch (micFormat.sampleFormat()) {
+            case QAudioFormat::UInt8: srcBytesPerSample = 1; break;
+            case QAudioFormat::Int16: srcBytesPerSample = 2; break;
+            case QAudioFormat::Int32: srcBytesPerSample = 4; break;
+            case QAudioFormat::Float: srcBytesPerSample = 4; break;
+            default: srcBytesPerSample = 2; break;
+        }
+
+        const int srcChannels = micFormat.channelCount();
+        const int frameSamples = micFormat.sampleRate() / 50; // 20ms 帧
+        const int needBytes = frameSamples * srcChannels * srcBytesPerSample;
+        QByteArray pcmSrc = audioInput->read(needBytes);
+        if (pcmSrc.size() < needBytes) {
+            return; // 数据不足，下一次再试
+        }
+
+        // 统一转换为 Int16 单声道（取第一个声道），保证观看端一致播放/编码
+        QByteArray pcm;
+        pcm.resize(frameSamples * sizeof(int16_t));
+        int16_t *dst = reinterpret_cast<int16_t*>(pcm.data());
+
+        if (micFormat.sampleFormat() == QAudioFormat::Int16) {
+            // 源就是 Int16，按通道取第一个声道
+            const int16_t *src = reinterpret_cast<const int16_t*>(pcmSrc.constData());
+            for (int i = 0; i < frameSamples; ++i) {
+                dst[i] = src[i * srcChannels];
+            }
+        } else if (micFormat.sampleFormat() == QAudioFormat::Float) {
+            const float *src = reinterpret_cast<const float*>(pcmSrc.constData());
+            for (int i = 0; i < frameSamples; ++i) {
+                float s = src[i * srcChannels];
+                if (s > 1.0f) s = 1.0f; if (s < -1.0f) s = -1.0f;
+                dst[i] = static_cast<int16_t>(s * 32767.0f);
+            }
+        } else if (micFormat.sampleFormat() == QAudioFormat::UInt8) {
+            const uint8_t *src = reinterpret_cast<const uint8_t*>(pcmSrc.constData());
+            for (int i = 0; i < frameSamples; ++i) {
+                // UInt8 无符号，中心点 128
+                int v = static_cast<int>(src[i * srcChannels]) - 128;
+                dst[i] = static_cast<int16_t>(v << 8);
+            }
+        } else if (micFormat.sampleFormat() == QAudioFormat::Int32) {
+            const int32_t *src = reinterpret_cast<const int32_t*>(pcmSrc.constData());
+            for (int i = 0; i < frameSamples; ++i) {
+                dst[i] = static_cast<int16_t>(src[i * srcChannels] >> 16);
+            }
+        } else {
+            // 未知格式，直接丢弃本次
+            return;
+        }
+
+        auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+        if (!opusEnc) {
+            return; // 编码器未初始化（音频未启用）
+        }
+
+        // Opus 编码（20ms 帧）
+        QByteArray opusOut;
+        opusOut.resize(4096); // 足够容纳单帧 Opus 数据
+        int nbytes = opus_encode(opusEnc,
+                                 reinterpret_cast<const opus_int16*>(dst),
+                                 opusFrameSize,
+                                 reinterpret_cast<unsigned char*>(opusOut.data()),
+                                 opusOut.size());
+        if (nbytes < 0) {
+            // 编码失败，跳过本帧
+            return;
+        }
+        opusOut.resize(nbytes);
+
+        QJsonObject msg;
+        msg["type"] = "audio_opus";
+        msg["sample_rate"] = opusSampleRate;
+        msg["channels"] = 1; // 单声道
+        msg["timestamp"] = static_cast<qint64>(timestamp);
+        msg["frame_samples"] = opusFrameSize; // 每帧采样数（20ms）
+        msg["data_base64"] = QString::fromUtf8(opusOut.toBase64());
+        QJsonDocument doc(msg);
+        staticSender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+        // 降低日志噪音：只在偶尔打印
+        static int audioCount = 0; audioCount++; if (audioCount % 50 == 0) {
+            std::cout << "[Capture] audio_opus sent: " << opusOut.size() << " bytes, sr="
+                      << opusSampleRate << ", ch=1" << std::endl;
+        }
+    });
+
     // 新增：质量应用方法
     auto applyQualitySetting = [&](const QString &qualityRaw) {
         QString q = qualityRaw.toLower();
@@ -448,7 +561,6 @@ int main(int argc, char *argv[])
         // 重新初始化编码器以匹配目标分辨率
         staticEncoder->cleanup();
         if (!staticEncoder->initialize(desired.width(), desired.height(), 60)) {
-            qCritical() << "[CaptureProcess] 质量切换后编码器初始化失败";
             return; // 保持旧状态以避免崩溃
         }
         targetEncodeSize = staticEncoder->getFrameSize();
@@ -467,8 +579,7 @@ int main(int argc, char *argv[])
         // 强制关键帧以快速稳定画面
         staticEncoder->forceKeyFrame();
 
-        qDebug() << "[CaptureProcess] 已应用质量设置:" << q
-                 << "目标编码分辨率:" << targetEncodeSize.width() << "x" << targetEncodeSize.height();
+        
     };
 
     // 启动时应用默认质量（来自配置）
@@ -499,10 +610,11 @@ int main(int argc, char *argv[])
             overlay->show();
             overlay->raise();
             // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
+            // 注意：音频测试发送不再在推流开始时自动启动，改为由音频开关控制
         }
     });
     
-    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, overlay]() {
+    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, overlay, audioTimer, audioSource, &audioInput]() {
         if (isCapturing) {
             isCapturing = false;
             captureTimer->stop();
@@ -510,6 +622,12 @@ int main(int argc, char *argv[])
             overlay->hide();
             overlay->clear();
             // qDebug() << "[CaptureProcess] 停止屏幕捕获和鼠标捕获";
+            audioTimer->stop();
+            if (audioSource) {
+                audioSource->stop();
+                audioInput = nullptr;
+            }
+            if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
         }
     });
 
@@ -548,7 +666,6 @@ int main(int argc, char *argv[])
     QObject::connect(sender, &WebSocketSender::switchScreenRequested, [overlay](const QString &direction, int targetIndex) {
         const auto screens = QApplication::screens();
         if (screens.isEmpty()) {
-            qWarning() << "[CaptureProcess] 无可用屏幕，无法切换";
             return;
         }
 
@@ -559,7 +676,7 @@ int main(int argc, char *argv[])
             // 默认滚动到下一屏幕
             currentScreenIndex = (currentScreenIndex + 1) % screens.size();
         }
-        qDebug() << "[CaptureProcess] 切换到屏幕索引:" << currentScreenIndex << ", direction=" << direction << ", targetIndex=" << targetIndex;
+        
         
         // 标记正在切换以避免捕获循环继续抓帧（不断流，仅暂时不发帧）
         isSwitching = true;
@@ -568,7 +685,6 @@ int main(int argc, char *argv[])
         staticCapture->cleanup();
         staticCapture->setTargetScreenIndex(currentScreenIndex);
         if (!staticCapture->initialize()) {
-            qCritical() << "[CaptureProcess] 切屏后初始化屏幕捕获失败";
             isSwitching = false;
             return;
         }
@@ -585,7 +701,6 @@ int main(int argc, char *argv[])
         // 重新初始化编码器以匹配新分辨率
         staticEncoder->cleanup();
         if (!staticEncoder->initialize(newSize.width(), newSize.height(), 60)) {
-            qCritical() << "[CaptureProcess] 切屏后编码器初始化失败";
             isSwitching = false;
             return;
         }
@@ -606,8 +721,40 @@ int main(int argc, char *argv[])
 
     // 新增：处理质量变更请求
     QObject::connect(sender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
-        qDebug() << "[CaptureProcess] 收到质量变更请求:" << quality;
         applyQualitySetting(quality);
+    });
+
+    // 新增：处理音频开关请求（麦克风采集）
+    QObject::connect(sender, &WebSocketSender::audioToggleRequested, [audioTimer, sender, audioSource, &audioInput](bool enabled) {
+        if (enabled) {
+            if (sender->isStreaming()) {
+                if (audioSource) {
+                    audioInput = audioSource->start();
+                }
+                // 懒加载创建 Opus 编码器
+                if (!opusEnc) {
+                    int err = OPUS_OK;
+                    opusEnc = opus_encoder_create(opusSampleRate, 1, OPUS_APPLICATION_VOIP, &err);
+                    if (err == OPUS_OK && opusEnc) {
+                        opus_encoder_ctl(opusEnc, OPUS_SET_BITRATE(24000));
+                        opus_encoder_ctl(opusEnc, OPUS_SET_VBR(1));
+                        opus_encoder_ctl(opusEnc, OPUS_SET_COMPLEXITY(5));
+                        opus_encoder_ctl(opusEnc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+                        opus_encoder_ctl(opusEnc, OPUS_SET_INBAND_FEC(1));
+                    } else {
+                        std::cout << "[Capture] Opus encoder init failed: " << err << std::endl;
+                    }
+                }
+                audioTimer->start();
+            }
+        } else {
+            audioTimer->stop();
+            if (audioSource) {
+                audioSource->stop();
+                audioInput = nullptr;
+            }
+            if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
+        }
     });
     
     QObject::connect(captureTimer, &QTimer::timeout, []() {
@@ -622,7 +769,6 @@ int main(int argc, char *argv[])
         frameCount++;
         // 只在延迟过高时输出警告
         if (captureLatency > 20000) { // 超过20ms时输出警告
-            qDebug() << "[延迟监控] 屏幕捕获耗时过长:" << captureLatency << "μs";
         }
             
             // 瓦片检测和发送逻辑
@@ -638,7 +784,6 @@ int main(int argc, char *argv[])
                         if (!allTiles.isEmpty()) {
                             staticSender->sendTileMetadata(allTiles);
                             tileMetadataSent = true;
-                            qDebug() << "[CaptureProcess] 发送瓦片元数据，总瓦片数:" << allTiles.size();
                         }
                     }
                 }
@@ -664,8 +809,6 @@ int main(int argc, char *argv[])
                     QByteArray serializedData = tileManager.serializeTileData(changedIndices, frameImage);
                     if (!serializedData.isEmpty()) {
                         staticSender->sendTileData(changedIndices, serializedData);
-                        qDebug() << "[CaptureProcess] 发送变化瓦片数据，瓦片数:" << changedIndices.size() 
-                                << "数据大小:" << serializedData.size() << "字节";
                     }
                 }
             }
@@ -688,8 +831,7 @@ int main(int argc, char *argv[])
         }
     });
     
-    qDebug() << "[CaptureProcess] ========== 捕获进程启动完成 ==========";
-    qDebug() << "[CaptureProcess] 设备ID:" << deviceId << ", 服务器:" << serverAddress;
+    
     
     return app.exec();
 }

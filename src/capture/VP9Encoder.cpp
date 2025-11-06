@@ -1,5 +1,4 @@
 #include "VP9Encoder.h"
-#include <QDebug>
 #include <QMutexLocker>
 #include <QDateTime>
 #include <cstring>
@@ -46,7 +45,7 @@ bool VP9Encoder::initialize(int width, int height, int fps)
         cleanup();
     }
     
-    qDebug() << "[VP9Encoder] 初始化VP9编码器:" << width << "x" << height << "@" << fps << "fps";
+    
     
     m_frameSize = QSize(width, height);
     m_frameRate = fps;
@@ -61,14 +60,12 @@ bool VP9Encoder::initialize(int width, int height, int fps)
     m_vPlane = new uint8_t[m_uvPlaneSize];
     
     if (!m_yPlane || !m_uPlane || !m_vPlane) {
-        qCritical() << "[VP9Encoder] 分配YUV缓冲区失败";
         cleanup();
         return false;
     }
     
     // 初始化VP9编码器
     if (!initializeEncoder()) {
-        qCritical() << "[VP9Encoder] 初始化VP9编码器失败";
         cleanup();
         return false;
     }
@@ -76,7 +73,7 @@ bool VP9Encoder::initialize(int width, int height, int fps)
     m_initialized = true;
     m_frameCount = 0;
     
-    qDebug() << "[VP9Encoder] VP9编码器初始化成功";
+    
     return true;
 }
 
@@ -88,11 +85,11 @@ void VP9Encoder::cleanup()
         return;
     }
     
-    qDebug() << "[VP9Encoder] 清理VP9编码器资源...";
+    
     
     // 销毁编码器
     if (vpx_codec_destroy(&m_codec) != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 销毁VP9编码器失败:" << vpx_codec_error(&m_codec);
+        
     }
     
     // 释放YUV缓冲区
@@ -114,7 +111,6 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     QMutexLocker locker(&m_mutex);
     
     if (!m_initialized) {
-        qWarning() << "[VP9Encoder] 编码器未初始化";
         return QByteArray();
     }
     
@@ -149,7 +145,6 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     // 转换RGBA到YUV420
     uint8_t *yuvPlanes[3] = { m_yPlane, m_uPlane, m_vPlane };
     if (!convertRGBAToYUV420(frameData, yuvPlanes)) {
-        qWarning() << "[VP9Encoder] RGBA到YUV420转换失败";
         return QByteArray();
     }
     
@@ -207,7 +202,6 @@ bool VP9Encoder::initializeEncoder()
     // 获取默认配置
     vpx_codec_err_t res = vpx_codec_enc_config_default(vpx_codec_vp9_cx(), &m_config, 0);
     if (res != VPX_CODEC_OK) {
-        qCritical() << "[VP9Encoder] 获取默认配置失败:" << vpx_codec_err_to_string(res);
         return false;
     }
     
@@ -221,7 +215,7 @@ bool VP9Encoder::initializeEncoder()
     int adjustedWidth = (width + 15) & ~15;
     int adjustedHeight = (height + 15) & ~15;
     
-    qDebug() << "[VP9Encoder] 调整后分辨率:" << width << "x" << height;
+    
     
     // 优化实时编码参数 - 最低可看清质量设置
     m_config.g_w = width;
@@ -253,7 +247,6 @@ bool VP9Encoder::initializeEncoder()
     // 初始化编码器
     res = vpx_codec_enc_init(&m_codec, vpx_codec_vp9_cx(), &m_config, 0);
     if (res != VPX_CODEC_OK) {
-        qCritical() << "[VP9Encoder] 初始化编码器失败:" << vpx_codec_err_to_string(res);
         return false;
     }
     
@@ -263,62 +256,59 @@ bool VP9Encoder::initializeEncoder()
     // 使用极速实时编码速度 (cpu-used=8，优先速度)
     ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_CPUUSED, 8);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 设置CPU使用率失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     }
     
     // 启用瓦片列以提升并行性能 (增加到3列)
     ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_TILE_COLUMNS, 3);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 设置瓦片列失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     }
     
     // 启用帧并行解码以提升多线程性能
     ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_FRAME_PARALLEL_DECODING, 1);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 设置并行解码失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     }
     
     // 启用行级多线程编码
     ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_ROW_MT, 1);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 启用行级多线程失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     }
     
     // 启用自适应量化模式以优化编码效率
     ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_AQ_MODE, 3);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 设置自适应量化模式失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     }
     
     // 设置静态阈值参数 - VP9特有的静态检测优化
     ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_STATIC_THRESHOLD, 1);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 设置静态阈值失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     } else {
-        qDebug() << "[VP9Encoder] VP9静态阈值已启用";
+        
     }
     
     // 启用噪声敏感度设置以改善静态内容编码
     ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_NOISE_SENSITIVITY, 1);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 设置噪声敏感度失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     }
     
     // 设置实时模式 - 禁用自动替代参考帧
     ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_ENABLEAUTOALTREF, 0);
     if (ctrl_res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 禁用自动替代参考帧失败:" << vpx_codec_err_to_string(ctrl_res);
+        
     }
     
     // VP9不使用VP8E_SET_ERROR_RESILIENT，而是通过其他方式提高兼容性
     // 确保帧并行解码被禁用以提高兼容性（已在上面设置）
-    qDebug() << "[VP9Encoder] VP9编码器配置完成，使用极速实时模式设置";
     
-    qDebug() << "[VP9Encoder] 编码器配置: 极速编码模式, CPU使用率8, 瓦片列3, AQ模式3, 错误恢复启用";
     
     // 分配原始图像
     if (!vpx_img_alloc(&m_rawImage, VPX_IMG_FMT_I420, m_config.g_w, m_config.g_h, 1)) {
-        qCritical() << "[VP9Encoder] 分配原始图像失败";
         return false;
     }
     
@@ -328,8 +318,6 @@ bool VP9Encoder::initializeEncoder()
 bool VP9Encoder::convertRGBAToYUV420(const QByteArray &rgbaData, uint8_t **yuvPlanes)
 {
     if (rgbaData.size() != m_frameSize.width() * m_frameSize.height() * 4) {
-        qWarning() << "[VP9Encoder] RGBA数据大小不匹配:" << rgbaData.size() 
-                   << "期望:" << (m_frameSize.width() * m_frameSize.height() * 4);
         return false;
     }
     
@@ -370,7 +358,6 @@ bool VP9Encoder::convertRGBAToYUV420(const QByteArray &rgbaData, uint8_t **yuvPl
     }
     
     if (result != 0) {
-        qWarning() << "[VP9Encoder] libyuv颜色转换和缩放失败:" << result;
         return false;
     }
     
@@ -415,7 +402,6 @@ QByteArray VP9Encoder::encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane,
     
     vpx_codec_err_t res = vpx_codec_encode(&m_codec, &m_rawImage, m_frameCount, 1, flags, VPX_DL_GOOD_QUALITY);
     if (res != VPX_CODEC_OK) {
-        qWarning() << "[VP9Encoder] 编码帧失败:" << vpx_codec_err_to_string(res);
         return QByteArray();
     }
     
@@ -519,13 +505,11 @@ bool VP9Encoder::isFrameStatic(const QByteArray &frameData)
             m_staticFrameCount++;
         } else {
             m_staticFrameCount = 1;
-            qDebug() << "[VP9Encoder] 开始检测到静态内容，差异:" << QString::number(difference, 'f', 4) 
-                     << "阈值:" << m_staticThreshold;
+            
         }
     } else {
         if (m_lastFrameWasStatic && m_staticFrameCount > 0) {
-            qDebug() << "[VP9Encoder] 静态内容结束，连续静态帧数:" << m_staticFrameCount 
-                     << "差异:" << QString::number(difference, 'f', 4);
+            
         }
         m_staticFrameCount = 0;
     }
@@ -535,10 +519,7 @@ bool VP9Encoder::isFrameStatic(const QByteArray &frameData)
     // 每100帧输出一次静态检测统计（用于调试）
     static int staticDebugCounter = 0;
     if (++staticDebugCounter % 100 == 0) {
-        qDebug() << "[VP9Encoder] 静态检测统计 - 差异:" << QString::number(difference, 'f', 4) 
-                 << "阈值:" << m_staticThreshold 
-                 << "静态:" << (isStatic ? "是" : "否")
-                 << "连续静态帧:" << m_staticFrameCount;
+        
     }
     
     return isStatic;
@@ -554,12 +535,12 @@ void VP9Encoder::adjustBitrateForStaticContent(bool isStatic)
     if (isStatic && m_staticFrameCount > 3) { // 降低触发阈值，更快响应
         // 静态内容使用更低的码率 - 85%减少
         targetBitrate = static_cast<int>(m_originalBitrate * m_staticBitrateReduction);
-        qDebug() << "[VP9Encoder] 检测到静态内容，降低码率到:" << targetBitrate << "bps (减少85%)";
+        
     } else {
         // 动态内容使用原始码率
         targetBitrate = m_originalBitrate;
         if (!isStatic && m_bitrate != m_originalBitrate) {
-            qDebug() << "[VP9Encoder] 检测到动态内容，恢复码率到:" << targetBitrate << "bps";
+            
         }
     }
     
@@ -571,10 +552,9 @@ void VP9Encoder::adjustBitrateForStaticContent(bool isStatic)
         m_config.rc_target_bitrate = m_bitrate / 1000; // kbps
         vpx_codec_err_t res = vpx_codec_enc_config_set(&m_codec, &m_config);
         if (res != VPX_CODEC_OK) {
-            qWarning() << "[VP9Encoder] 动态调整码率失败:" << vpx_codec_err_to_string(res);
+            
         } else {
-            qDebug() << "[VP9Encoder] 码率调整成功 -" << (isStatic ? "静态" : "动态") 
-                     << "内容，新码率:" << m_bitrate << "bps";
+            
         }
     }
 }

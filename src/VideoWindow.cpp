@@ -159,6 +159,18 @@ void VideoWindow::setupCustomTitleBar()
     m_micButton->setStyleSheet(micButtonStyle);
     connect(m_micButton, &QPushButton::toggled, this, &VideoWindow::onMicToggled);
 
+    // 扬声器按钮（本地播放开/关，不影响推流端）
+    m_speakerButton = new QPushButton("", m_titleBar);
+    m_speakerButton->setCheckable(true);
+    m_speakerButton->setChecked(true);
+    m_speakerButton->setToolTip(QStringLiteral("点击开启/关闭扬声器"));
+    m_speakerIconOff = QIcon(iconDir + "/laba_off.png");
+    m_speakerIconOn  = QIcon(iconDir + "/laba_on.png");
+    m_speakerButton->setIcon(m_speakerIconOn);
+    m_speakerButton->setIconSize(QSize(16, 16));
+    m_speakerButton->setStyleSheet(micButtonStyle);
+    connect(m_speakerButton, &QPushButton::toggled, this, &VideoWindow::onSpeakerToggled);
+
     // 最小化按钮
     m_minimizeButton = new QPushButton("−", m_titleBar);
     m_minimizeButton->setStyleSheet(buttonStyle + 
@@ -178,6 +190,8 @@ void VideoWindow::setupCustomTitleBar()
     connect(m_closeButton, &QPushButton::clicked, this, &VideoWindow::onCloseClicked);
     
     // 按钮对齐 - 添加适当间距（麦克风靠近最小化）
+    m_titleBarLayout->addWidget(m_speakerButton);
+    m_titleBarLayout->addSpacing(2);
     m_titleBarLayout->addWidget(m_micButton);
     m_titleBarLayout->addSpacing(2);
     m_titleBarLayout->addWidget(m_minimizeButton);
@@ -277,6 +291,20 @@ void VideoWindow::onMicToggled(bool checked)
     // 更新图标反馈；暂不接入实际麦克风逻辑
     m_micButton->setIcon(checked ? m_micIconOn : m_micIconOff);
     m_micButton->setToolTip(checked ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
+    // 发出音频测试开关到观看会话
+    if (m_videoDisplayWidget) {
+        m_videoDisplayWidget->sendAudioToggle(checked);
+    }
+}
+
+void VideoWindow::onSpeakerToggled(bool checked)
+{
+    // 本地播放控制（不影响推流端）
+    m_speakerButton->setIcon(checked ? m_speakerIconOn : m_speakerIconOff);
+    m_speakerButton->setToolTip(checked ? QStringLiteral("扬声器：开") : QStringLiteral("扬声器：关"));
+    if (m_videoDisplayWidget) {
+        m_videoDisplayWidget->setSpeakerEnabled(checked);
+    }
 }
 
 void VideoWindow::toggleFullscreen()

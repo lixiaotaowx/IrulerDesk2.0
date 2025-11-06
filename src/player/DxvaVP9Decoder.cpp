@@ -3,7 +3,6 @@
 #include <QElapsedTimer>
 #include <QMutexLocker>
 #include <QApplication>
-#include <QDebug>
 #include <QThread>
 
 // 暂时移除所有Windows头文件包含，避免与Qt MOC系统冲突
@@ -37,7 +36,7 @@ DxvaVP9Decoder::DxvaVP9Decoder(QObject *parent)
     // 创建软件解码器作为fallback
     m_softwareDecoder = std::make_unique<VP9Decoder>();
     
-    qDebug() << "[DxvaVP9Decoder] 创建DXVA VP9解码器，软件fallback已准备";
+    
 }
 
 DxvaVP9Decoder::~DxvaVP9Decoder()
@@ -49,55 +48,40 @@ bool DxvaVP9Decoder::initialize()
 {
     QElapsedTimer timer;
     timer.start();
-    qDebug() << "[DxvaVP9Decoder] [诊断] DXVA VP9解码器初始化开始";
     
     QMutexLocker locker(&m_mutex);
-    qDebug() << "[DxvaVP9Decoder] [诊断] 获取互斥锁耗时:" << timer.elapsed() << "ms";
     
     if (m_initialized) {
-        qWarning() << "[DxvaVP9Decoder] 解码器已经初始化";
         return true;
     }
     
-    qDebug() << "[DxvaVP9Decoder] 初始化VP9解码器，优先尝试硬件加速...";
+    
     
 #ifdef _WIN32
     // 尝试初始化硬件解码器
-    qDebug() << "[DxvaVP9Decoder] [诊断] 开始尝试硬件解码器初始化，当前耗时:" << timer.elapsed() << "ms";
     qint64 hardwareInitStart = timer.elapsed();
     if (initializeHardwareDecoder()) {
-        qDebug() << "[DxvaVP9Decoder] [诊断] 硬件解码器初始化耗时:" << (timer.elapsed() - hardwareInitStart) << "ms";
         m_useHardwareDecoding = true;
         m_hardwareInitialized = true;
         m_stats.hardwareAccelerated = true;
         m_stats.decoderType = "DXVA 2.0 Hardware";
-        qDebug() << "[DxvaVP9Decoder] 硬件加速初始化成功";
         emit hardwareStatusChanged(true);
     } else {
-        qDebug() << "[DxvaVP9Decoder] [诊断] 硬件解码器初始化失败，耗时:" << (timer.elapsed() - hardwareInitStart) << "ms";
-        qWarning() << "[DxvaVP9Decoder] 硬件加速不可用，使用软件解码";
         fallbackToSoftware("硬件初始化失败");
     }
 #else
-    qDebug() << "[DxvaVP9Decoder] 非Windows平台，使用软件解码";
     fallbackToSoftware("非Windows平台");
 #endif
     
     // 如果硬件解码失败，初始化软件解码器
     if (!m_useHardwareDecoding) {
-        qDebug() << "[DxvaVP9Decoder] [诊断] 开始初始化软件解码器，当前耗时:" << timer.elapsed() << "ms";
         qint64 softwareInitStart = timer.elapsed();
         if (!m_softwareDecoder->initialize()) {
-            qCritical() << "[DxvaVP9Decoder] 软件解码器初始化失败";
             return false;
         }
-        qDebug() << "[DxvaVP9Decoder] [诊断] 软件解码器初始化耗时:" << (timer.elapsed() - softwareInitStart) << "ms";
     }
     
     m_initialized = true;
-    qDebug() << "[DxvaVP9Decoder] VP9解码器初始化完成，使用" 
-             << (m_useHardwareDecoding ? "硬件加速" : "软件解码");
-    qDebug() << "[DxvaVP9Decoder] [诊断] DXVA VP9解码器初始化总耗时:" << timer.elapsed() << "ms";
     
     return true;
 }
@@ -107,7 +91,6 @@ void DxvaVP9Decoder::cleanup()
     QMutexLocker locker(&m_mutex);
     
     if (m_initialized) {
-        qDebug() << "[DxvaVP9Decoder] 清理VP9解码器资源...";
         
 #ifdef _WIN32
         if (m_useHardwareDecoding) {
@@ -122,14 +105,12 @@ void DxvaVP9Decoder::cleanup()
         m_initialized = false;
         m_useHardwareDecoding = false;
         
-        qDebug() << "[DxvaVP9Decoder] VP9解码器资源已清理";
     }
 }
 
 QByteArray DxvaVP9Decoder::decode(const QByteArray &encodedData)
 {
     if (!m_initialized) {
-        qWarning() << "[DxvaVP9Decoder] 解码器未初始化";
         return QByteArray();
     }
     
@@ -151,7 +132,6 @@ QByteArray DxvaVP9Decoder::decode(const QByteArray &encodedData)
         
         // 如果硬件解码失败，fallback到软件解码
         if (!success) {
-            qWarning() << "[DxvaVP9Decoder] 硬件解码失败，切换到软件解码";
             fallbackToSoftware("硬件解码失败");
         }
 #endif
@@ -184,7 +164,6 @@ bool DxvaVP9Decoder::initializeHardwareDecoder()
 {
     // 暂时返回false，使用软件解码器
     // TODO: 实现完整的DXVA硬件解码器初始化
-    qDebug() << "[DxvaVP9Decoder] 硬件解码器初始化暂未实现，使用软件fallback";
     return false;
 }
 
@@ -192,7 +171,6 @@ bool DxvaVP9Decoder::checkVP9HardwareSupport()
 {
     // 暂时返回false，使用软件解码器
     // TODO: 实现VP9硬件支持检查
-    qDebug() << "[DxvaVP9Decoder] VP9硬件支持检查暂未实现";
     return false;
 }
 
@@ -201,13 +179,11 @@ QByteArray DxvaVP9Decoder::decodeWithHardware(const QByteArray &encodedData)
     // 暂时返回空，使用软件解码器
     // TODO: 实现DXVA VP9硬件解码
     Q_UNUSED(encodedData)
-    qDebug() << "[DxvaVP9Decoder] 硬件解码暂未实现";
     return QByteArray();
 }
 
 void DxvaVP9Decoder::cleanupHardwareDecoder()
 {
-    qDebug() << "[DxvaVP9Decoder] 清理硬件解码器资源";
     
     // 清理硬件资源
     // TODO: 实现完整的硬件资源清理
@@ -237,7 +213,6 @@ QByteArray DxvaVP9Decoder::convertNV12ToRGB(void* texture, const QSize& size)
 void DxvaVP9Decoder::fallbackToSoftware(const QString& reason)
 {
     if (m_useHardwareDecoding) {
-        qWarning() << "[DxvaVP9Decoder] 切换到软件解码，原因:" << reason;
         
         m_useHardwareDecoding = false;
         m_stats.hardwareAccelerated = false;

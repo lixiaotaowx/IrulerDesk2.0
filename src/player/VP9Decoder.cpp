@@ -24,28 +24,19 @@ bool VP9Decoder::initialize()
 {
     QElapsedTimer timer;
     timer.start();
-    qDebug() << "[VP9Decoder] [诊断] VP9解码器初始化开始";
     
     QMutexLocker locker(&m_mutex);
-    qDebug() << "[VP9Decoder] [诊断] 获取互斥锁耗时:" << timer.elapsed() << "ms";
     
     if (m_initialized) {
-        qWarning() << "[VP9Decoder] 解码器已经初始化";
         return true;
     }
     
-    qDebug() << "[VP9Decoder] 初始化VP9解码器...";
-    qDebug() << "[VP9Decoder] [诊断] 开始设置解码器，当前耗时:" << timer.elapsed() << "ms";
     
     if (!setupDecoder()) {
-        qCritical() << "[VP9Decoder] 解码器设置失败";
         return false;
     }
     
-    qDebug() << "[VP9Decoder] [诊断] 解码器设置完成，耗时:" << timer.elapsed() << "ms";
     m_initialized = true;
-    qDebug() << "[VP9Decoder] VP9解码器初始化成功";
-    qDebug() << "[VP9Decoder] [诊断] VP9解码器初始化总耗时:" << timer.elapsed() << "ms";
     
     return true;
 }
@@ -55,19 +46,14 @@ void VP9Decoder::cleanup()
     QMutexLocker locker(&m_mutex);
     
     if (m_initialized) {
-        qDebug() << "[VP9Decoder] 清理VP9解码器资源...";
-        
         vpx_codec_destroy(&m_codec);
         m_initialized = false;
-        
-        qDebug() << "[VP9Decoder] VP9解码器资源已清理";
     }
 }
 
 QByteArray VP9Decoder::decode(const QByteArray &encodedData)
 {
     if (!m_initialized) {
-        qWarning() << "[VP9Decoder] 解码器未初始化";
         return QByteArray();
     }
     
@@ -100,12 +86,7 @@ QByteArray VP9Decoder::decode(const QByteArray &encodedData)
                                           0);
     
     // VP9解码器可能报告内部错误但实际解码成功，忽略错误继续处理
-    if (res != VPX_CODEC_OK) {
-        // 只在严重错误时输出日志
-        if (res == VPX_CODEC_CORRUPT_FRAME || res == VPX_CODEC_MEM_ERROR) {
-            qWarning() << "[VP9Decoder] VP9解码严重错误:" << vpx_codec_err_to_string(res);
-        }
-    }
+    Q_UNUSED(res);
     
     // 获取解码后的帧
     vpx_codec_iter_t iter = nullptr;
@@ -142,7 +123,6 @@ bool VP9Decoder::setupDecoder()
     // 获取VP9解码器接口
     m_interface = vpx_codec_vp9_dx();
     if (!m_interface) {
-        qCritical() << "[VP9Decoder] 无法获取VP9解码器接口";
         return false;
     }
     
@@ -151,19 +131,16 @@ bool VP9Decoder::setupDecoder()
     memset(&cfg, 0, sizeof(cfg));
     cfg.threads = 4; // 使用4线程解码以提升速度
     
-    qDebug() << "[VP9Decoder] 使用解码器配置: 4线程模式(最低延迟优化)";
     
     // 初始化解码器 - 使用最基本的配置
     vpx_codec_err_t res = vpx_codec_dec_init(&m_codec, m_interface, &cfg, 0);
     if (res != VPX_CODEC_OK) {
-        qCritical() << "[VP9Decoder] 解码器初始化失败:" << vpx_codec_error(&m_codec);
         return false;
     }
     
     // 设置解码器控制参数以匹配编码器
     // 注意：VP9解码器的并行解码设置通过线程数控制，无需额外设置
     
-    qDebug() << "[VP9Decoder] 解码器配置完成: 单线程模式, 确保兼容性";
     
     return true;
 }
@@ -171,7 +148,6 @@ bool VP9Decoder::setupDecoder()
 QByteArray VP9Decoder::convertYUVToRGB(const vpx_image_t *img)
 {
     if (!img) {
-        qWarning() << "[VP9Decoder] 无效的图像指针";
         return QByteArray();
     }
     
@@ -183,7 +159,6 @@ QByteArray VP9Decoder::convertYUVToRGB(const vpx_image_t *img)
     bool isI444 = (img->fmt == VPX_IMG_FMT_I444);
     
     if (!isI420 && !isI444) {
-        qWarning() << "[VP9Decoder] 不支持的VP9图像格式:" << img->fmt << "仅支持I420和I444";
         return QByteArray();
     }
     
@@ -275,9 +250,6 @@ QByteArray VP9Decoder::convertYUVToRGB(const vpx_image_t *img)
     }
     
     if (result != 0) {
-        qWarning() << "[VP9Decoder] libyuv颜色转换失败:" << result 
-                   << "格式:" << (isI420 ? "I420" : "I444")
-                   << "颜色空间:" << colorSpace << "颜色范围:" << colorRange;
         return QByteArray();
     }
     

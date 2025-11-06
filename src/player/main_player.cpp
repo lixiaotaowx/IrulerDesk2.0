@@ -3,7 +3,6 @@
 #include "WebSocketReceiver.h"
 #include "VideoRenderer.h"
 #include "../video_components/VideoDisplayWidget.h"
-#include <QDebug>
 #include <QTimer>
 #include <QFile>
 #include <QTextStream>
@@ -34,7 +33,7 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv); // 使用QApplication支持GUI窗口
     
-    qDebug() << "[PlayerProcess] ========== 启动播放进程 ==========";
+    
     
     // 检查命令行参数
     bool embeddedMode = false;
@@ -45,30 +44,28 @@ int main(int argc, char *argv[])
         QString arg = QString::fromLocal8Bit(argv[i]);
         if (arg == "--embedded") {
             embeddedMode = true;
-            qDebug() << "[PlayerProcess] 使用嵌入模式";
+            
         } else if (arg.startsWith("--server=")) {
             serverUrl = arg.mid(9);
-            qDebug() << "[PlayerProcess] 使用服务器:" << serverUrl;
+            
         } else if (arg.startsWith("--target=")) {
             targetDeviceId = arg.mid(9);
-            qDebug() << "[PlayerProcess] 目标设备ID:" << targetDeviceId;
+            
         } else {
             // 如果没有前缀，直接作为目标设备ID
             targetDeviceId = arg;
-            qDebug() << "[PlayerProcess] 目标设备ID:" << targetDeviceId;
+            
         }
     }
     
     // 检查是否提供了目标设备ID
     if (targetDeviceId.isEmpty()) {
-        qCritical() << "[PlayerProcess] 错误：未提供目标设备ID";
-        qDebug() << "[PlayerProcess] 用法: PlayerProcess.exe <target_device_id> [--server=ws://server:port]";
         return -1;
     }
     
     if (embeddedMode) {
         // 嵌入模式：只提供功能，不显示窗口
-        qDebug() << "[PlayerProcess] 嵌入模式：创建后台服务...";
+        
         
         // 创建组件
         VP9Decoder decoder;
@@ -76,10 +73,8 @@ int main(int argc, char *argv[])
         
         // 初始化解码器
         if (!decoder.initialize()) {
-            qCritical() << "[PlayerProcess] VP9解码器初始化失败";
             return -1;
         }
-        qDebug() << "[PlayerProcess] VP9解码器初始化成功";
         
         // 连接信号槽 - 解码后的帧数据写入共享内存或文件
         QObject::connect(&receiver, &WebSocketReceiver::frameReceived, [&decoder](const QByteArray &frameData) {
@@ -103,12 +98,12 @@ int main(int argc, char *argv[])
         QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
         receiver.sendWatchRequest(viewerId, targetDeviceId);
         
-        qDebug() << "[PlayerProcess] 嵌入模式启动完成，已发送观看请求...";
+        
         
         return app.exec();
     } else {
         // 独立窗口模式：显示完整的视频播放窗口
-        qDebug() << "[PlayerProcess] 独立窗口模式：创建视频显示窗口...";
+        
         
         VideoDisplayWidget *videoWidget = new VideoDisplayWidget();
         videoWidget->setWindowTitle("屏幕流播放器");
@@ -123,10 +118,10 @@ int main(int argc, char *argv[])
         // 延迟发送观看请求，确保连接已建立
         QTimer::singleShot(2000, [videoWidget, viewerId, targetDeviceId]() {
             videoWidget->sendWatchRequest(viewerId, targetDeviceId);
-            qDebug() << "[PlayerProcess] 已发送观看请求，观看者ID:" << viewerId << "目标设备ID:" << targetDeviceId;
+            
         });
         
-        qDebug() << "[PlayerProcess] 独立窗口模式启动完成";
+        
         
         int result = app.exec();
         delete videoWidget;

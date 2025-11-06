@@ -5,7 +5,6 @@
 #include <QByteArray>
 #include <QSize>
 #include <QMutex>
-#include <QDebug>
 
 // 前向声明，避免在头文件中包含Windows API
 #ifdef _WIN32

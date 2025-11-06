@@ -15,6 +15,10 @@
 #include <QRect>
 #include <memory>
 #include <atomic>
+// 音频播放（Qt6）
+#include <QAudioFormat>
+#include <QAudioSink>
+#include <QMediaDevices>
 
 // 前向声明
 class DxvaVP9Decoder;
@@ -84,6 +88,11 @@ public:
     // 按索引切屏（供系统设置列表直接调用，保持会话不断流）
     void sendSwitchScreenIndex(int index);
     void setAutoResize(bool autoResize) { m_autoResize = autoResize; }
+    // 发送音频测试开关（由上层UI触发）
+    void sendAudioToggle(bool enabled);
+    // 本地播放开关（不影响推流端）
+    void setSpeakerEnabled(bool enabled);
+    bool isSpeakerEnabled() const { return m_speakerEnabled; }
     
     // 瓦片渲染方法
     void renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp);
@@ -149,6 +158,13 @@ private:
     bool m_autoResize;
     QString m_serverUrl;
     VideoStats m_stats;
+    bool m_speakerEnabled = true; // 本地扬声器开关，默认开启
+    // 音频播放相关状态
+    QAudioFormat m_audioFormat;
+    QAudioSink *m_audioSink = nullptr;
+    QIODevice *m_audioIO = nullptr;
+    bool m_audioInitialized = false;
+    void initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample);
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;

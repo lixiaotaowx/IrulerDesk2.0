@@ -35,6 +35,7 @@ private slots:
     void onCloseClicked();
     void toggleFullscreen();
     void onMicToggled(bool checked);
+    void onSpeakerToggled(bool checked);
 
 private:
     void setupUI();
@@ -49,8 +50,11 @@ private:
     QPushButton *m_maximizeButton;
     QPushButton *m_closeButton;
     QPushButton *m_micButton;
+    QPushButton *m_speakerButton;
     QIcon m_micIconOn;
     QIcon m_micIconOff;
+    QIcon m_speakerIconOn;
+    QIcon m_speakerIconOff;
     VideoDisplayWidget *m_videoDisplayWidget;
     
     // 窗口拖拽相关

@@ -1,6 +1,5 @@
 #include "WebSocketSender.h"
 #include "TileManager.h"  // 包含TileInfo结构体定义
-#include <QDebug>
 #include <QMutexLocker>
 #include <QDateTime>
 #include <QJsonDocument>
@@ -41,13 +40,13 @@ WebSocketSender::WebSocketSender(QObject *parent)
     m_reconnectTimer->setSingleShot(true);
     connect(m_reconnectTimer, &QTimer::timeout, this, &WebSocketSender::attemptReconnect);
     
-    qDebug() << "[WebSocketSender] WebSocket发送器已创建";
+    
 }
 
 WebSocketSender::~WebSocketSender()
 {
     disconnectFromServer();
-    qDebug() << "[WebSocketSender] WebSocket发送器已销毁";
+    
 }
 
 void WebSocketSender::setupWebSocket()
@@ -71,12 +70,11 @@ bool WebSocketSender::connectToServer(const QString &url)
     QMutexLocker locker(&m_mutex);
     
     if (m_connected) {
-        qWarning() << "[WebSocketSender] 已经连接到服务器";
         return true;
     }
     
     m_serverUrl = url;
-    qDebug() << "[WebSocketSender] 连接到WebSocket服务器:" << url;
+    
     
     m_webSocket->open(QUrl(url));
     return true;
@@ -89,7 +87,7 @@ void WebSocketSender::disconnectFromServer()
     stopReconnectTimer();
     
     if (m_webSocket && m_connected) {
-        qDebug() << "[WebSocketSender] 断开WebSocket连接";
+        
         m_webSocket->close();
     }
 }
@@ -147,7 +145,7 @@ void WebSocketSender::onConnected()
     m_reconnectAttempts = 0;
     stopReconnectTimer();
     
-    qDebug() << "[WebSocketSender] 已连接到WebSocket服务器:" << m_serverUrl;
+    
     emit connected();
 }
 
@@ -159,7 +157,7 @@ void WebSocketSender::onDisconnected()
     m_connected = false;
     
     if (wasConnected) {
-        qWarning() << "[WebSocketSender] 与WebSocket服务器断开连接";
+        
         emit disconnected();
         
         // 启动重连
@@ -170,7 +168,7 @@ void WebSocketSender::onDisconnected()
 void WebSocketSender::onError(QAbstractSocket::SocketError socketError)
 {
     QString errorString = m_webSocket->errorString();
-    qCritical() << "[WebSocketSender] WebSocket错误:" << socketError << "-" << errorString;
+    
     
     emit error(QString("WebSocket连接错误: %1").arg(errorString));
     
@@ -190,12 +188,12 @@ void WebSocketSender::attemptReconnect()
     
     m_reconnectAttempts++;
     if (m_reconnectAttempts > m_maxReconnectAttempts) {
-        qCritical() << "[WebSocketSender] 重连失败，已达到最大重连次数:" << m_maxReconnectAttempts;
+        
         emit error("WebSocket重连失败，已达到最大重连次数");
         return;
     }
     
-    qDebug() << "[WebSocketSender] 尝试重连到服务器，第" << m_reconnectAttempts << "次";
+    
     
     // 重新设置WebSocket
     setupWebSocket();
@@ -207,7 +205,7 @@ void WebSocketSender::startReconnectTimer()
     if (m_reconnectTimer && !m_reconnectTimer->isActive()) {
         int delay = m_reconnectInterval * (1 + m_reconnectAttempts); // 递增延迟
         m_reconnectTimer->start(delay);
-        qDebug() << "[WebSocketSender] 启动重连定时器，延迟" << delay << "ms";
+        
     }
 }
 
@@ -215,7 +213,7 @@ void WebSocketSender::stopReconnectTimer()
 {
     if (m_reconnectTimer && m_reconnectTimer->isActive()) {
         m_reconnectTimer->stop();
-        qDebug() << "[WebSocketSender] 停止重连定时器";
+        
     }
 }
 
@@ -224,7 +222,7 @@ void WebSocketSender::startStreaming()
     QMutexLocker locker(&m_mutex);
     if (!m_isStreaming) {
         m_isStreaming = true;
-        qDebug() << "[WebSocketSender] 开始推流";
+        
         emit streamingStarted();
     }
 }
@@ -234,20 +232,20 @@ void WebSocketSender::stopStreaming()
     QMutexLocker locker(&m_mutex);
     if (m_isStreaming) {
         m_isStreaming = false;
-        qDebug() << "[WebSocketSender] 停止推流";
+        
         emit streamingStopped();
     }
 }
 
 void WebSocketSender::onTextMessageReceived(const QString &message)
 {
-    qDebug() << "[WebSocketSender] 收到文本消息:" << message;
+    
     
     // 解析JSON消息
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
     if (error.error != QJsonParseError::NoError) {
-        qDebug() << "[WebSocketSender] JSON解析失败:" << error.errorString();
+        
         return;
     }
     
@@ -255,10 +253,10 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     QString type = obj["type"].toString();
     
     if (type == "watch_request") {
-        qDebug() << "[WebSocketSender] 收到观看请求";
+        
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
-        qDebug() << "[WebSocketSender] 观看者ID:" << viewerId << "目标ID:" << targetId;
+        
         
         // 响应观看请求，开始推流
         startStreaming();
@@ -273,28 +271,31 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
         
     } else if (type == "start_streaming") {
-        qDebug() << "[WebSocketSender] 收到开始推流请求";
+        
         startStreaming();
     } else if (type == "stop_streaming") {
-        qDebug() << "[WebSocketSender] 收到停止推流请求";
+        
         stopStreaming();
     } else if (type == "annotation_event") {
         QString phase = obj.value("phase").toString();
         int x = obj.value("x").toInt();
         int y = obj.value("y").toInt();
         QString viewerId = obj.value("viewer_id").toString();
-        qDebug() << "[WebSocketSender] 收到批注事件:" << phase << x << y << "viewer:" << viewerId;
+        
         emit annotationEventReceived(phase, x, y, viewerId);
     } else if (type == "switch_screen") {
         QString direction = obj.value("direction").toString();
         int index = obj.value("index").toInt(-1);
-        qDebug() << "[WebSocketSender] 收到切换屏幕请求: direction=" << direction << ", index=" << index;
+        
         // 发射信号，由 main_capture 处理切换逻辑
         emit switchScreenRequested(direction, index);
     } else if (type == "set_quality") {
         QString quality = obj.value("quality").toString();
-        qDebug() << "[WebSocketSender] 收到质量设置请求: " << quality;
+        
         emit qualityChangeRequested(quality);
+    } else if (type == "audio_toggle") {
+        bool enabled = obj.value("enabled").toBool(false);
+        emit audioToggleRequested(enabled);
     }
 }
 
@@ -308,7 +309,6 @@ void WebSocketSender::sendTileData(const QVector<int> &tileIndices, const QByteA
     qint64 encodingTime = 0; // 这里没有编码操作，设为0
     
     if (!m_connected || !m_isStreaming) {
-        qDebug() << "[WebSocketSender] 未连接或未开始推流，无法发送瓦片数据";
         return;
     }
     
@@ -354,10 +354,7 @@ void WebSocketSender::sendTileData(const QVector<int> &tileIndices, const QByteA
         
         emit tileDataSent(tileIndices.size(), serializedData.size());
         
-        qDebug() << "[WebSocketSender] 发送瓦片数据:" 
-                 << "瓦片数量=" << tileIndices.size() 
-                 << "数据大小=" << serializedData.size() << "字节"
-                 << "发送耗时=" << sendingTime << "ms";
+        
     }
 }
 
@@ -366,12 +363,10 @@ void WebSocketSender::sendTileUpdate(const QVector<TileInfo> &updatedTiles, cons
     QMutexLocker locker(&m_mutex);
     
     if (!m_connected || !m_isStreaming) {
-        qDebug() << "[WebSocketSender] 未连接或未开始推流，无法发送瓦片更新";
         return;
     }
     
     if (updatedTiles.size() != tileImages.size()) {
-        qDebug() << "[WebSocketSender] 瓦片信息和图像数据数量不匹配";
         return;
     }
     
@@ -419,9 +414,7 @@ void WebSocketSender::sendTileUpdate(const QVector<TileInfo> &updatedTiles, cons
         
         emit tileUpdateSent(updatedTiles.size());
         
-        qDebug() << "[WebSocketSender] 发送瓦片更新:" 
-                 << "更新瓦片数=" << updatedTiles.size() 
-                 << "数据大小=" << serializedData.size() << "字节";
+        
     }
 }
 
@@ -430,7 +423,6 @@ void WebSocketSender::sendTileMetadata(const QVector<TileInfo> &allTiles)
     QMutexLocker locker(&m_mutex);
     
     if (!m_connected) {
-        qDebug() << "[WebSocketSender] 未连接，无法发送瓦片元数据";
         return;
     }
     
@@ -460,9 +452,7 @@ void WebSocketSender::sendTileMetadata(const QVector<TileInfo> &allTiles)
         
         emit tileMetadataSent(allTiles.size());
         
-        qDebug() << "[WebSocketSender] 发送瓦片元数据:" 
-                  << "瓦片总数=" << allTiles.size() 
-                  << "数据大小=" << jsonData.size() << "字节";
+        
     }
 }
 
@@ -535,13 +525,7 @@ void WebSocketSender::updateSenderStats(qint64 encodingTime, qint64 sendingTime,
     
     // 每1000次发送输出详细统计
     if (m_senderStats.totalTilesSent % 1000 == 0) {
-        qDebug() << "[WebSocketSender] 发送统计:"
-                 << "总瓦片=" << m_senderStats.totalTilesSent
-                 << "总字节=" << m_senderStats.totalBytesSent
-                 << "平均编码时间=" << m_senderStats.averageEncodingTime << "ms"
-                 << "平均发送时间=" << m_senderStats.averageSendingTime << "ms"
-                 << "发送速率=" << (m_senderStats.sendingRate / 1024.0) << "KB/s"
-                 << "瓦片传输速率=" << m_senderStats.tileTransmissionRate << "tiles/s";
+        
     }
 }
 
@@ -569,5 +553,5 @@ void WebSocketSender::resetSenderStats()
     // 重置更新时间
     m_lastStatsUpdateTime = QDateTime::currentMSecsSinceEpoch();
     
-    qDebug() << "[WebSocketSender] 性能统计已重置";
+    
 }

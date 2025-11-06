@@ -7,7 +7,6 @@
 #include <QUrl>
 #include <QByteArray>
 #include <QMutex>
-#include <QDebug>
 
 class WebSocketClient : public QObject
 {

@@ -5,7 +5,6 @@
 #include <QByteArray>
 #include <QSize>
 #include <QMutex>
-#include <QDebug>
 
 // VP9解码库
 #define VPX_CODEC_DISABLE_COMPAT 1

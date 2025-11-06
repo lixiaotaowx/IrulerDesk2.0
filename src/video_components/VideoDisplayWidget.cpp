@@ -2,7 +2,6 @@
 #include "../player/DxvaVP9Decoder.h"
 #include "../player/WebSocketReceiver.h"
 #include <QPixmap>
-#include <QDebug>
 #include <QThread>
 #include <QDateTime>
 #include <QTimer>
@@ -32,7 +31,6 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 检测系统是否交换了鼠标左右键（Windows）
 #ifdef _WIN32
     m_mouseButtonsSwapped = (GetSystemMetrics(SM_SWAPBUTTON) != 0);
-    qDebug() << "[VideoDisplayWidget] 鼠标左右键交换:" << m_mouseButtonsSwapped;
 #else
     m_mouseButtonsSwapped = false;
 #endif
@@ -93,7 +91,6 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
                 // 渲染瓦片
                 renderTile(tileId, completeData, sourceRect, timestamp);
                 
-                qDebug() << "[VideoDisplayWidget] 接收到完整瓦片" << tileId << "，数据大小:" << completeData.size();
             });
     
     connect(m_receiver.get(), &WebSocketReceiver::tileUpdateReceived,
@@ -101,7 +98,6 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
                 QRect updateRect(update.x, update.y, update.width, update.height);
                 updateTile(update.tileId, update.deltaData, updateRect, update.timestamp);
                 
-                qDebug() << "[VideoDisplayWidget] 接收到瓦片更新" << update.tileId;
             });
     
     connect(m_receiver.get(), &WebSocketReceiver::tileMetadataReceived,
@@ -116,7 +112,28 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
                     // 启用瓦片模式
                     setTileMode(true);
                     
-                    qDebug() << "[VideoDisplayWidget] 启用瓦片模式，帧大小:" << frameSize << "，瓦片大小:" << tileSize;
+                }
+            });
+
+    // 音频帧接收（本地扬声器开关控制是否处理）
+    connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
+            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 /*timestamp*/) {
+                if (!m_speakerEnabled) {
+                    return; // 本地关闭扬声器时不处理音频
+                }
+                // 初始化或重建音频输出
+                initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
+                if (!m_audioSink) {
+                    return;
+                }
+                if (m_audioSink->state() == QAudio::StoppedState) {
+                    m_audioIO = m_audioSink->start();
+                }
+                if (m_audioSink->state() == QAudio::SuspendedState) {
+                    m_audioSink->resume();
+                }
+                if (m_audioIO) {
+                    m_audioIO->write(pcmData);
                 }
             });
     
@@ -130,13 +147,11 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     connect(m_tileCleanupTimer, &QTimer::timeout, this, &VideoDisplayWidget::cleanupOldTiles);
     m_tileCleanupTimer->start(2000); // 每2秒清理一次过期瓦片
     
-    qDebug() << "VideoDisplayWidget 创建完成";
 }
 
 VideoDisplayWidget::~VideoDisplayWidget()
 {
     stopReceiving();
-    // qDebug() << "VideoDisplayWidget 销毁";
 }
 
 void VideoDisplayWidget::setupUI()
@@ -193,13 +208,11 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
 {
     // 如果已经在接收且URL相同，则不需要重新连接
     if (m_isReceiving && m_serverUrl == serverUrl) {
-        qDebug() << "已经连接到相同的服务器URL，无需重新连接:" << serverUrl;
         return;
     }
     
     // 如果正在接收但URL不同，或者需要重新连接，先断开之前的连接
     if (m_isReceiving) {
-        qDebug() << "断开之前的连接，准备连接到新的服务器:" << serverUrl;
         stopReceiving();
         // 给一点时间让断开连接完成
         QThread::msleep(100);
@@ -210,7 +223,6 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     // 初始化VP9解码器
     // qDebug() << "初始化VP9解码器...";
     if (!m_decoder->initialize()) {
-        qCritical() << "VP9解码器初始化失败";
         return;
     }
     // qDebug() << "VP9解码器初始化成功";
@@ -234,7 +246,6 @@ void VideoDisplayWidget::stopReceiving()
         return;
     }
     
-    qDebug() << "停止接收视频流";
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
@@ -255,7 +266,6 @@ void VideoDisplayWidget::stopReceiving()
     m_stats.connectionStatus = "Disconnected";
     emit connectionStatusChanged(m_stats.connectionStatus);
     
-    qDebug() << "视频流停止完成，缓存已清理";
 }
 
 void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString &targetId)
@@ -321,7 +331,6 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
     // 验证像素数据大小（ARGB32格式，每像素4字节）
     int expectedSize = frameSize.width() * frameSize.height() * 4;
     if (frameData.size() != expectedSize) {
-        qWarning() << "[VideoDisplayWidget] 像素数据大小不匹配，期望:" << expectedSize << "实际:" << frameData.size();
         return;
     }
     
@@ -445,6 +454,59 @@ void VideoDisplayWidget::sendSwitchScreenIndex(int index)
     }
 }
 
+void VideoDisplayWidget::sendAudioToggle(bool enabled)
+{
+    if (m_receiver) {
+        m_receiver->sendAudioToggle(enabled);
+    }
+}
+
+void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
+{
+    m_speakerEnabled = enabled;
+    if (!m_audioSink) return;
+    if (!m_speakerEnabled) {
+        m_audioSink->stop();
+        m_audioIO = nullptr;
+    } else {
+        m_audioIO = m_audioSink->start();
+    }
+}
+
+void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample)
+{
+    bool needsReinit = (!m_audioInitialized) ||
+                       (m_audioFormat.sampleRate() != sampleRate) ||
+                       (m_audioFormat.channelCount() != channels) ||
+                       (m_audioFormat.sampleFormat() != QAudioFormat::Int16);
+
+    if (!needsReinit && m_audioSink) {
+        return;
+    }
+
+    // 停止并释放旧的输出
+    if (m_audioSink) {
+        m_audioSink->stop();
+        delete m_audioSink;
+        m_audioSink = nullptr;
+        m_audioIO = nullptr;
+    }
+
+    // 配置音频格式
+    m_audioFormat = QAudioFormat();
+    m_audioFormat.setSampleRate(sampleRate);
+    m_audioFormat.setChannelCount(channels);
+    Q_UNUSED(bitsPerSample);
+    m_audioFormat.setSampleFormat(QAudioFormat::Int16);
+
+    // 创建音频输出
+    QAudioDevice outDev = QMediaDevices::defaultAudioOutput();
+    m_audioSink = new QAudioSink(outDev, m_audioFormat, this);
+    m_audioSink->setBufferSize(4096);
+    m_audioIO = m_audioSink->start();
+    m_audioInitialized = true;
+}
+
 void VideoDisplayWidget::renderFrameWithTimestamp(const QByteArray &frameData, const QSize &frameSize, qint64 captureTimestamp)
 {
     // 存储捕获时间戳
@@ -528,14 +590,14 @@ void VideoDisplayWidget::renderTile(int tileId, const QByteArray &tileData, cons
         m_stats.totalTiles = m_tileComposition.tiles.size();
         m_stats.lastTileUpdate = timestamp;
         
-        qDebug() << "[VideoDisplayWidget] 渲染瓦片" << tileId << "，源区域:" << sourceRect << "，时间戳:" << timestamp;
+        
         
         // 触发合成
         if (m_tileMode) {
             composeTiles();
         }
     } else {
-        qWarning() << "[VideoDisplayWidget] 瓦片数据解析失败，瓦片ID:" << tileId;
+        
     }
 }
 
@@ -557,7 +619,6 @@ void VideoDisplayWidget::updateTile(int tileId, const QByteArray &deltaData, con
             tile.timestamp = timestamp;
             tile.isDirty = true;
             
-            qDebug() << "[VideoDisplayWidget] 更新瓦片" << tileId << "，更新区域:" << updateRect << "，时间戳:" << timestamp;
             
             // 触发合成
             if (m_tileMode) {
@@ -565,7 +626,6 @@ void VideoDisplayWidget::updateTile(int tileId, const QByteArray &deltaData, con
             }
         }
     } else {
-        qWarning() << "[VideoDisplayWidget] 尝试更新不存在的瓦片:" << tileId;
     }
 }
 
@@ -585,9 +645,7 @@ void VideoDisplayWidget::setTileConfiguration(const QSize &frameSize, const QSiz
     m_compositeFrame = QPixmap(frameSize);
     m_compositeFrame.fill(Qt::black);
     
-    qDebug() << "[VideoDisplayWidget] 设置瓦片配置 - 帧大小:" << frameSize 
-             << "，瓦片大小:" << tileSize 
-             << "，瓦片网格:" << m_tileComposition.tilesPerRow << "x" << m_tileComposition.tilesPerColumn;
+    
 }
 
 void VideoDisplayWidget::clearTiles()
@@ -602,7 +660,7 @@ void VideoDisplayWidget::clearTiles()
     m_stats.activeTiles = 0;
     m_stats.dirtyTiles = 0;
     
-    qDebug() << "[VideoDisplayWidget] 清空所有瓦片";
+    
 }
 
 void VideoDisplayWidget::composeTiles()
@@ -698,7 +756,6 @@ void VideoDisplayWidget::cleanupOldTiles()
     auto it = m_tileComposition.tiles.begin();
     while (it != m_tileComposition.tiles.end()) {
         if (currentTime - it.value().timestamp > m_tileTimeout) {
-            qDebug() << "[VideoDisplayWidget] 清理过期瓦片:" << it.key();
             it = m_tileComposition.tiles.erase(it);
         } else {
             ++it;
@@ -878,7 +935,6 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
 void VideoDisplayWidget::sendUndo()
 {
     if (m_receiver) {
-        qDebug() << "[VideoDisplayWidget] sendUndo() 调用";
         m_receiver->sendAnnotationEvent("undo", 0, 0);
     }
 }
@@ -887,7 +943,6 @@ void VideoDisplayWidget::sendUndo()
 void VideoDisplayWidget::sendClear()
 {
     if (m_receiver) {
-        qDebug() << "[VideoDisplayWidget] sendClear() 调用";
         m_receiver->sendAnnotationEvent("clear", 0, 0);
     }
     m_isAnnotating = false;
@@ -896,7 +951,6 @@ void VideoDisplayWidget::sendClear()
 void VideoDisplayWidget::sendCloseOverlay()
 {
     if (m_receiver) {
-        qDebug() << "[VideoDisplayWidget] sendCloseOverlay() 调用";
         m_receiver->sendAnnotationEvent("overlay_close", 0, 0);
     }
 }

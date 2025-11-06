@@ -17,13 +17,13 @@ WebSocketClient::WebSocketClient(QObject *parent)
     connect(m_statsTimer, &QTimer::timeout, this, &WebSocketClient::updateStats);
     m_statsTimer->start(1000); // 每秒更新一次统计
     
-    qDebug() << "[WebSocketClient] WebSocket客户端已创建";
+    
 }
 
 WebSocketClient::~WebSocketClient()
 {
     disconnectFromServer();
-    qDebug() << "[WebSocketClient] WebSocket客户端已销毁";
+    
 }
 
 void WebSocketClient::setupWebSocket()
@@ -46,12 +46,11 @@ bool WebSocketClient::connectToServer(const QString &url)
     QMutexLocker locker(&m_mutex);
     
     if (m_connected) {
-        qWarning() << "[WebSocketClient] 已经连接到服务器";
         return true;
     }
     
     m_serverUrl = url;
-    qDebug() << "[WebSocketClient] 连接到WebSocket服务器:" << url;
+    
     
     m_connectionStartTime = QDateTime::currentMSecsSinceEpoch();
     m_webSocket->open(QUrl(url));
@@ -64,7 +63,7 @@ void WebSocketClient::disconnectFromServer()
     QMutexLocker locker(&m_mutex);
     
     if (m_webSocket && m_connected) {
-        qDebug() << "[WebSocketClient] 断开WebSocket连接";
+        
         m_webSocket->close();
     }
 }
@@ -84,7 +83,7 @@ void WebSocketClient::sendFrame(const QByteArray &frameData)
             for (int i = 0; i < qMin(8, frameData.size()); i++) {
                 hexData += QString("%1 ").arg(static_cast<uint8_t>(frameData[i]), 2, 16, QChar('0'));
             }
-            qDebug() << "[WebSocketClient] 前8字节:" << hexData;
+            
         }
         frameCount++;
     }
@@ -117,7 +116,7 @@ void WebSocketClient::onConnected()
     m_connected = true;
     m_stats.connectionTime = QDateTime::currentMSecsSinceEpoch() - m_connectionStartTime;
     
-    qDebug() << "[WebSocketClient] WebSocket连接已建立";
+    
     emit connected();
 }
 
@@ -128,7 +127,7 @@ void WebSocketClient::onDisconnected()
     bool wasConnected = m_connected;
     m_connected = false;
     
-    qDebug() << "[WebSocketClient] WebSocket连接已断开";
+    
     
     if (wasConnected) {
         emit disconnected();
@@ -138,7 +137,7 @@ void WebSocketClient::onDisconnected()
 void WebSocketClient::onError(QAbstractSocket::SocketError error)
 {
     QString errorString = m_webSocket->errorString();
-    qWarning() << "[WebSocketClient] WebSocket错误:" << error << errorString;
+    
     
     emit connectionError(errorString);
 }

@@ -1,5 +1,4 @@
 #include "ScreenCapture.h"
-#include <QDebug>
 #include <QPixmap>
 #include <QBuffer>
 #include <QImageWriter>
@@ -25,37 +24,31 @@ ScreenCapture::~ScreenCapture()
 
 bool ScreenCapture::initialize()
 {
-    qDebug() << "[ScreenCapture] 初始化屏幕捕获...";
+    
     
     // 选择目标屏幕（默认主屏幕；如设置了索引则使用对应屏幕）
     const auto screens = QGuiApplication::screens();
     if (m_targetScreenIndex >= 0 && m_targetScreenIndex < screens.size()) {
         m_primaryScreen = screens[m_targetScreenIndex];
-        qDebug() << "[ScreenCapture] 使用配置的屏幕索引:" << m_targetScreenIndex;
     } else {
         m_primaryScreen = QGuiApplication::primaryScreen();
-        qDebug() << "[ScreenCapture] 使用主屏幕（未指定索引或越界）";
     }
     if (!m_primaryScreen) {
-        qCritical() << "[ScreenCapture] 无法获取主屏幕";
         return false;
     }
     
     m_screenSize = m_primaryScreen->size();
-    qDebug() << "[ScreenCapture] 屏幕尺寸:" << m_screenSize;
     
 #ifdef _WIN32
     // 尝试使用D3D11进行硬件加速捕获
     if (initializeD3D11()) {
         m_useD3D11 = true;
-        qDebug() << "[ScreenCapture] 使用D3D11硬件加速捕获";
     } else {
-        qWarning() << "[ScreenCapture] D3D11初始化失败，使用Qt软件捕获";
         m_useD3D11 = false;
     }
 #else
     m_useD3D11 = false;
-    qDebug() << "[ScreenCapture] 使用Qt软件捕获";
+    
 #endif
     
     m_initialized = true;
@@ -68,7 +61,6 @@ void ScreenCapture::cleanup()
         return;
     }
     
-    qDebug() << "[ScreenCapture] 清理屏幕捕获资源...";
     
 #ifdef _WIN32
     if (m_dxgiOutputDuplication) {
@@ -109,7 +101,6 @@ QByteArray ScreenCapture::captureScreen()
             }
             return frameData;
         } else if (result == HardwareError) {
-            qWarning() << "[ScreenCapture] D3D11硬件错误，回退到Qt捕获";
             m_useD3D11 = false;
         }
     }
@@ -128,23 +119,19 @@ QByteArray ScreenCapture::captureScreen()
 #ifdef _WIN32
 bool ScreenCapture::initializeD3D11()
 {
-    qDebug() << "[ScreenCapture] 开始初始化D3D11硬件加速捕获...";
+    
     
     // 创建DXGI Factory
     HRESULT hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)m_dxgiFactory.GetAddressOf());
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] 创建DXGI Factory失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         return false;
     }
-    qDebug() << "[ScreenCapture] DXGI Factory创建成功";
     
     // 获取适配器
     hr = m_dxgiFactory->EnumAdapters1(0, m_dxgiAdapter.GetAddressOf());
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] 获取DXGI适配器失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         return false;
     }
-    qDebug() << "[ScreenCapture] DXGI适配器获取成功";
     
     // 创建D3D11设备 - 优化：直接使用发布模式，避免调试开销
     D3D_FEATURE_LEVEL featureLevel;
@@ -162,10 +149,8 @@ bool ScreenCapture::initializeD3D11()
     );
     
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] 创建D3D11设备失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         return false;
     }
-    qDebug() << "[ScreenCapture] D3D11设备创建成功";
     
     // 选择对应DXGI输出：根据Qt屏幕geometry匹配
     int selectedOutputIndex = 0;
@@ -199,33 +184,20 @@ bool ScreenCapture::initializeD3D11()
         hr = S_OK;
     }
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] 获取DXGI输出失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
-        qWarning() << "[ScreenCapture] 可能原因：没有连接显示器或显卡驱动问题";
         return false;
     }
-    qDebug() << "[ScreenCapture] DXGI输出获取成功，索引:" << selectedOutputIndex;
     
     // 获取Output1接口
     hr = m_dxgiOutput->QueryInterface(__uuidof(IDXGIOutput1), (void**)m_dxgiOutput1.GetAddressOf());
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] 获取IDXGIOutput1接口失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
-        qWarning() << "[ScreenCapture] 可能原因：系统不支持DXGI 1.2或更高版本";
         return false;
     }
-    qDebug() << "[ScreenCapture] IDXGIOutput1接口获取成功";
     
     // 创建桌面复制
     hr = m_dxgiOutput1->DuplicateOutput(m_d3dDevice.Get(), m_dxgiOutputDuplication.GetAddressOf());
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] 创建桌面复制失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
-        if (hr == static_cast<HRESULT>(0x887A0004)) { // DXGI_ERROR_UNSUPPORTED
-            qWarning() << "[ScreenCapture] 错误：桌面复制不支持，可能是远程桌面或虚拟机环境";
-        } else if (hr == static_cast<HRESULT>(0x887A0022)) { // DXGI_ERROR_NOT_CURRENTLY_AVAILABLE
-            qWarning() << "[ScreenCapture] 错误：桌面复制当前不可用，可能有其他程序正在使用";
-        }
         return false;
     }
-    qDebug() << "[ScreenCapture] 桌面复制创建成功";
     
     // 创建暂存纹理
     D3D11_TEXTURE2D_DESC stagingDesc = {};
@@ -240,10 +212,8 @@ bool ScreenCapture::initializeD3D11()
     
     hr = m_d3dDevice->CreateTexture2D(&stagingDesc, nullptr, m_stagingTexture.GetAddressOf());
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] 创建暂存纹理失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         return false;
     }
-    qDebug() << "[ScreenCapture] 暂存纹理创建成功";
     
     return true;
 }
@@ -251,9 +221,6 @@ bool ScreenCapture::initializeD3D11()
 ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameData)
 {
     if (!m_d3dDevice || !m_dxgiOutputDuplication || !m_stagingTexture) {
-        qWarning() << "[ScreenCapture] D3D11组件未初始化 - Device:" << (m_d3dDevice ? "OK" : "NULL") 
-                   << ", OutputDuplication:" << (m_dxgiOutputDuplication ? "OK" : "NULL")
-                   << ", StagingTexture:" << (m_stagingTexture ? "OK" : "NULL");
         return HardwareError;
     }
     
@@ -272,11 +239,6 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     }
     
     if (FAILED(hr)) {
-        if (hr == DXGI_ERROR_ACCESS_LOST) {
-            qWarning() << "[ScreenCapture] 桌面复制访问丢失，需要重新初始化";
-        } else {
-            qWarning() << "[ScreenCapture] AcquireNextFrame失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
-        }
         return HardwareError;
     }
     
@@ -284,7 +246,6 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     ComPtr<ID3D11Texture2D> desktopTexture;
     hr = desktopResource->QueryInterface(__uuidof(ID3D11Texture2D), (void**)desktopTexture.GetAddressOf());
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] QueryInterface ID3D11Texture2D失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         m_dxgiOutputDuplication->ReleaseFrame();
         return HardwareError;
     }
@@ -296,7 +257,6 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     hr = m_d3dContext->Map(m_stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mappedResource);
     if (FAILED(hr)) {
-        qWarning() << "[ScreenCapture] Map暂存纹理失败:" << QString("0x%1").arg(hr, 8, 16, QChar('0'));
         m_dxgiOutputDuplication->ReleaseFrame();
         return HardwareError;
     }
@@ -334,21 +294,18 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
 QByteArray ScreenCapture::captureWithQt()
 {
     if (!m_primaryScreen) {
-        qWarning() << "[ScreenCapture] m_primaryScreen为空";
         return QByteArray();
     }
     
     // 使用Qt进行屏幕截图
     QPixmap screenshot = m_primaryScreen->grabWindow(0);
     if (screenshot.isNull()) {
-        qWarning() << "[ScreenCapture] Qt屏幕截图失败";
         return QByteArray();
     }
     
     // 转换为QImage
     QImage image = screenshot.toImage();
     if (image.isNull()) {
-        qWarning() << "[ScreenCapture] 转换为QImage失败";
         return QByteArray();
     }
     
@@ -369,7 +326,6 @@ QByteArray ScreenCapture::captureWithQt()
 bool ScreenCapture::initializeTileSystem(const QSize &tileSize)
 {
     if (!m_initialized) {
-        qWarning() << "[ScreenCapture] 必须先初始化ScreenCapture才能初始化瓦片系统";
         return false;
     }
     
@@ -377,21 +333,17 @@ bool ScreenCapture::initializeTileSystem(const QSize &tileSize)
     QSize actualTileSize = tileSize;
     if (m_tileManager.isAdaptiveTileSizeEnabled()) {
         actualTileSize = TileManager::calculateOptimalTileSize(m_screenSize);
-        qDebug() << "[ScreenCapture] 使用自适应瓦片大小:" << actualTileSize;
     }
     
     m_tileSize = actualTileSize;
     
     // qDebug() << "[ScreenCapture] 初始化瓦片系统..."; // 已禁用以提升性能
-    qDebug() << "  屏幕尺寸:" << m_screenSize;
-    qDebug() << "  瓦片尺寸:" << m_tileSize;
+    
     
     if (m_tileManager.initialize(m_screenSize, m_tileSize.width(), m_tileSize.height())) {
-        // qDebug() << "[ScreenCapture] 瓦片系统初始化成功"; // 已禁用以提升性能
         m_tileManager.printTileInfo();
         return true;
     } else {
-        qCritical() << "[ScreenCapture] 瓦片系统初始化失败";
         return false;
     }
 }
@@ -403,17 +355,14 @@ void ScreenCapture::initializeTileSystem(const QSize& screenSize, const QSize& t
     QSize actualTileSize = tileSize;
     if (m_tileManager.isAdaptiveTileSizeEnabled()) {
         actualTileSize = TileManager::calculateOptimalTileSize(screenSize);
-        qDebug() << "[ScreenCapture] 使用自适应瓦片大小:" << actualTileSize;
     }
     
     m_tileSize = actualTileSize;
     
-    qDebug() << "[ScreenCapture] 初始化瓦片系统 - 屏幕尺寸:" << screenSize << "瓦片大小:" << actualTileSize;
     
     m_tileManager.initialize(screenSize, actualTileSize.width(), actualTileSize.height());
     
     int totalTiles = m_tileManager.getTileCount();
-    qDebug() << "[ScreenCapture] 瓦片系统初始化完成 - 总瓦片数:" << totalTiles;
 }
 
 int ScreenCapture::getTileCount() const
@@ -438,7 +387,6 @@ void ScreenCapture::performTileDetection(const QByteArray &frameData)
                  QImage::Format_ARGB32);
     
     if (image.isNull()) {
-        qWarning() << "[ScreenCapture] 无法从帧数据创建QImage";
         return;
     }
     
@@ -451,7 +399,6 @@ void ScreenCapture::setTileDetectionEnabled(bool enabled)
 {
     if (m_tileDetectionEnabled != enabled) {
         m_tileDetectionEnabled = enabled;
-        qDebug() << "[ScreenCapture] 瓦片检测" << (enabled ? "已启用" : "已禁用");
         
         // 如果禁用瓦片检测，重置瓦片状态
         if (!enabled && m_tileManager.isInitialized()) {

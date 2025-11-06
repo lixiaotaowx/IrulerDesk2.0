@@ -5,7 +5,6 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QMutex>
-#include <QDebug>
 
 // 前向声明
 class TileManager;

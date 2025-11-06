@@ -36,40 +36,30 @@ MainWindow::MainWindow(QWidget *parent)
     , m_loginWebSocket(nullptr)
     , m_isLoggedIn(false)
 {
-    qDebug() << "[MainWindow] ========== 主窗口构造开始 ==========";
+    
     
     // 初始化随机数种子
     srand(static_cast<unsigned int>(time(nullptr)));
     
-    qDebug() << "[MainWindow] 设置UI界面...";
     setupUI();
-    qDebug() << "[MainWindow] UI界面设置完成";
     
-    qDebug() << "[MainWindow] 设置状态栏...";
     setupStatusBar();
-    qDebug() << "[MainWindow] 状态栏设置完成";
-    
+
     // 初始化登录系统
-    qDebug() << "[MainWindow] 初始化登录系统...";
     initializeLoginSystem();
-    qDebug() << "[MainWindow] 登录系统初始化完成";
     
     // 自动开始流媒体传输
-    qDebug() << "[MainWindow] 设置1秒后自动启动流媒体...";
     QTimer::singleShot(1000, this, &MainWindow::startStreaming);
     
-    qDebug() << "[MainWindow] ========== 主窗口构造完成 ==========";
 }
 
 void MainWindow::sendWatchRequest(const QString& targetDeviceId)
 {
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "[WatchRequest] 登录WebSocket未连接，无法发送观看请求";
         return;
     }
     // 记录当前正在观看的目标设备ID，便于在源切换后重发
     m_currentTargetId = targetDeviceId;
-    qDebug() << "[WatchRequest] 记录当前目标设备ID:" << m_currentTargetId;
     
     // 构建观看请求消息
     QJsonObject watchRequest;
@@ -80,8 +70,6 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
     
     QJsonDocument doc(watchRequest);
     QString message = doc.toJson(QJsonDocument::Compact);
-    
-    qDebug() << "[WatchRequest] 发送观看请求:" << message;
     m_loginWebSocket->sendTextMessage(message);
     
     // 直接在主窗口的VideoDisplayWidget中开始接收视频流
@@ -91,14 +79,12 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
 void MainWindow::startVideoReceiving(const QString& targetDeviceId)
 {
     if (!m_videoWindow) {
-        qDebug() << "[VideoReceiving] VideoWindow未初始化";
         // 直接在主窗口的VideoDisplayWidget中开始接收视频流
         startVideoReceiving(targetDeviceId);
     }
     
     VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
     if (!videoWidget) {
-        qDebug() << "[VideoReceiving] VideoDisplayWidget未初始化";
         return;
     }
     
@@ -106,8 +92,6 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     QString serverAddress = getServerAddress();
     QString serverUrl = QString("ws://%1/subscribe/%2").arg(serverAddress, targetDeviceId);
     
-    qDebug() << "[VideoReceiving] 开始在视频窗口接收视频流，目标设备ID:" << targetDeviceId;
-    qDebug() << "[VideoReceiving] 连接URL:" << serverUrl;
     
     // 使用VideoDisplayWidget开始接收视频流
     videoWidget->startReceiving(serverUrl);
@@ -117,7 +101,6 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     QString viewerId = getDeviceId();
     QTimer::singleShot(800, [videoWidget, viewerId, targetDeviceId]() {
         videoWidget->sendWatchRequest(viewerId, targetDeviceId);
-        qDebug() << "[VideoReceiving] 已在接收器记录watch_request用于批注路由，viewer:" << viewerId << " target:" << targetDeviceId;
     });
 }
 
@@ -125,7 +108,6 @@ void MainWindow::startPlayerProcess(const QString& targetDeviceId)
 {
     // 如果播放进程已经在运行，先停止它
     if (m_playerProcess && m_playerProcess->state() != QProcess::NotRunning) {
-        qDebug() << "[PlayerProcess] 停止现有播放进程";
         m_playerProcess->kill();
         m_playerProcess->waitForFinished(3000);
     }
@@ -140,16 +122,11 @@ void MainWindow::startPlayerProcess(const QString& targetDeviceId)
     QStringList arguments;
     arguments << targetDeviceId;  // 传递目标设备ID作为参数
     
-    qDebug() << "[PlayerProcess] 启动播放进程，目标设备ID:" << targetDeviceId;
-    qDebug() << "[PlayerProcess] 执行路径:" << playerPath;
-    qDebug() << "[PlayerProcess] 参数:" << arguments;
     
     m_playerProcess->start(playerPath, arguments);
     
     if (!m_playerProcess->waitForStarted(5000)) {
-        qDebug() << "[PlayerProcess] 播放进程启动失败:" << m_playerProcess->errorString();
     } else {
-        qDebug() << "[PlayerProcess] 播放进程启动成功";
     }
 }
 
@@ -164,38 +141,32 @@ MainWindow::~MainWindow()
 
 void MainWindow::onWatchButtonClicked()
 {
-    qDebug() << "[MainWindow] 观看按钮被点击";
     
     // 检查是否有选中的用户
     QListWidgetItem *currentItem = m_listWidget->currentItem();
     if (!currentItem) {
-        qDebug() << "[MainWindow] 没有选中的用户";
         return;
     }
     
     QString selectedUser = currentItem->text();
-    qDebug() << "[MainWindow] 选中的用户:" << selectedUser;
     
     // 从项目文本中提取设备ID (格式: "用户名 (设备ID)")
     QRegularExpression regex("\\(([^)]+)\\)");
     QRegularExpressionMatch match = regex.match(selectedUser);
     if (match.hasMatch()) {
         QString targetDeviceId = match.captured(1);
-        qDebug() << "[MainWindow] 提取到目标设备ID:" << targetDeviceId;
         
         // 显示视频窗口
         if (m_videoWindow) {
             m_videoWindow->show();
             m_videoWindow->raise();
             m_videoWindow->activateWindow();
-            qDebug() << "[MainWindow] 视频窗口已显示";
         }
         
         // 发送观看请求并开始视频接收
         sendWatchRequest(targetDeviceId);
         
     } else {
-        qDebug() << "[MainWindow] 无法从项目文本中提取设备ID:" << selectedUser;
     }
 }
 
@@ -241,7 +212,6 @@ void MainWindow::setupUI()
     m_mainLayout->addWidget(titleLabel);
     
     // 创建列表组件
-    qDebug() << "[MainWindow] 创建列表组件...";
     m_listWidget = new QListWidget(this);
     m_listWidget->setMinimumHeight(300);
     m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -280,12 +250,10 @@ void MainWindow::setupUI()
         // 只有选中了有效用户（不是"等待连接服务器..."）时才启用按钮
         bool enableButton = hasSelection && !currentText.contains("等待连接") && !currentText.isEmpty();
         m_watchButton->setEnabled(enableButton);
-        qDebug() << "[MainWindow] 列表选择变化，启用观看按钮:" << enableButton;
     });
     
     // 添加示例项目
     m_listWidget->addItem("等待连接服务器...");
-    qDebug() << "[MainWindow] 列表组件项目数量:" << m_listWidget->count();
     
     m_mainLayout->addWidget(m_listWidget, 1);
     
@@ -322,7 +290,6 @@ void MainWindow::setupUI()
     m_mainLayout->addWidget(m_watchButton);
     
     // 创建随机ID显示标签
-    qDebug() << "[MainWindow] 创建随机ID标签...";
     m_idLabel = new QLabel(this);
     m_idLabel->setMinimumHeight(60);
     
@@ -344,11 +311,9 @@ void MainWindow::setupUI()
         "}"
     );
     m_idLabel->setAlignment(Qt::AlignCenter);
-    qDebug() << "[MainWindow] 随机ID标签创建完成:" << idText;
     
     m_mainLayout->addWidget(m_idLabel);
     
-    qDebug() << "[MainWindow] UI组件已添加到布局";
     
     // 创建视频窗口（但不显示）
     m_videoWindow = new VideoWindow();
@@ -381,7 +346,6 @@ void MainWindow::setupUI()
     connect(m_transparentImageList, &TransparentImageList::exitRequested,
             this, &MainWindow::onExitRequested);
     
-    qDebug() << "[MainWindow] ========== UI设置完成 ==========";
 }
 
 void MainWindow::setupStatusBar()
@@ -404,14 +368,11 @@ void MainWindow::setupStatusBar()
 
 void MainWindow::startStreaming()
 {
-    qDebug() << "[MainWindow] startStreaming() 被调用";
     
     if (m_isStreaming) {
-        qDebug() << "[MainWindow] 流媒体已在运行，跳过启动";
         return;
     }
     
-    qDebug() << "[MainWindow] 开始启动流媒体系统";
     
     m_statusLabel->setText("正在启动流媒体...");
     m_statusLabel->setStyleSheet(
@@ -425,7 +386,6 @@ void MainWindow::startStreaming()
     startProcesses();
     
     m_isStreaming = true;
-    qDebug() << "[MainWindow] 流媒体启动完成，状态设为运行中";
 }
 
 void MainWindow::stopStreaming()
@@ -470,49 +430,35 @@ void MainWindow::startProcesses()
 {
     // 启动时间诊断 - 开始计时
     m_startupTimer.start();
-    qDebug() << "[MainWindow] ========== 启动时间诊断开始 ==========";
-    qDebug() << "[MainWindow] startProcesses() 开始启动积木式组件";
     
     QString appDir = QApplication::applicationDirPath();
-    qDebug() << "[MainWindow] 应用程序目录:" << appDir;
-    qDebug() << "[MainWindow] [诊断] 初始化耗时:" << m_startupTimer.elapsed() << "ms";
     
     // 直接启动捕获进程，连接到腾讯云服务器
-    qDebug() << "[MainWindow] 启动屏幕捕获进程（连接到腾讯云服务器）";
-    qDebug() << "[MainWindow] [诊断] 开始创建捕获进程，当前耗时:" << m_startupTimer.elapsed() << "ms";
+    
     
     m_captureProcess = new QProcess(this);
     connect(m_captureProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MainWindow::onCaptureProcessFinished);
     
     QString captureExe = appDir + "/CaptureProcess.exe";
-    qDebug() << "[MainWindow] 捕获进程路径:" << captureExe;
-    qDebug() << "[MainWindow] [诊断] 进程对象创建完成，耗时:" << m_startupTimer.elapsed() << "ms";
+    
     
     if (!QFile::exists(captureExe)) {
-        qCritical() << "[MainWindow] 捕获进程文件不存在:" << captureExe;
         QMessageBox::warning(this, "错误", "捕获进程文件不存在: " + captureExe);
         return;
     }
     
-    qDebug() << "[MainWindow] [诊断] 开始启动捕获进程，耗时:" << m_startupTimer.elapsed() << "ms";
     m_captureProcess->start(captureExe);
     
     // 异步启动捕获进程，不等待启动完成
-    qDebug() << "[MainWindow] [超快启动] 异步启动捕获进程，不等待启动完成";
-    qDebug() << "[MainWindow] [诊断] 捕获进程异步启动完成，耗时:" << m_startupTimer.elapsed() << "ms";
     
-    qDebug() << "[MainWindow] 积木式组件启动完成";
-    qDebug() << "[MainWindow] ========== 启动时间诊断结束，总耗时:" << m_startupTimer.elapsed() << "ms ==========";
 }
 
 void MainWindow::stopProcesses()
 {
-    qDebug() << "[MainWindow] 停止所有进程";
     
     // 停止捕获进程
     if (m_captureProcess) {
-        qDebug() << "[MainWindow] 停止捕获进程";
         m_captureProcess->terminate();
         if (!m_captureProcess->waitForFinished(3000)) {
             m_captureProcess->kill();
@@ -523,7 +469,6 @@ void MainWindow::stopProcesses()
     
     // 停止播放进程
     if (m_playerProcess) {
-        qDebug() << "[MainWindow] 停止播放进程";
         m_playerProcess->terminate();
         if (!m_playerProcess->waitForFinished(3000)) {
             m_playerProcess->kill();
@@ -531,24 +476,16 @@ void MainWindow::stopProcesses()
         m_playerProcess->deleteLater();
         m_playerProcess = nullptr;
     }
-    
-    qDebug() << "[MainWindow] 所有进程已停止";
 }
 
 void MainWindow::onCaptureProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
-    qDebug() << "[MainWindow] 捕获进程退出，退出码:" << exitCode << "状态:" << (exitStatus == QProcess::NormalExit ? "正常退出" : "崩溃退出");
+    
     
     if (m_captureProcess) {
-        qDebug() << "[MainWindow] 捕获进程错误信息:" << m_captureProcess->errorString();
         QString output = m_captureProcess->readAllStandardOutput();
         QString error = m_captureProcess->readAllStandardError();
-        if (!output.isEmpty()) {
-            qDebug() << "[MainWindow] 捕获进程标准输出:" << output;
-        }
-        if (!error.isEmpty()) {
-            qDebug() << "[MainWindow] 捕获进程错误输出:" << error;
-        }
+        
     }
     
     if (m_isStreaming) {
@@ -565,18 +502,12 @@ void MainWindow::onCaptureProcessFinished(int exitCode, QProcess::ExitStatus exi
 
 void MainWindow::onPlayerProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
-    qDebug() << "[MainWindow] 播放进程退出，退出码:" << exitCode << "状态:" << (exitStatus == QProcess::NormalExit ? "正常退出" : "崩溃退出");
+    
     
     if (m_playerProcess) {
-        qDebug() << "[MainWindow] 播放进程错误信息:" << m_playerProcess->errorString();
         QString output = m_playerProcess->readAllStandardOutput();
         QString error = m_playerProcess->readAllStandardError();
-        if (!output.isEmpty()) {
-            qDebug() << "[MainWindow] 播放进程标准输出:" << output;
-        }
-        if (!error.isEmpty()) {
-            qDebug() << "[MainWindow] 播放进程错误输出:" << error;
-        }
+        
     }
     
     if (m_isStreaming) {
@@ -606,12 +537,11 @@ QString MainWindow::getConfigFilePath() const
         QDir dir;
         if (!dir.exists(configDir)) {
             dir.mkpath(configDir);
-            qDebug() << "[MainWindow] 创建配置文件夹:" << configDir;
+            
         }
         
         // 缓存配置文件完整路径
         cachedConfigFilePath = configDir + "/app_config.txt";
-        qDebug() << "[MainWindow] 配置文件路径:" << cachedConfigFilePath;
         initialized = true;
     }
     
@@ -635,7 +565,6 @@ int MainWindow::loadOrGenerateRandomId()
                 int existingId = idStr.toInt(&ok);
                 if (ok && existingId >= 10000 && existingId <= 99999) {
                     configFile.close();
-                    qDebug() << "[MainWindow] 从配置文件读取已保存的随机ID:" << existingId;
                     return existingId;
                 }
             }
@@ -646,7 +575,6 @@ int MainWindow::loadOrGenerateRandomId()
     // 如果文件不存在或读取失败，生成新的随机ID
     int newRandomId = 10000 + (rand() % 90000); // 生成10000-99999之间的随机数
     saveRandomIdToConfig(newRandomId);
-    qDebug() << "[MainWindow] 生成新的随机ID并保存到配置文件:" << newRandomId;
     return newRandomId;
 }
 
@@ -668,7 +596,6 @@ int MainWindow::loadOrGenerateIconId()
                 int existingIconId = idStr.toInt(&ok);
                 if (ok && existingIconId >= 3 && existingIconId <= 21) {
                     configFile.close();
-                    qDebug() << "[MainWindow] 从配置文件读取已保存的icon ID:" << existingIconId;
                     return existingIconId;
                 }
             }
@@ -679,7 +606,6 @@ int MainWindow::loadOrGenerateIconId()
     // 如果文件不存在或读取失败，生成新的icon ID
     int newIconId = 3 + (rand() % 19); // 生成3-21之间的随机数
     saveIconIdToConfig(newIconId);
-    qDebug() << "[MainWindow] 生成新的icon ID并保存到配置文件:" << newIconId;
     return newIconId;
 }
 
@@ -723,9 +649,7 @@ void MainWindow::saveRandomIdToConfig(int randomId)
             out << line << "\n";
         }
         configFile.close();
-        qDebug() << "[MainWindow] 随机ID已保存到配置文件:" << randomId;
     } else {
-        qWarning() << "[MainWindow] 无法写入配置文件:" << configFilePath;
     }
 }
 
@@ -770,9 +694,7 @@ void MainWindow::saveIconIdToConfig(int iconId)
             out << line << "\n";
         }
         configFile.close();
-        qDebug() << "[MainWindow] icon ID已保存到配置文件:" << iconId;
     } else {
-        qWarning() << "[MainWindow] 无法写入配置文件:" << configFilePath;
     }
 }
 
@@ -798,7 +720,6 @@ QString MainWindow::getDeviceId() const
                         configFile.close();
                         cachedDeviceId = deviceId;
                         initialized = true;
-                        qDebug() << "[MainWindow] 从配置文件读取设备ID(random_id):" << cachedDeviceId;
                         return cachedDeviceId;
                     }
                 }
@@ -810,7 +731,6 @@ QString MainWindow::getDeviceId() const
         int randomId = const_cast<MainWindow*>(this)->loadOrGenerateRandomId();
         cachedDeviceId = QString::number(randomId);
         initialized = true;
-        qDebug() << "[MainWindow] 使用生成的random_id作为设备ID:" << cachedDeviceId;
     }
     
     return cachedDeviceId;
@@ -821,8 +741,6 @@ QString MainWindow::generateUniqueDeviceId() const
     // 生成5位数字ID，与random_id保持一致的格式
     srand(static_cast<unsigned int>(QDateTime::currentMSecsSinceEpoch()));
     int deviceId = 10000 + (rand() % 90000); // 生成10000-99999之间的随机数
-    
-    qDebug() << "[MainWindow] 生成新的设备ID:" << deviceId;
     return QString::number(deviceId);
 }
 
@@ -870,9 +788,7 @@ void MainWindow::saveDeviceIdToConfig(const QString& deviceId)
         }
         
         configFile.close();
-        qDebug() << "[MainWindow] 设备ID已保存到配置文件:" << deviceId;
     } else {
-        qWarning() << "[MainWindow] 无法写入配置文件:" << configFilePath;
     }
 }
 
@@ -895,7 +811,6 @@ QString MainWindow::getServerAddress() const
                 if (line.startsWith("server_address=")) {
                     QString serverAddress = line.mid(15); // 去掉"server_address="前缀
                     configFile.close();
-                    qDebug() << "[MainWindow] 从配置文件读取服务器地址:" << serverAddress;
                     cachedServerAddress = serverAddress;
                     initialized = true;
                     return cachedServerAddress;
@@ -905,7 +820,6 @@ QString MainWindow::getServerAddress() const
         }
         
         // 如果读取失败，返回默认的腾讯云地址
-        qDebug() << "[MainWindow] 未找到服务器地址配置，使用默认 123.207.222.92:8765";
         cachedServerAddress = "123.207.222.92:8765";
         initialized = true;
     }
@@ -948,9 +862,7 @@ void MainWindow::saveServerAddressToConfig(const QString& serverAddress)
             out << line << "\n";
         }
         configFile.close();
-        qDebug() << "[MainWindow] 服务器地址已保存到配置文件:" << serverAddress;
     } else {
-        qWarning() << "[MainWindow] 无法写入配置文件:" << configFilePath;
     }
 }
 
@@ -960,8 +872,6 @@ void MainWindow::initializeLoginSystem()
     // 获取用户ID和名称
     m_userId = getDeviceId();
     m_userName = QString("用户%1").arg(m_userId);
-    
-    qDebug() << "[LoginSystem] 初始化登录系统，用户ID:" << m_userId << "用户名:" << m_userName;
     
     // 创建WebSocket连接
     m_loginWebSocket = new QWebSocket();
@@ -981,16 +891,12 @@ void MainWindow::connectToLoginServer()
 {
     QString serverAddress = getServerAddress();
     QString serverUrl = QString("ws://%1/login").arg(serverAddress);  // 使用专门的登录路径
-    qDebug() << "[LoginSystem] 连接到登录服务器:" << serverUrl;
-    qDebug() << "[LoginSystem] 当前WebSocket状态:" << m_loginWebSocket->state();
-    qDebug() << "[LoginSystem] 本地用户ID:" << m_userId << "用户名:" << m_userName;
     m_loginWebSocket->open(QUrl(serverUrl));
 }
 
 void MainWindow::sendLoginRequest()
 {
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
-        qWarning() << "[LoginSystem] WebSocket未连接，无法发送登录请求，当前状态:" << (m_loginWebSocket ? m_loginWebSocket->state() : -1);
         return;
     }
     
@@ -1007,18 +913,11 @@ void MainWindow::sendLoginRequest()
     
     QJsonDocument doc(loginRequest);
     QString message = doc.toJson(QJsonDocument::Compact);
-    
-    qDebug() << "[LoginSystem] 发送登录请求:" << message;
-    qDebug() << "[LoginSystem] 登录数据 - ID:" << m_userId << "名称:" << m_userName
-             << "Icon ID:" << loadOrGenerateIconId() << "Viewer Icon ID:" << loadOrGenerateIconId();
     m_loginWebSocket->sendTextMessage(message);
 }
 
 void MainWindow::updateUserList(const QJsonArray& users)
 {
-    qDebug() << "[LoginSystem] ========== 开始更新用户列表 ==========";
-    qDebug() << "[LoginSystem] 收到用户数组，用户数量:" << users.size();
-    qDebug() << "[LoginSystem] 用户数组内容:" << QJsonDocument(users).toJson(QJsonDocument::Compact);
     
     // 清空现有列表
     m_listWidget->clear();
@@ -1027,7 +926,6 @@ void MainWindow::updateUserList(const QJsonArray& users)
     QStringList onlineUserIds;
     
     if (users.isEmpty()) {
-        qDebug() << "[LoginSystem] 用户列表为空，显示默认消息";
         m_listWidget->addItem("暂无在线用户");
         // 清空透明图片列表
         m_transparentImageList->updateUserList(onlineUserIds);
@@ -1037,10 +935,9 @@ void MainWindow::updateUserList(const QJsonArray& users)
     // 添加在线用户到列表
     for (int i = 0; i < users.size(); ++i) {
         const QJsonValue& userValue = users[i];
-        qDebug() << "[LoginSystem] 处理用户" << i << ":" << userValue;
         
         if (!userValue.isObject()) {
-            qWarning() << "[LoginSystem] 用户数据不是对象，跳过:" << userValue;
+            // 非对象数据，跳过
             continue;
         }
         
@@ -1048,40 +945,29 @@ void MainWindow::updateUserList(const QJsonArray& users)
         QString userId = userObj["id"].toString();
         QString userName = userObj["name"].toString();
         
-        qDebug() << "[LoginSystem] 解析用户数据 - ID:" << userId << "名称:" << userName;
         
         QString displayText = QString("%1 (%2)").arg(userName).arg(userId);
         m_listWidget->addItem(displayText);
-        
-        qDebug() << "[LoginSystem] 添加用户到UI列表:" << displayText;
         
         // 添加所有用户到透明图片列表（包含自己）
         onlineUserIds.append(userId);
         
         // 检查是否是当前用户
         if (userId == m_userId) {
-            qDebug() << "[LoginSystem] 发现当前用户在列表中:" << userId;
+            // 当前用户在列表中
         } else {
-            qDebug() << "[LoginSystem] 发现其他用户:" << userId << "（当前用户:" << m_userId << "）";
+            // 其他用户
         }
     }
     
     // 更新透明图片列表 - 使用新的JSON格式
     m_transparentImageList->updateUserList(users);
     
-    qDebug() << "[LoginSystem] 用户列表更新完成，UI显示" << users.size() << "个在线用户";
-    qDebug() << "[LoginSystem] 透明图片列表显示" << onlineUserIds.size() << "个用户（包含自己）";
-    qDebug() << "[LoginSystem] ========== 用户列表更新结束 ==========";
 }
 
 // 登录系统槽函数实现
 void MainWindow::onLoginWebSocketConnected()
 {
-    qDebug() << "[LoginSystem] ========== WebSocket连接成功 ==========";
-    qDebug() << "[LoginSystem] 连接状态:" << m_loginWebSocket->state();
-    qDebug() << "[LoginSystem] 服务器地址:" << m_loginWebSocket->requestUrl().toString();
-    qDebug() << "[LoginSystem] 本地地址:" << m_loginWebSocket->localAddress().toString() << ":" << m_loginWebSocket->localPort();
-    qDebug() << "[LoginSystem] 对端地址:" << m_loginWebSocket->peerAddress().toString() << ":" << m_loginWebSocket->peerPort();
     
     m_listWidget->clear();
     m_listWidget->addItem("已连接服务器，正在登录...");
@@ -1092,115 +978,71 @@ void MainWindow::onLoginWebSocketConnected()
 
 void MainWindow::onLoginWebSocketDisconnected()
 {
-    qDebug() << "[LoginSystem] ========== WebSocket连接断开 ==========";
-    qDebug() << "[LoginSystem] 断开原因:" << m_loginWebSocket->closeReason();
-    qDebug() << "[LoginSystem] 断开代码:" << m_loginWebSocket->closeCode();
     m_isLoggedIn = false;
     
     m_listWidget->clear();
     m_listWidget->addItem("与服务器断开连接");
     
     // 5秒后尝试重新连接
-    qDebug() << "[LoginSystem] 5秒后尝试重新连接";
     QTimer::singleShot(5000, this, &MainWindow::connectToLoginServer);
 }
 
 void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
 {
-    qDebug() << "[LoginSystem] ========== 收到服务器消息 ==========";
-    qDebug() << "[LoginSystem] 消息长度:" << message.length();
-    qDebug() << "[LoginSystem] 消息内容:" << message;
-    qDebug() << "[LoginSystem] 当前登录状态:" << (m_isLoggedIn ? "已登录" : "未登录");
     
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
     
     if (error.error != QJsonParseError::NoError) {
-        qWarning() << "[LoginSystem] JSON解析错误:" << error.errorString();
-        qWarning() << "[LoginSystem] 错误位置:" << error.offset;
-        qWarning() << "[LoginSystem] 原始消息:" << message;
         return;
     }
     
     QJsonObject obj = doc.object();
     QString type = obj["type"].toString();
     
-    qDebug() << "[LoginSystem] 解析成功，消息类型:" << type;
-    qDebug() << "[LoginSystem] 消息对象键:" << obj.keys();
-    
     if (type == "login_response") {
-        qDebug() << "[LoginSystem] 处理登录响应消息";
         bool success = obj["success"].toBool();
         QString responseMessage = obj["message"].toString();
         
-        qDebug() << "[LoginSystem] 登录结果:" << (success ? "成功" : "失败");
-        qDebug() << "[LoginSystem] 服务器消息:" << responseMessage;
-        
         if (success) {
-            qDebug() << "[LoginSystem] 登录成功，更新状态";
             m_isLoggedIn = true;
             m_listWidget->clear();
             m_listWidget->addItem("登录成功，等待用户列表...");
         } else {
-            qWarning() << "[LoginSystem] 登录失败:" << responseMessage;
             m_listWidget->clear();
             m_listWidget->addItem("登录失败: " + responseMessage);
         }
     } else if (type == "online_users_update" || type == "online_users") {
-        qDebug() << "[LoginSystem] ========== 处理用户列表更新消息 ==========";
-        qDebug() << "[LoginSystem] 消息类型:" << type;
-        qDebug() << "[LoginSystem] 当前时间:" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
-        qDebug() << "[LoginSystem] 本地用户ID:" << getDeviceId();
-        qDebug() << "[LoginSystem] WebSocket连接状态:" << (m_loginWebSocket ? (m_loginWebSocket->state() == QAbstractSocket::ConnectedState ? "已连接" : "未连接") : "空指针");
-        qDebug() << "[LoginSystem] 本地地址:" << (m_loginWebSocket ? m_loginWebSocket->localAddress().toString() + ":" + QString::number(m_loginWebSocket->localPort()) : "N/A");
-        qDebug() << "[LoginSystem] 服务器地址:" << (m_loginWebSocket ? m_loginWebSocket->peerAddress().toString() + ":" + QString::number(m_loginWebSocket->peerPort()) : "N/A");
         
         if (!obj.contains("data")) {
-            qWarning() << "[LoginSystem] 错误: 消息缺少data字段";
-            qWarning() << "[LoginSystem] 消息对象键列表:" << obj.keys();
-            qWarning() << "[LoginSystem] 完整消息对象:" << obj;
             return;
         }
         
         QJsonValue dataValue = obj["data"];
-        qDebug() << "[LoginSystem] data字段类型:" << (dataValue.isArray() ? "数组" : dataValue.isObject() ? "对象" : dataValue.isNull() ? "空值" : "其他");
-        qDebug() << "[LoginSystem] data字段原始内容:" << QJsonDocument::fromVariant(dataValue.toVariant()).toJson(QJsonDocument::Compact);
         
         if (!dataValue.isArray()) {
-            qWarning() << "[LoginSystem] 错误: data字段不是数组";
-            qWarning() << "[LoginSystem] data字段实际类型:" << dataValue.type();
-            qWarning() << "[LoginSystem] data字段值:" << dataValue;
             return;
         }
         
         QJsonArray users = dataValue.toArray();
-        qDebug() << "[LoginSystem] 成功解析用户数组，用户数量:" << users.size();
         
         // 详细记录每个用户信息
         for (int i = 0; i < users.size(); ++i) {
             const QJsonValue& userValue = users[i];
-            qDebug() << "[LoginSystem] 用户" << i << "原始数据:" << userValue;
             
             if (userValue.isObject()) {
                 QJsonObject userObj = userValue.toObject();
                 QString userId = userObj["id"].toString();
                 QString userName = userObj["name"].toString();
-                qDebug() << "[LoginSystem] 用户" << i << "解析结果 - ID:" << userId << "名称:" << userName;
-                qDebug() << "[LoginSystem] 用户" << i << "是否为本地用户:" << (userId == getDeviceId() ? "是" : "否");
             } else {
-                qWarning() << "[LoginSystem] 用户" << i << "数据格式错误，不是对象:" << userValue.type();
+                // 数据格式错误，不是对象
             }
         }
-        
-        qDebug() << "[LoginSystem] 准备更新UI用户列表...";
         updateUserList(users);
-        qDebug() << "[LoginSystem] ========== 用户列表更新处理完成 ==========";
     } else if (type == "start_streaming_request") {
         // 处理推流请求
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
-        
-        qDebug() << "[StreamingRequest] 收到推流请求，观看者:" << viewerId << "目标:" << targetId;
         
         // 开始推流
         if (!m_isStreaming) {
@@ -1220,7 +1062,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
             QJsonDocument responseDoc(streamOkResponse);
             m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
-            qDebug() << "[StreamingRequest] 已发送推流OK响应:" << responseDoc.toJson(QJsonDocument::Compact);
         }
     } else if (type == "streaming_ok") {
         // 处理推流OK响应，开始拉流播放
@@ -1228,34 +1069,21 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         QString targetId = obj["target_id"].toString();
         QString streamUrl = obj["stream_url"].toString();
         
-        qDebug() << "[StreamingOK] 收到推流OK响应，观看者:" << viewerId << "目标:" << targetId << "流URL:" << streamUrl;
-        
         // 检查是否是当前用户的观看请求
         if (viewerId == getDeviceId()) {
-            qDebug() << "[StreamingOK] 这是当前用户的观看请求，开始拉流播放";
             
             // 开始视频接收和播放
             startVideoReceiving(targetId);
         } else {
-            qDebug() << "[StreamingOK] 这不是当前用户的观看请求，忽略";
+            // 非当前用户的观看请求，忽略
         }
     } else {
-        qWarning() << "[LoginSystem] 未知消息类型:" << type;
-        qDebug() << "[LoginSystem] 完整消息对象:" << obj;
+        // 未知消息类型，忽略
     }
-    
-    qDebug() << "[LoginSystem] ========== 消息处理完成 ==========";
 }
 
 void MainWindow::onLoginWebSocketError(QAbstractSocket::SocketError error)
 {
-    qWarning() << "[LoginSystem] ========== WebSocket连接错误 ==========";
-    qWarning() << "[LoginSystem] 错误代码:" << error;
-    qWarning() << "[LoginSystem] 错误描述:" << m_loginWebSocket->errorString();
-    qWarning() << "[LoginSystem] 当前连接状态:" << m_loginWebSocket->state();
-    qWarning() << "[LoginSystem] 服务器URL:" << m_loginWebSocket->requestUrl().toString();
-    qWarning() << "[LoginSystem] 本地地址:" << m_loginWebSocket->localAddress().toString() << ":" << m_loginWebSocket->localPort();
-    qWarning() << "[LoginSystem] 对端地址:" << m_loginWebSocket->peerAddress().toString() << ":" << m_loginWebSocket->peerPort();
     
     QString errorMessage;
     switch (error) {
@@ -1282,14 +1110,10 @@ void MainWindow::onLoginWebSocketError(QAbstractSocket::SocketError error)
         break;
     }
     
-    qWarning() << "[LoginSystem] 错误详情:" << errorMessage;
-    qWarning() << "[LoginSystem] ========== 错误处理完成 ==========";
-    
     m_listWidget->clear();
     m_listWidget->addItem("连接服务器失败: " + errorMessage);
     
     // 10秒后尝试重新连接
-    qDebug() << "[LoginSystem] 10秒后尝试重新连接";
     QTimer::singleShot(10000, this, &MainWindow::connectToLoginServer);
 }
 
@@ -1321,24 +1145,20 @@ void MainWindow::onContextMenuOption1()
     // 获取当前选中的项目
     QListWidgetItem *currentItem = m_listWidget->currentItem();
     if (!currentItem) {
-        qDebug() << "[ContextMenu] 观看被点击，但没有选中项目";
         return;
     }
     
     QString itemText = currentItem->text();
-    qDebug() << "[ContextMenu] 观看被点击，当前项目:" << itemText;
     
     // 从项目文本中提取设备ID (格式: "用户名 (设备ID)")
     QRegularExpression regex("\\(([^)]+)\\)");
     QRegularExpressionMatch match = regex.match(itemText);
     if (match.hasMatch()) {
         QString targetDeviceId = match.captured(1);
-        qDebug() << "[ContextMenu] 提取到目标设备ID:" << targetDeviceId;
         
         // 发送观看请求
         sendWatchRequest(targetDeviceId);
     } else {
-        qDebug() << "[ContextMenu] 无法从项目文本中提取设备ID:" << itemText;
     }
 }
 
@@ -1347,23 +1167,19 @@ void MainWindow::onContextMenuOption2()
     // 获取当前选中的项目
     QListWidgetItem *currentItem = m_listWidget->currentItem();
     if (currentItem) {
-        qDebug() << "[ContextMenu] 选项二被点击，当前项目:" << currentItem->text();
     } else {
-        qDebug() << "[ContextMenu] 选项二被点击，但没有选中项目";
     }
 }
 
 // 透明图片列表点击事件处理
 void MainWindow::onUserImageClicked(const QString &userId, const QString &userName)
 {
-    qDebug() << "[TransparentImageList] 用户点击了图片，用户ID:" << userId << "用户名:" << userName;
     
     // 显示视频窗口
     if (m_videoWindow) {
         m_videoWindow->show();
         m_videoWindow->raise();
         m_videoWindow->activateWindow();
-        qDebug() << "[TransparentImageList] 视频窗口已显示";
     }
     
     // 发送观看请求
@@ -1371,8 +1187,6 @@ void MainWindow::onUserImageClicked(const QString &userId, const QString &userNa
     
     // 启动视频接收
     startVideoReceiving(userId);
-    
-    qDebug() << "[TransparentImageList] 已为用户" << userId << "启动视频观看";
 }
 
 void MainWindow::showMainList()
@@ -1381,13 +1195,10 @@ void MainWindow::showMainList()
     this->show();
     this->raise();
     this->activateWindow();
-    
-    qDebug() << "[MainWindow] 显示主窗口";
 }
 
 void MainWindow::onSetAvatarRequested()
 {
-    qDebug() << "[MainWindow] 收到设置头像请求";
     
     // 如果头像设置窗口不存在，创建它
     if (!m_avatarSettingsWindow) {
@@ -1404,16 +1215,13 @@ void MainWindow::onSetAvatarRequested()
     QString currentUserId = m_transparentImageList ? m_transparentImageList->getCurrentUserId() : QString();
     if (!currentUserId.isEmpty()) {
         startVideoReceiving(currentUserId);
-        qDebug() << "[TransparentImageList] 已为用户" << currentUserId << "启动视频观看";
     } else {
-        qWarning() << "[MainWindow] 当前用户ID为空，无法启动视频观看";
     }
     m_avatarSettingsWindow->activateWindow();
 }
 
 void MainWindow::onAvatarSelected(int iconId)
 {
-    qDebug() << "[MainWindow] 用户选择了头像ID:" << iconId;
     
     // 1. 更新配置文件中的icon ID
     saveIconIdToConfig(iconId);
@@ -1438,7 +1246,6 @@ void MainWindow::onAvatarSelected(int iconId)
         QString jsonString = doc.toJson(QJsonDocument::Compact);
         
         m_loginWebSocket->sendTextMessage(jsonString);
-        qDebug() << "[MainWindow] 已向服务器发送头像更新消息:" << jsonString;
     }
     
     // 注释：保持头像设置窗口打开，方便用户多次选择
@@ -1449,7 +1256,6 @@ void MainWindow::onAvatarSelected(int iconId)
 
 void MainWindow::onSystemSettingsRequested()
 {
-    qDebug() << "[MainWindow] 收到系统设置请求";
     if (!m_systemSettingsWindow) {
         m_systemSettingsWindow = new SystemSettingsWindow(this);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::screenSelected,
@@ -1462,18 +1268,15 @@ void MainWindow::onSystemSettingsRequested()
 
 void MainWindow::onClearMarksRequested()
 {
-    qDebug() << "[MainWindow] 收到清理标记请求";
     if (m_videoWindow && m_videoWindow->getVideoDisplayWidget()) {
         // 改回仅清理标记，保持画板可继续绘制
         m_videoWindow->getVideoDisplayWidget()->sendClear();
     } else {
-        qWarning() << "[MainWindow] 视频窗口未就绪，无法清理标记";
     }
 }
 
 void MainWindow::onExitRequested()
 {
-    qDebug() << "[MainWindow] 收到退出请求";
     // 尽量优雅地停止推流与相关进程
     stopStreaming();
     if (m_videoWindow) {
@@ -1484,7 +1287,6 @@ void MainWindow::onExitRequested()
 
 void MainWindow::onScreenSelected(int index)
 {
-    qDebug() << "[MainWindow] 用户选择屏幕索引:" << index;
 
     // 改为热切换：通过播放器端WebSocket发送按索引切屏消息，不修改配置、不重启采集进程
     if (m_videoWindow) {
@@ -1552,15 +1354,12 @@ void MainWindow::saveScreenIndexToConfig(int screenIndex)
             out << line << "\n";
         }
         configFile.close();
-        qDebug() << "[MainWindow] 已保存screen_index到配置:" << screenIndex;
     } else {
-        qWarning() << "[MainWindow] 无法写入配置文件:" << configFilePath;
     }
 }
 
 void MainWindow::onLocalQualitySelected(const QString& quality)
 {
-    qDebug() << "[MainWindow] 本地质量选择:" << quality;
     saveLocalQualityToConfig(quality);
     if (m_statusLabel) {
         m_statusLabel->setText(QString("本地质量设置为: %1").arg(quality));
@@ -1601,8 +1400,6 @@ void MainWindow::saveLocalQualityToConfig(const QString& quality)
             out << line << "\n";
         }
         configFile.close();
-        qDebug() << "[MainWindow] 已保存local_quality到配置:" << quality << " 路径:" << configFilePath;
     } else {
-        qWarning() << "[MainWindow] 保存local_quality失败，无法打开配置文件:" << configFilePath;
     }
 }

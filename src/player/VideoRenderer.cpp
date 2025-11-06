@@ -59,12 +59,11 @@ VideoRenderer::VideoRenderer(QWidget *parent)
     m_compositionTimer->setSingleShot(true); // 单次触发
     connect(m_compositionTimer, &QTimer::timeout, this, &VideoRenderer::optimizeComposition);
     
-    qDebug() << "[VideoRenderer] 视频渲染器已创建";
 }
 
 VideoRenderer::~VideoRenderer()
 {
-    qDebug() << "[VideoRenderer] 视频渲染器已销毁";
+    
 }
 
 void VideoRenderer::setupUI()
@@ -137,7 +136,6 @@ void VideoRenderer::renderFrame(const QByteArray &frameData, const QSize &frameS
     }
     
     if (image.isNull()) {
-        qWarning() << "[VideoRenderer] 无法创建图像";
         return;
     }
     
@@ -305,9 +303,7 @@ void VideoRenderer::setTileConfiguration(const QSize &frameSize, const QSize &ti
     
     m_tileMode = true;
     
-    qDebug() << "[VideoRenderer] 瓦片配置已设置: 帧大小" << frameSize 
-             << "瓦片大小" << tileSize 
-             << "瓦片网格" << m_tileComposition.tilesPerRow << "x" << m_tileComposition.tilesPerColumn;
+    
 }
 
 void VideoRenderer::renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp)
@@ -329,12 +325,10 @@ void VideoRenderer::renderTile(int tileId, const QByteArray &tileData, const QRe
         tileImage = QImage(reinterpret_cast<const uchar*>(tileData.constData()),
                           sourceRect.width(), sourceRect.height(), QImage::Format_RGB888);
     } else {
-        qWarning() << "[VideoRenderer] 不支持的瓦片数据格式，大小:" << tileData.size();
         return;
     }
     
     if (tileImage.isNull()) {
-        qWarning() << "[VideoRenderer] 瓦片图像创建失败，ID:" << tileId;
         return;
     }
     
@@ -353,7 +347,7 @@ void VideoRenderer::renderTile(int tileId, const QByteArray &tileData, const QRe
     updateCompositionRegion(tile.targetRect);
     batchTileUpdates();
     
-    qDebug() << "[VideoRenderer] 瓦片已渲染，ID:" << tileId << "源区域:" << sourceRect << "目标区域:" << tile.targetRect;
+    
 }
 
 void VideoRenderer::updateTile(int tileId, const QByteArray &deltaData, const QRect &updateRect, qint64 timestamp)
@@ -366,7 +360,6 @@ void VideoRenderer::updateTile(int tileId, const QByteArray &deltaData, const QR
     
     auto it = m_tileComposition.tiles.find(tileId);
     if (it == m_tileComposition.tiles.end()) {
-        qWarning() << "[VideoRenderer] 尝试更新不存在的瓦片，ID:" << tileId;
         return;
     }
     
@@ -381,12 +374,10 @@ void VideoRenderer::updateTile(int tileId, const QByteArray &deltaData, const QR
         deltaImage = QImage(reinterpret_cast<const uchar*>(deltaData.constData()),
                            updateRect.width(), updateRect.height(), QImage::Format_RGB888);
     } else {
-        qWarning() << "[VideoRenderer] 不支持的增量数据格式，大小:" << deltaData.size();
         return;
     }
     
     if (deltaImage.isNull()) {
-        qWarning() << "[VideoRenderer] 增量图像创建失败，瓦片ID:" << tileId;
         return;
     }
     
@@ -402,7 +393,7 @@ void VideoRenderer::updateTile(int tileId, const QByteArray &deltaData, const QR
     
     m_tileComposition.lastUpdateTime = timestamp;
     
-    qDebug() << "[VideoRenderer] 瓦片已更新，ID:" << tileId << "更新区域:" << updateRect;
+    
 }
 
 void VideoRenderer::clearTiles()
@@ -413,7 +404,7 @@ void VideoRenderer::clearTiles()
     m_compositeFrame.fill(Qt::black);
     m_tileMode = false;
     
-    qDebug() << "[VideoRenderer] 瓦片已清空";
+    
 }
 
 QRect VideoRenderer::calculateTileTargetRect(int tileId) const
@@ -512,8 +503,7 @@ void VideoRenderer::composeTiles()
     // 清空脏区域
     m_dirtyRegion = QRect();
     
-    qDebug() << "[VideoRenderer] 瓦片合成完成，合成脏瓦片数量:" << composedTiles 
-             << "总瓦片数量:" << m_tileComposition.tiles.size();
+    
 }
 
 void VideoRenderer::markTilesDirty()
@@ -538,7 +528,6 @@ void VideoRenderer::cleanupOldTiles()
     auto it = m_tileComposition.tiles.begin();
     while (it != m_tileComposition.tiles.end()) {
         if (currentTime - it.value().timestamp > m_tileTimeout) {
-            qDebug() << "[VideoRenderer] 清理过期瓦片，ID:" << it.value().tileId;
             it = m_tileComposition.tiles.erase(it);
         } else {
             ++it;
@@ -613,7 +602,6 @@ void VideoRenderer::batchTileUpdates()
 
 void VideoRenderer::closeEvent(QCloseEvent *event)
 {
-    qDebug() << "[VideoRenderer] 视频渲染器窗口关闭";
     emit windowClosed();
     event->accept();
 }

@@ -93,6 +93,8 @@ signals:
     void switchScreenRequested(const QString &direction, int index);
     // 质量变更请求（观看端发来）
     void qualityChangeRequested(const QString &quality);
+    // 音频测试开关请求（观看端发来）
+    void audioToggleRequested(bool enabled);
 
 private slots:
     void onConnected();

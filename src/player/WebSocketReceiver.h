@@ -7,7 +7,6 @@
 #include <QUrl>
 #include <QByteArray>
 #include <QMutex>
-#include <QDebug>
 #include <QPoint>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,6 +14,7 @@
 #include <QHash>
 #include <QMap>
 #include <QSet>
+#include <opus/opus.h>
 
 class WebSocketReceiver : public QObject
 {
@@ -70,6 +70,8 @@ public:
     void sendSwitchScreenIndex(int index);
     // 发送质量设置（高/中/低）控制被观看者的编码质量
     void sendSetQuality(const QString &quality);
+    // 发送音频测试开关（观看端控制被观看者是否发送测试音）
+    void sendAudioToggle(bool enabled);
     
     // 断开连接
     void disconnectFromServer();
@@ -127,6 +129,9 @@ signals:
     void tileCompleted(int tileId, const QByteArray &completeData);
     void tileDataLost(int tileId, const QSet<int> &missingChunks);
     void retransmissionRequested(int tileId, const QSet<int> &missingChunks);
+
+    // 新增：音频帧信号（PCM）
+    void audioFrameReceived(const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 timestamp);
 
 private slots:
     void onConnected();
@@ -196,6 +201,13 @@ private:
     QString m_lastViewerId;
     QString m_lastTargetId;
     bool m_autoResendWatchRequest = true;
+
+    // 音频：Opus 解码器状态
+    OpusDecoder *m_opusDecoder = nullptr;
+    int m_opusSampleRate = 16000;
+    int m_opusChannels = 1;
+    bool m_opusInitialized = false;
+    void initOpusDecoderIfNeeded(int sampleRate, int channels);
 };
 
 #endif // WEBSOCKETRECEIVER_H

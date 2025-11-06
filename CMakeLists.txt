@@ -19,7 +19,11 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # 查找 Qt 组件
-find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg REQUIRED)
+find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia REQUIRED)
+
+# Opus audio codec
+set(opus_DIR "G:/rust_projects/vcpkg/installed/x64-windows-static-md/share/opus")
+find_package(opus CONFIG REQUIRED)
 
 # --- VP9视频编解码支持 ---
 # 设置 libvpx 的安装路径
@@ -114,6 +118,8 @@ target_link_libraries(ScreenStreamApp PRIVATE
     Qt6::Gui
     Qt6::Network
     Qt6::Svg
+    Qt6::Multimedia
+    opus::opus
     unofficial::libvpx::libvpx
     yuv
 )
@@ -130,6 +136,8 @@ target_link_libraries(CaptureProcess PRIVATE
     Qt6::Widgets
     Qt6::WebSockets
     Qt6::Gui
+    Qt6::Multimedia
+    opus::opus
     unofficial::libvpx::libvpx
     yuv
 )
@@ -140,9 +148,20 @@ target_link_libraries(PlayerProcess PRIVATE
     Qt6::Widgets
     Qt6::WebSockets
     Qt6::Gui
+    Qt6::Multimedia
+    opus::opus
     unofficial::libvpx::libvpx
     yuv
 )
+
+# 一键禁用所有日志输出（qDebug/qInfo/qWarning），并提供总开关
+option(DISABLE_ALL_LOGS "Disable all application logging output" ON)
+if(DISABLE_ALL_LOGS)
+    message(STATUS "日志输出已禁用: 使用 QT_NO_DEBUG_OUTPUT/INFO/WARNING 并定义 DISABLE_ALL_LOGS")
+    target_compile_definitions(ScreenStreamApp PRIVATE DISABLE_ALL_LOGS QT_NO_DEBUG_OUTPUT QT_NO_INFO_OUTPUT QT_NO_WARNING_OUTPUT)
+    target_compile_definitions(CaptureProcess PRIVATE DISABLE_ALL_LOGS QT_NO_DEBUG_OUTPUT QT_NO_INFO_OUTPUT QT_NO_WARNING_OUTPUT)
+    target_compile_definitions(PlayerProcess PRIVATE DISABLE_ALL_LOGS QT_NO_DEBUG_OUTPUT QT_NO_INFO_OUTPUT QT_NO_WARNING_OUTPUT)
+endif()
 
 # 添加Windows特定库
 if(WIN32)

@@ -1,7 +1,5 @@
 #include <QApplication>
 #include <QStyleFactory>
-#include <QLoggingCategory>
-#include <QDebug>
 #include <iostream>
 #ifdef _WIN32
 #include <io.h>
@@ -30,23 +28,16 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     
-    // 禁用Qt内部调试输出，只保留我们的应用程序日志
-    QLoggingCategory::setFilterRules("qt.*=false");
-    
-    qDebug() << "[Main] ========== 应用程序启动 ==========";
     
     // 设置应用程序信息
-    qDebug() << "[Main] 设置应用程序信息...";
     app.setApplicationName("ScreenStreamApp");
     app.setApplicationVersion("1.0");
     app.setOrganizationName("ScreenStream");
     
     // 设置现代化样式
-    qDebug() << "[Main] 设置UI样式...";
     app.setStyle(QStyleFactory::create("Fusion"));
     
     // 设置深色主题
-    qDebug() << "[Main] 应用深色主题...";
     QPalette darkPalette;
     darkPalette.setColor(QPalette::Window, QColor(53, 53, 53));
     darkPalette.setColor(QPalette::WindowText, Qt::white);
@@ -62,18 +53,13 @@ int main(int argc, char *argv[])
     darkPalette.setColor(QPalette::Highlight, QColor(42, 130, 218));
     darkPalette.setColor(QPalette::HighlightedText, Qt::black);
     app.setPalette(darkPalette);
-    qDebug() << "[Main] 深色主题设置完成";
     
     // 创建并显示主窗口
-    qDebug() << "[Main] 创建主窗口...";
     MainWindow window;
-    qDebug() << "[Main] 主窗口创建成功";
+    // 简单的启动日志（使用 C++ 标准输出）
+    // std::cout << "启动成功" << std::endl;
     
     // 不显示主窗口，只显示透明图片列表
-    qDebug() << "[Main] 主窗口已创建但不显示，只显示透明图片列表";
-    
-    qDebug() << "[Main] 进入事件循环...";
     int result = app.exec();
-    qDebug() << "[Main] 应用程序退出，返回码:" << result;
     return result;
 }

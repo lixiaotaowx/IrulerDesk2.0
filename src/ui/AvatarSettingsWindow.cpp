@@ -2,7 +2,6 @@
 #include <QPainter>
 #include <QScreen>
 #include <QGuiApplication>
-#include <QDebug>
 #include <QDir>
 #include <QPixmap>
 #include <QCoreApplication>
@@ -173,8 +172,6 @@ void AvatarSettingsWindow::loadAvatarImages()
 {
     QString mapsDir = "g:/c/2025/lunzi/IrulerDeskpro/src/maps/icon";
     
-    qDebug() << "[AvatarSettings] 加载头像图片，目录:" << mapsDir;
-    
     // 加载3-21号PNG图片
     for (int i = 3; i <= 21; ++i) {
         QString imagePath = QString("%1/%2.png").arg(mapsDir, QString::number(i));
@@ -200,13 +197,13 @@ void AvatarSettingsWindow::loadAvatarImages()
         QPixmap pixmap(imagePath);
         if (!pixmap.isNull()) {
             avatarLabel->setPixmap(pixmap);
-            qDebug() << "[AvatarSettings] 成功加载图片:" << imagePath;
+            
         } else {
             // 如果图片加载失败，显示图片编号
             avatarLabel->setText(QString::number(i));
             avatarLabel->setStyleSheet(avatarLabel->styleSheet() + 
                 "QLabel { color: white; font-size: 16px; font-weight: bold; }");
-            qDebug() << "[AvatarSettings] 图片加载失败:" << imagePath;
+            
         }
         
         // 设置属性用于识别图片ID
@@ -261,7 +258,6 @@ void AvatarSettingsWindow::selectAvatar(int iconId)
         }
     }
     
-    qDebug() << "[AvatarSettings] 选择头像ID:" << iconId;
 }
 
 bool AvatarSettingsWindow::eventFilter(QObject *obj, QEvent *event)
@@ -331,6 +327,6 @@ void AvatarSettingsWindow::onAvatarClicked(int iconId)
     selectAvatar(iconId);
     
     // 触发头像选择信号，但保持窗口打开
-    qDebug() << "[AvatarSettings] 选择头像并发送信号，ID:" << iconId;
+    
     emit avatarSelected(iconId);
 }

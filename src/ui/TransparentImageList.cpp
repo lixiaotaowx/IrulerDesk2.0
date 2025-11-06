@@ -1,7 +1,6 @@
 #include "TransparentImageList.h"
 #include <QApplication>
 #include <QScreen>
-#include <QDebug>
 #include <QContextMenuEvent>
 #include <QPainter>
 #include <QBitmap>
@@ -28,7 +27,6 @@ TransparentImageList::~TransparentImageList()
         delete it.value();
     }
     m_userImages.clear();
-    qDebug() << "[TransparentImageList] 用户列表清空完成";
 }
 
 void TransparentImageList::setupUI()
@@ -106,67 +104,47 @@ void TransparentImageList::removeUser(const QString &userId)
 
 void TransparentImageList::clearUserList()
 {
-    qDebug() << "[TransparentImageList] 清空用户列表";
     
-    qDebug() << "[TransparentImageList] 开始清理用户标签，数量:" << m_userLabels.size();
     
     // 删除所有用户标签 - 使用更安全的方式
     for (int i = 0; i < m_userLabels.size(); ++i) {
         QLabel* label = m_userLabels[i];
         if (label) {
-            qDebug() << "[TransparentImageList] 删除用户标签" << i;
             label->setParent(nullptr);  // 先移除父对象
             label->deleteLater();
         }
     }
     m_userLabels.clear();
     
-    qDebug() << "[TransparentImageList] 用户标签清理完成，开始清理用户图片映射，数量:" << m_userImages.size();
     
     // 清空用户图片映射 - 使用更安全的方式
     QStringList userIds = m_userImages.keys();
     for (const QString& userId : userIds) {
-        qDebug() << "[TransparentImageList] 清理用户图片:" << userId;
         UserImageItem* item = m_userImages.value(userId);
         if (item) {
             if (item->imageLabel) {
-                qDebug() << "[TransparentImageList] 直接置空imageLabel for" << userId;
                 item->imageLabel = nullptr;
             }
             if (item->opacityEffect) {
-                qDebug() << "[TransparentImageList] 直接置空opacityEffect for" << userId;
                 item->opacityEffect = nullptr;
             }
             if (item->gifMovie) {
-                qDebug() << "[TransparentImageList] 直接置空gifMovie for" << userId;
                 item->gifMovie = nullptr;
             }
             if (item->fadeAnimation) {
-                qDebug() << "[TransparentImageList] 直接置空fadeAnimation for" << userId;
                 item->fadeAnimation = nullptr;
             }
-            qDebug() << "[TransparentImageList] 准备删除UserImageItem for" << userId;
             
             // 在删除前进行安全检查
             if (item->imageLabel && item->imageLabel->parent()) {
-                qDebug() << "[TransparentImageList] imageLabel仍有父对象，强制移除";
                 item->imageLabel->setParent(nullptr);
             }
-            
-            qDebug() << "[TransparentImageList] 开始删除UserImageItem对象 for" << userId;
             // 暂时注释掉delete，看看是否能继续执行
             // delete item;
-            qDebug() << "[TransparentImageList] UserImageItem删除跳过 for" << userId;
         } else {
-            qDebug() << "[TransparentImageList] UserImageItem为空 for" << userId;
         }
-        qDebug() << "[TransparentImageList] 用户" << userId << "清理完成";
     }
-    qDebug() << "[TransparentImageList] 所有用户图片清理完成，准备清空映射";
     m_userImages.clear();
-    qDebug() << "[TransparentImageList] 映射清空完成";
-    
-    qDebug() << "[TransparentImageList] 用户列表清空完成";
 }
 
 void TransparentImageList::updateUserList(const QStringList &onlineUsers)
@@ -181,7 +159,6 @@ void TransparentImageList::updateUserList(const QStringList &onlineUsers)
         if (selfLabel) {
             m_layout->addWidget(selfLabel);
             m_userLabels.append(selfLabel);
-            qDebug() << "[TransparentImageList] 首位添加当前用户:" << m_currentUserId << "icon:" << selfIconId;
         }
     }
 
@@ -195,9 +172,7 @@ void TransparentImageList::updateUserList(const QStringList &onlineUsers)
         if (userLabel) {
             m_layout->addWidget(userLabel);
             m_userLabels.append(userLabel);
-            qDebug() << "[TransparentImageList] 追加用户图片标签:" << userId << "icon:" << iconId;
         } else {
-            qWarning() << "[TransparentImageList] 创建用户图片标签失败:" << userId;
         }
     }
     
@@ -214,11 +189,7 @@ void TransparentImageList::updateUserList(const QStringList &onlineUsers)
 
 void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
 {
-    qDebug() << "[TransparentImageList] ========== 开始更新用户列表 ==========";
-    qDebug() << "[TransparentImageList] 服务器返回用户数量:" << onlineUsers.size();
-    qDebug() << "[TransparentImageList] 当前用户ID:" << m_currentUserId << "当前用户IconId:" << m_currentUserIconId;
-    qDebug() << "[TransparentImageList] 当前用户ID是否为空:" << m_currentUserId.isEmpty();
-    qDebug() << "[TransparentImageList] 当前用户IconId范围检查:" << (m_currentUserIconId >= 3 && m_currentUserIconId <= 21);
+    
 
     // 清空现有用户
     clearUserList();
@@ -226,38 +197,29 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
     // 第一个永远是自己（使用本地配置，不依赖服务器）
     if (!m_currentUserId.isEmpty()) {
         int selfIconId = (m_currentUserIconId >= 3 && m_currentUserIconId <= 21) ? m_currentUserIconId : -1;
-        qDebug() << "[TransparentImageList] 准备添加自己到首位 - ID:" << m_currentUserId << "计算后的IconId:" << selfIconId;
         
         QLabel* selfLabel = createUserImage(m_currentUserId, selfIconId);
         if (selfLabel) {
             m_layout->addWidget(selfLabel);
             m_userLabels.append(selfLabel);
-            qDebug() << "[TransparentImageList] ✓ 成功添加自己到首位:" << m_currentUserId << "icon:" << selfIconId;
         } else {
-            qDebug() << "[TransparentImageList] ✗ 创建自己的标签失败:" << m_currentUserId;
         }
     } else {
-        qDebug() << "[TransparentImageList] ✗ 当前用户ID为空，无法添加自己到首位";
     }
 
-    qDebug() << "[TransparentImageList] 当前列表中的用户数量（添加自己后）:" << m_userLabels.size();
 
     // 然后添加服务器返回的其他在线用户（包括自己，但会跳过重复）
     for (int i = 0; i < onlineUsers.size(); ++i) {
         const QJsonValue& userValue = onlineUsers[i];
         if (!userValue.isObject()) {
-            qWarning() << "[TransparentImageList] 用户数据不是对象，跳过:" << userValue;
             continue;
         }
         
         QJsonObject userObj = userValue.toObject();
         QString userId = userObj["id"].toString();
         
-        qDebug() << "[TransparentImageList] 处理服务器用户" << i << "- ID:" << userId;
-        
         // 跳过自己，因为已经在第一位了
         if (!userId.isEmpty() && userId == m_currentUserId) {
-            qDebug() << "[TransparentImageList] 跳过自己，避免重复:" << userId;
             continue;
         }
         
@@ -276,30 +238,22 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
         // 验证服务器icon_id范围，无效则用红圈
         int iconId = (serverIconId >= 3 && serverIconId <= 21) ? serverIconId : -1;
         
-        qDebug() << "[TransparentImageList] 添加其他用户:" << userId << "名称:" << userName
-                 << "服务器icon:" << serverIconId << "最终icon:" << iconId;
         
         QLabel* userLabel = createUserImage(userId, iconId);
         if (userLabel) {
             m_layout->addWidget(userLabel);
             m_userLabels.append(userLabel);
-            qDebug() << "[TransparentImageList] ✓ 成功添加其他用户:" << userId;
         } else {
-            qDebug() << "[TransparentImageList] ✗ 创建其他用户标签失败:" << userId;
         }
     }
     
-    qDebug() << "[TransparentImageList] ========== 用户列表更新完成 ==========";
-    qDebug() << "[TransparentImageList] 最终列表中的用户数量:" << m_userLabels.size();
     
     // 显示窗口
     if (!m_userLabels.isEmpty()) {
         show();
         raise();
         activateWindow();
-        qDebug() << "[TransparentImageList] 窗口已显示";
     } else {
-        qDebug() << "[TransparentImageList] 列表为空，不显示窗口";
     }
 }
 
@@ -316,13 +270,11 @@ void TransparentImageList::createUserImage(const QString &userId, const QString 
     if (label) {
         m_layout->addWidget(label);
         m_userLabels.append(label);
-        qDebug() << "[TransparentImageList] 已添加用户图片到布局 - 用户ID:" << userId << "icon:" << iconId;
     }
     
     // 更新用户名
     if (m_userImages.contains(userId)) {
         m_userImages[userId]->userName = userName;
-        qDebug() << "[TransparentImageList] 已设置用户名 - 用户ID:" << userId << "用户名:" << userName;
     }
 }
 
@@ -334,7 +286,6 @@ QLabel* TransparentImageList::createUserImage(const QString &userId)
 
 QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
 {
-    qDebug() << "[TransparentImageList] 创建用户图片标签，用户ID:" << userId << "icon ID:" << iconId;
     QString appDir = QCoreApplication::applicationDirPath();
     QString gifPath;
     QString pngPath;
@@ -342,10 +293,7 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
     if (useNumericIcon) {
         gifPath = QString("%1/maps/icon/%2.gif").arg(appDir).arg(iconId);
         pngPath = QString("%1/maps/icon/%2.png").arg(appDir).arg(iconId);
-        qDebug() << "[TransparentImageList] gif路径:" << gifPath;
-        qDebug() << "[TransparentImageList] png路径:" << pngPath;
     } else {
-        qDebug() << "[TransparentImageList] 使用默认头像（非数字icon）:" << iconId;
     }
 
     // 创建标签
@@ -361,7 +309,6 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
     label->setAttribute(Qt::WA_Hover, true);
     label->setMouseTracking(true);
     
-    qDebug() << "[TransparentImageList] 创建用户图片标签 - 用户ID:" << userId;
     
     // 创建UserImageItem并存储到m_userImages中
     UserImageItem* item = new UserImageItem();
@@ -373,11 +320,9 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
     item->gifMovie = nullptr;
     
     m_userImages[userId] = item;
-    qDebug() << "[TransparentImageList] 已将用户项存储到m_userImages，用户ID:" << userId;
     
     // 加载图片：优先数字icon；否则加载默认头像
     if (useNumericIcon && QFile::exists(gifPath)) {
-        qDebug() << "[TransparentImageList] 找到gif文件，开始播放动画:" << gifPath;
         
         QMovie* movie = new QMovie(gifPath);
         movie->setScaledSize(QSize(76, 76));
@@ -399,7 +344,6 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
             
             // 设置动画播放完成后的处理
             connect(movie, &QMovie::finished, [this, label, pngPath, userId]() {
-                qDebug() << "[TransparentImageList] gif动画播放完成，切换到静态图片:" << userId;
                 
                 // 停止并删除动画
                 QMovie* oldMovie = label->movie();
@@ -413,26 +357,21 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
                     QPixmap pixmap(pngPath);
                     if (!pixmap.isNull()) {
                         label->setPixmap(pixmap.scaled(76, 76, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-                        qDebug() << "[TransparentImageList] 成功加载静态图片:" << pngPath;
+                        
                     } else {
-                        qWarning() << "[TransparentImageList] 静态图片加载失败:" << pngPath;
                         loadDefaultAvatar(label);
                     }
                 } else {
-                    qWarning() << "[TransparentImageList] 静态图片文件不存在:" << pngPath;
                     loadDefaultAvatar(label);
                 }
             });
             
-            qDebug() << "[TransparentImageList] gif动画设置成功:" << userId;
         } else if (useNumericIcon) {
-            qWarning() << "[TransparentImageList] gif文件无效，使用静态图片:" << gifPath;
             loadStaticImage(label, pngPath);
         } else {
             loadDefaultAvatar(label);
         }
     } else if (useNumericIcon) {
-        qDebug() << "[TransparentImageList] gif文件不存在，直接使用静态图片:" << gifPath;
         loadStaticImage(label, pngPath);
     } else {
         loadDefaultAvatar(label);
@@ -446,7 +385,6 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
     
     // 安装事件过滤器以处理点击事件
     label->installEventFilter(this);
-    qDebug() << "[TransparentImageList] 已为用户" << userId << "安装事件过滤器";
     
     // 淡入动画
     QPropertyAnimation* fadeInAnimation = new QPropertyAnimation(opacityEffect, "opacity");
@@ -456,7 +394,6 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
     fadeInAnimation->start(QAbstractAnimation::DeleteWhenStopped);
     item->fadeAnimation = fadeInAnimation; // 存储到UserImageItem中
     
-    qDebug() << "[TransparentImageList] 用户图片标签创建完成:" << userId;
     return label;
 }
 
@@ -466,13 +403,11 @@ void TransparentImageList::loadStaticImage(QLabel* label, const QString& pngPath
         QPixmap pixmap(pngPath);
         if (!pixmap.isNull()) {
             label->setPixmap(pixmap.scaled(76, 76, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            qDebug() << "[TransparentImageList] 成功加载静态图片:" << pngPath;
+            
         } else {
-            qWarning() << "[TransparentImageList] 静态图片加载失败:" << pngPath;
             loadDefaultAvatar(label);
         }
     } else {
-        qWarning() << "[TransparentImageList] 静态图片文件不存在:" << pngPath;
         loadDefaultAvatar(label);
     }
 }
@@ -503,7 +438,6 @@ void TransparentImageList::loadDefaultAvatar(QLabel* label)
 
     // 设置到标签
     label->setPixmap(pixmap);
-    qDebug() << "[TransparentImageList] 使用红色圆环作为未知头像";
 }
 
 void TransparentImageList::removeUserImage(const QString &userId)
@@ -542,10 +476,8 @@ void TransparentImageList::removeUserImage(const QString &userId)
 void TransparentImageList::updateLayout()
 {
     int userCount = m_userImages.size();
-    qDebug() << "[TransparentImageList] 更新布局，用户数量:" << userCount;
     
     if (userCount == 0) {
-        qDebug() << "[TransparentImageList] 没有用户，隐藏窗口";
         hide();
         return;
     }
@@ -554,17 +486,13 @@ void TransparentImageList::updateLayout()
     int totalHeight = userCount * IMAGE_SIZE + (userCount - 1) * IMAGE_SPACING;
     resize(IMAGE_SIZE, totalHeight); // 恢复原始计算方式
     
-    qDebug() << "[TransparentImageList] 窗口大小:" << width() << "x" << height();
-    qDebug() << "[TransparentImageList] 用户数量:" << userCount << "，每个图像大小:" << IMAGE_SIZE << "，间距:" << IMAGE_SPACING;
     
     // 重新定位窗口
     positionOnScreen();
     
-    qDebug() << "[TransparentImageList] 窗口位置:" << x() << "," << y();
     
     // 显示窗口
     show();
-    qDebug() << "[TransparentImageList] 窗口已显示，可见性:" << isVisible();
 }
 
 bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
@@ -574,11 +502,9 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
         QLabel *label = qobject_cast<QLabel*>(obj);
         if (label) {
             QString userId = label->property("userId").toString();
-            qDebug() << "[TransparentImageList] 鼠标点击事件 - 对象:" << obj << "用户ID:" << userId << "按钮:" << mouseEvent->button();
             if (!userId.isEmpty()) {
                 // 左键：触发视频播放；右键：弹出上下文菜单
                 if (mouseEvent->button() == Qt::LeftButton) {
-                    qDebug() << "[TransparentImageList] 左键点击用户:" << userId;
                     onImageClicked(userId);
                     return true; // 消耗左键事件
                 } else if (mouseEvent->button() == Qt::RightButton) {
@@ -600,10 +526,8 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     return false; // 其他按键，不拦截，交由默认处理
                 }
             } else {
-                qDebug() << "[TransparentImageList] 用户ID为空，忽略点击";
             }
         } else {
-            qDebug() << "[TransparentImageList] 点击对象不是QLabel，忽略";
         }
     }
     return QWidget::eventFilter(obj, event);
@@ -611,13 +535,10 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
 
 void TransparentImageList::onImageClicked(const QString &userId)
 {
-    qDebug() << "[TransparentImageList] onImageClicked被调用，用户ID:" << userId;
     if (m_userImages.contains(userId)) {
         UserImageItem *item = m_userImages[userId];
-        qDebug() << "[TransparentImageList] 找到用户项，发送userImageClicked信号 - 用户ID:" << userId << "用户名:" << item->userName;
         emit userImageClicked(userId, item->userName);
     } else {
-        qDebug() << "[TransparentImageList] 未找到用户项:" << userId;
     }
 }
 
@@ -662,7 +583,6 @@ QString TransparentImageList::getCurrentUserId() const
 
 void TransparentImageList::updateUserAvatar(const QString &userId, int iconId)
 {
-    qDebug() << "[TransparentImageList] 开始更新用户头像 - 用户ID:" << userId << "新icon ID:" << iconId;
     
     // 更新用户头像图标ID
     m_userIconIds[userId] = iconId;
@@ -670,7 +590,6 @@ void TransparentImageList::updateUserAvatar(const QString &userId, int iconId)
     // 如果是当前用户，更新当前用户图标ID
     if (userId == m_currentUserId) {
         m_currentUserIconId = iconId;
-        qDebug() << "[TransparentImageList] 更新当前用户icon ID:" << iconId;
     }
     
     // 查找并更新对应的用户图像
@@ -678,22 +597,18 @@ void TransparentImageList::updateUserAvatar(const QString &userId, int iconId)
         UserImageItem* userItem = m_userImages[userId];
         if (userItem && userItem->imageLabel) {
             QLabel* oldLabel = userItem->imageLabel;
-            qDebug() << "[TransparentImageList] 找到旧标签，准备替换";
             
             // 找到旧标签在布局和列表中的位置
             int labelIndex = m_userLabels.indexOf(oldLabel);
-            qDebug() << "[TransparentImageList] 旧标签在列表中的索引:" << labelIndex;
             
             // 重新创建用户图像，替换现有的标签
             QLabel* newLabel = createUserImage(userId, iconId);
             if (newLabel && labelIndex >= 0) {
                 // 从布局中移除旧标签
                 m_layout->removeWidget(oldLabel);
-                qDebug() << "[TransparentImageList] 已从布局中移除旧标签";
                 
                 // 在相同位置插入新标签
                 m_layout->insertWidget(labelIndex, newLabel);
-                qDebug() << "[TransparentImageList] 已在位置" << labelIndex << "插入新标签";
                 
                 // 更新列表中的标签引用
                 m_userLabels[labelIndex] = newLabel;
@@ -704,16 +619,11 @@ void TransparentImageList::updateUserAvatar(const QString &userId, int iconId)
                 // 删除旧标签
                 oldLabel->setParent(nullptr);
                 oldLabel->deleteLater();
-                qDebug() << "[TransparentImageList] 已删除旧标签";
                 
-                qDebug() << "[TransparentImageList] 头像更新完成 - 用户ID:" << userId << "新icon ID:" << iconId;
             } else {
-                qWarning() << "[TransparentImageList] 创建新标签失败或找不到旧标签位置";
             }
         } else {
-            qWarning() << "[TransparentImageList] 用户项或标签为空";
         }
     } else {
-        qWarning() << "[TransparentImageList] 未找到用户项:" << userId;
     }
 }

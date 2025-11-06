@@ -1,5 +1,4 @@
 #include "MouseCapture.h"
-#include <QDebug>
 #include <QCursor>
 #include <QGuiApplication>
 #include <QJsonObject>
@@ -19,7 +18,6 @@ MouseCapture::MouseCapture(QObject *parent)
     // 设置定时器间隔
     m_captureTimer->setInterval(m_updateInterval);
     
-    qDebug() << "[MouseCapture] 鼠标捕获模块初始化完成，更新频率:" << (1000.0 / m_updateInterval) << "Hz";
 }
 
 MouseCapture::~MouseCapture()
@@ -37,7 +35,6 @@ void MouseCapture::startCapture()
     m_lastPosition = QPoint(-1, -1); // 重置上次位置，确保第一次发送
     m_captureTimer->start();
     
-    qDebug() << "[MouseCapture] 开始鼠标位置捕获";
 }
 
 void MouseCapture::stopCapture()
@@ -49,7 +46,6 @@ void MouseCapture::stopCapture()
     m_isCapturing = false;
     m_captureTimer->stop();
     
-    qDebug() << "[MouseCapture] 停止鼠标位置捕获";
 }
 
 QPoint MouseCapture::getCurrentPosition() const
@@ -89,7 +85,6 @@ QPoint MouseCapture::getSystemMousePosition() const
     if (GetCursorPos(&point)) {
         return QPoint(point.x, point.y);
     } else {
-        qWarning() << "[MouseCapture] GetCursorPos失败";
         return QPoint(-1, -1);
     }
 #else

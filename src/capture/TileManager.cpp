@@ -3,7 +3,7 @@
 #include <QtMath>
 #include <QDataStream>
 #include <QBuffer>
-#include <QDebug>
+#include <QtGlobal>
 #include <QDateTime>
 #include <cstring>
 #include <climits>
@@ -71,14 +71,11 @@ TileManager::TileManager(QObject *parent)
     memset(&m_perfStats, 0, sizeof(m_perfStats));
     m_perfStats.minDetectionTime = LLONG_MAX;
     m_perfStats.lastDetectionTime = QDateTime::currentMSecsSinceEpoch();
-    
-    qDebug() << "[TileManager] 瓦片管理器已创建";
 }
 
 TileManager::~TileManager()
 {
     cleanup();
-    qDebug() << "[TileManager] 瓦片管理器已销毁";
 }
 
 bool TileManager::initialize(const QSize& screenSize, int tileWidth, int tileHeight)
@@ -86,18 +83,15 @@ bool TileManager::initialize(const QSize& screenSize, int tileWidth, int tileHei
     QMutexLocker locker(&m_mutex);
     
     if (m_initialized) {
-        qWarning() << "[TileManager] 瓦片管理器已经初始化";
         return true;
     }
     
     if (screenSize.width() <= 0 || screenSize.height() <= 0) {
-        qCritical() << "[TileManager] 无效的屏幕尺寸:" << screenSize;
         emit error("无效的屏幕尺寸");
         return false;
     }
     
     if (tileWidth <= 0 || tileHeight <= 0) {
-        qCritical() << "[TileManager] 无效的瓦片尺寸:" << tileWidth << "x" << tileHeight;
         emit error("无效的瓦片尺寸");
         return false;
     }
@@ -110,11 +104,7 @@ bool TileManager::initialize(const QSize& screenSize, int tileWidth, int tileHei
     m_tilesPerRow = qCeil(static_cast<double>(screenSize.width()) / tileWidth);
     m_tilesPerColumn = qCeil(static_cast<double>(screenSize.height()) / tileHeight);
     
-    // qDebug() << "[TileManager] 初始化瓦片管理器:"; // 已禁用以提升性能
-    qDebug() << "  屏幕尺寸:" << screenSize;
-    qDebug() << "  瓦片尺寸:" << tileWidth << "x" << tileHeight;
-    qDebug() << "  瓦片网格:" << m_tilesPerRow << "x" << m_tilesPerColumn;
-    qDebug() << "  总瓦片数:" << (m_tilesPerRow * m_tilesPerColumn);
+    // 初始化参数已设置
     
     // 创建瓦片网格
     createTileGrid();
@@ -137,7 +127,6 @@ void TileManager::cleanup()
     m_tilesPerColumn = 0;
     m_initialized = false;
     
-    qDebug() << "[TileManager] 瓦片管理器已清理";
 }
 
 int TileManager::getTileIndex(int x, int y) const
@@ -191,12 +180,10 @@ QVector<int> TileManager::compareAndUpdateTiles(const QImage& currentFrame)
     qint64 totalHashTime = 0;
     
     if (!m_initialized) {
-        qWarning() << "[TileManager] 瓦片管理器未初始化";
         return changedTiles;
     }
-    
+
     if (currentFrame.isNull()) {
-        qWarning() << "[TileManager] 输入图像为空";
         return changedTiles;
     }
     
@@ -263,24 +250,8 @@ QVector<int> TileManager::compareAndUpdateTiles(const QImage& currentFrame)
     // 更新性能统计
     updatePerformanceStats(detectionTime, totalHashTime, totalCrcTime, changedTiles.size());
     
-    // 只在有变化时发出信号和日志
+    // 只在有变化时发出信号
     if (!changedTiles.isEmpty()) {
-        // 性能优化：减少日志输出频率，避免影响视频流畅度
-        static int logCounter = 0;
-        static int totalChanges = 0;
-        
-        totalChanges += changedTiles.size();
-        logCounter++;
-        
-        // 每60帧（约1秒）输出一次统计信息，而不是每帧都输出
-        if (logCounter >= 60) {
-            double avgChanges = static_cast<double>(totalChanges) / logCounter;
-            qDebug() << "[TileManager] 瓦片变化统计 - 最近60帧平均变化:" << QString::number(avgChanges, 'f', 1) << "个瓦片/帧"
-                     << "检测耗时:" << m_perfStats.averageDetectionTime << "ms";
-            logCounter = 0;
-            totalChanges = 0;
-        }
-        
         emit tilesChanged(changedTiles);
     }
     
@@ -353,9 +324,7 @@ QSize TileManager::calculateOptimalTileSize(const QSize& screenSize)
     // 限制瓦片大小范围：64-192像素
     alignedSize = qMax(64, qMin(192, alignedSize));
     
-    qDebug() << "[TileManager] 屏幕尺寸:" << screenSize 
-             << "理想瓦片大小:" << idealTileSize 
-             << "对齐后大小:" << alignedSize;
+    // 返回计算后的最佳瓦片大小
     
     return QSize(alignedSize, alignedSize);
 }
@@ -373,18 +342,12 @@ void TileManager::setPerformanceMode(bool enableFastMode)
 {
     QMutexLocker locker(&m_mutex);
     m_fastMode = enableFastMode;
-    qDebug() << "[TileManager] 性能优化模式:" << (m_fastMode ? "启用" : "禁用");
 }
 
 void TileManager::printTileInfo() const
 {
     // 不使用锁，因为这是const方法
-    qDebug() << "[TileManager] 瓦片信息:";
-    qDebug() << "  屏幕尺寸:" << m_screenSize;
-    qDebug() << "  瓦片尺寸:" << m_tileWidth << "x" << m_tileHeight;
-    qDebug() << "  瓦片网格:" << m_tilesPerRow << "x" << m_tilesPerColumn;
-    qDebug() << "  总瓦片数:" << m_tiles.size();
-    qDebug() << "  变化瓦片数:" << getChangedTileCount();
+    // 信息打印已移除
 }
 
 uint32_t TileManager::calculateCRC32(const uchar* data, int length) const
@@ -459,7 +422,7 @@ void TileManager::createTileGrid()
         }
     }
     
-    // qDebug() << "[TileManager] 创建了" << m_tiles.size() << "个瓦片"; // 已禁用以提升性能
+    // 创建完成
 }
 
 // ==================== 瓦片数据序列化功能 ====================
@@ -469,7 +432,6 @@ QByteArray TileManager::serializeTileData(const QVector<int>& changedTileIndices
     QMutexLocker locker(const_cast<QMutex*>(&m_mutex));
     
     if (!m_initialized || changedTileIndices.isEmpty()) {
-        qWarning() << "[TileManager] 序列化失败：管理器未初始化或无变化瓦片";
         return QByteArray();
     }
     
@@ -490,30 +452,22 @@ QByteArray TileManager::serializeTileData(const QVector<int>& changedTileIndices
         if (index >= 0 && index < m_tiles.size()) {
             const TileInfo& tile = m_tiles[index];
             
-            qDebug() << "[TileManager] 序列化瓦片" << index << "基本信息: x=" << tile.x << "y=" << tile.y << "size=" << tile.width << "x" << tile.height;
+            // 写入瓦片基本信息
             
             // 写入瓦片基本信息
             stream << static_cast<quint32>(index);       // 瓦片索引 (4字节)
-            qDebug() << "[TileManager] 写入索引:" << index << "流位置:" << stream.device()->pos();
             stream << static_cast<quint16>(tile.x);      // X坐标 (2字节)
-            qDebug() << "[TileManager] 写入X坐标:" << tile.x << "流位置:" << stream.device()->pos();
             stream << static_cast<quint16>(tile.y);      // Y坐标 (2字节)
-            qDebug() << "[TileManager] 写入Y坐标:" << tile.y << "流位置:" << stream.device()->pos();
             stream << static_cast<quint16>(tile.width);  // 宽度 (2字节)
-            qDebug() << "[TileManager] 写入宽度:" << tile.width << "流位置:" << stream.device()->pos();
             stream << static_cast<quint16>(tile.height); // 高度 (2字节)
-            qDebug() << "[TileManager] 写入高度:" << tile.height << "流位置:" << stream.device()->pos();
             stream << tile.hash;                         // 哈希值 (4字节)
-            qDebug() << "[TileManager] 写入哈希值:" << tile.hash << "流位置:" << stream.device()->pos();
             
-            qDebug() << "[TileManager] 瓦片" << index << "基本信息写入完成，流位置:" << stream.device()->pos();
             
             // 提取并写入瓦片图像数据
             if (!currentFrame.isNull()) {
                 QRect tileRect(tile.x, tile.y, tile.width, tile.height);
                 QImage tileImage = currentFrame.copy(tileRect);
                 
-                qDebug() << "[TileManager] 瓦片" << index << "图像信息: 原始大小=" << tileImage.size() << "格式=" << tileImage.format();
                 
                 // 将图像转换为PNG格式的字节数组（压缩）
                 QByteArray imageData;
@@ -521,27 +475,17 @@ QByteArray TileManager::serializeTileData(const QVector<int>& changedTileIndices
                 buffer.open(QIODevice::WriteOnly);
                 bool saveSuccess = tileImage.save(&buffer, "PNG");
                 
-                qDebug() << "[TileManager] 瓦片" << index << "PNG保存结果:" << saveSuccess << "数据大小:" << imageData.size();
-                
                 if (saveSuccess && !imageData.isEmpty()) {
                     stream << static_cast<quint32>(imageData.size()); // 图像数据大小
-                    qDebug() << "[TileManager] 瓦片" << index << "写入图像大小:" << imageData.size() << "流位置:" << stream.device()->pos();
                     stream.writeRawData(imageData.constData(), imageData.size()); // 图像数据
-                    qDebug() << "[TileManager] 瓦片" << index << "图像数据写入完成，流位置:" << stream.device()->pos();
                 } else {
-                    qWarning() << "[TileManager] 瓦片" << index << "图像保存失败";
                     stream << static_cast<quint32>(0); // 无图像数据
-                    qDebug() << "[TileManager] 瓦片" << index << "写入空图像数据，流位置:" << stream.device()->pos();
                 }
             } else {
                 stream << static_cast<quint32>(0); // 无图像数据
-                qDebug() << "[TileManager] 瓦片" << index << "无当前帧，写入空图像数据，流位置:" << stream.device()->pos();
             }
         }
     }
-    
-    qDebug() << "[TileManager] 序列化完成，变化瓦片数:" << changedTileIndices.size() 
-             << "数据大小:" << result.size() << "字节";
     
     return result;
 }
@@ -605,18 +549,7 @@ void TileManager::updatePerformanceStats(qint64 detectionTime, qint64 hashTime, 
     }
     m_perfStats.lastDetectionTime = currentTime;
     
-    // 每1000次检测输出一次详细统计
-    if (m_perfStats.totalDetections % 1000 == 0) {
-        qDebug() << "[TileManager] 性能统计报告:";
-        qDebug() << "  总检测次数:" << m_perfStats.totalDetections;
-        qDebug() << "  总变化瓦片数:" << m_perfStats.totalChangedTiles;
-        qDebug() << "  平均检测时间:" << m_perfStats.averageDetectionTime << "ms";
-        qDebug() << "  最大检测时间:" << m_perfStats.maxDetectionTime << "ms";
-        qDebug() << "  最小检测时间:" << m_perfStats.minDetectionTime << "ms";
-        qDebug() << "  平均哈希计算时间:" << m_perfStats.averageHashTime << "ms";
-        qDebug() << "  瓦片变化率:" << QString::number(m_perfStats.changeRate, 'f', 2) << "%";
-        qDebug() << "  检测帧率:" << QString::number(m_perfStats.detectionFPS, 'f', 1) << "FPS";
-    }
+    // 输出统计日志已移除
 }
 
 void TileManager::resetPerformanceStats()
@@ -632,13 +565,11 @@ void TileManager::resetPerformanceStats()
     m_crcTimes.clear();
     m_lastStatsUpdateTime = QDateTime::currentMSecsSinceEpoch();
     
-    qDebug() << "[TileManager] 性能统计已重置";
 }
 
 bool TileManager::deserializeTileData(const QByteArray& data, QVector<TileInfo>& tiles, QVector<QImage>& tileImages) const
 {
     if (data.isEmpty()) {
-        qWarning() << "[TileManager] 反序列化失败：数据为空";
         return false;
     }
     
@@ -647,7 +578,6 @@ bool TileManager::deserializeTileData(const QByteArray& data, QVector<TileInfo>&
     
     // 验证数据格式
     if (!validateSerializedData(data)) {
-        qWarning() << "[TileManager] 反序列化失败：数据格式验证失败";
         return false;
     }
     
@@ -669,7 +599,7 @@ bool TileManager::deserializeTileData(const QByteArray& data, QVector<TileInfo>&
     
     // 读取瓦片数据
     for (quint32 i = 0; i < tileCount; ++i) {
-        qDebug() << "[TileManager] 开始读取瓦片" << i << "数据流位置:" << stream.device()->pos();
+        // 读取瓦片数据
         
         if (dataType == TileSerializationFormat::TILE_BATCH || 
             dataType == TileSerializationFormat::TILE_WITH_DATA) {
@@ -680,18 +610,12 @@ bool TileManager::deserializeTileData(const QByteArray& data, QVector<TileInfo>&
             quint32 hash; // 修复：使用quint32与TileInfo结构体中的uint32_t保持一致
             
             stream >> index;
-            qDebug() << "[TileManager] 读取索引:" << index << "流位置:" << stream.device()->pos();
             stream >> x;
-            qDebug() << "[TileManager] 读取X坐标:" << x << "流位置:" << stream.device()->pos();
             stream >> y;
-            qDebug() << "[TileManager] 读取Y坐标:" << y << "流位置:" << stream.device()->pos();
             stream >> width;
-            qDebug() << "[TileManager] 读取宽度:" << width << "流位置:" << stream.device()->pos();
             stream >> height;
-            qDebug() << "[TileManager] 读取高度:" << height << "流位置:" << stream.device()->pos();
             stream >> hash;
-            qDebug() << "[TileManager] 读取哈希值:" << hash << "流位置:" << stream.device()->pos();
-            qDebug() << "[TileManager] 瓦片" << i << "基本信息: index=" << index << "x=" << x << "y=" << y << "size=" << width << "x" << height << "hash=" << hash;
+            
             
             // 创建瓦片信息
             TileInfo tile(x, y, width, height);
@@ -700,28 +624,22 @@ bool TileManager::deserializeTileData(const QByteArray& data, QVector<TileInfo>&
             
             // 只有 TILE_WITH_DATA 类型才读取图像数据
             if (dataType == TileSerializationFormat::TILE_WITH_DATA) {
-                qDebug() << "[TileManager] 准备读取瓦片" << i << "图像数据，当前流位置:" << stream.device()->pos();
                 
                 quint32 imageDataSize;
                 stream >> imageDataSize;
-                qDebug() << "[TileManager] 瓦片" << i << "图像数据大小:" << imageDataSize << "流位置:" << stream.device()->pos();
                 
                 if (imageDataSize > 0 && imageDataSize < 10000000) { // 添加合理性检查
                     QByteArray imageData(imageDataSize, 0);
                     stream.readRawData(imageData.data(), imageDataSize);
-                    qDebug() << "[TileManager] 瓦片" << i << "图像数据读取完成，流位置:" << stream.device()->pos();
                     
                     // 从PNG数据创建图像
                     QImage tileImage;
                     if (tileImage.loadFromData(imageData, "PNG")) {
-                        qDebug() << "[TileManager] 瓦片" << i << "图像解析成功，大小:" << tileImage.size();
                         tileImages.append(tileImage);
                     } else {
-                        qWarning() << "[TileManager] 瓦片" << i << "图像数据解析失败，数据大小:" << imageDataSize;
                         tileImages.append(QImage()); // 添加空图像保持索引一致
                     }
                 } else {
-                    qWarning() << "[TileManager] 瓦片" << i << "图像数据大小异常:" << imageDataSize << "跳过";
                     tileImages.append(QImage()); // 无图像数据
                 }
             } else {
@@ -741,9 +659,6 @@ bool TileManager::deserializeTileData(const QByteArray& data, QVector<TileInfo>&
         }
     }
     
-    qDebug() << "[TileManager] 反序列化完成，瓦片数:" << tiles.size() 
-             << "图像数:" << tileImages.size();
-    
     return true;
 }
 
@@ -752,7 +667,6 @@ TileInfo TileManager::deserializeTileInfo(const QByteArray& data) const
     TileInfo result;
     
     if (data.isEmpty() || !validateSerializedData(data)) {
-        qWarning() << "[TileManager] 瓦片信息反序列化失败：数据无效";
         return result;
     }
     
@@ -786,8 +700,6 @@ TileInfo TileManager::deserializeTileInfo(const QByteArray& data) const
 bool TileManager::validateSerializedData(const QByteArray& data) const
 {
     if (data.size() < TileSerializationFormat::HEADER_SIZE) {
-        qWarning() << "[TileManager] 数据验证失败：数据太小，至少需要" 
-                   << TileSerializationFormat::HEADER_SIZE << "字节";
         return false;
     }
     
@@ -798,9 +710,6 @@ bool TileManager::validateSerializedData(const QByteArray& data) const
     quint32 magicNumber;
     stream >> magicNumber;
     if (magicNumber != TileSerializationFormat::MAGIC_NUMBER) {
-        qWarning() << "[TileManager] 数据验证失败：魔数不匹配，期望" 
-                   << QString::number(TileSerializationFormat::MAGIC_NUMBER, 16)
-                   << "实际" << QString::number(magicNumber, 16);
         return false;
     }
     
@@ -808,8 +717,6 @@ bool TileManager::validateSerializedData(const QByteArray& data) const
     quint16 version;
     stream >> version;
     if (version != TileSerializationFormat::VERSION) {
-        qWarning() << "[TileManager] 数据验证失败：版本不匹配，期望" 
-                   << TileSerializationFormat::VERSION << "实际" << version;
         return false;
     }
     
@@ -819,11 +726,9 @@ bool TileManager::validateSerializedData(const QByteArray& data) const
     if (dataType != TileSerializationFormat::TILE_INFO_ONLY &&
         dataType != TileSerializationFormat::TILE_WITH_DATA &&
         dataType != TileSerializationFormat::TILE_BATCH) {
-        qWarning() << "[TileManager] 数据验证失败：未知数据类型" << dataType;
         return false;
     }
     
-    qDebug() << "[TileManager] 数据验证通过，版本:" << version << "类型:" << dataType;
     return true;
 }
 
@@ -832,7 +737,6 @@ QByteArray TileManager::serializeAllTiles(const QImage& currentFrame) const
     QMutexLocker locker(const_cast<QMutex*>(&m_mutex));
     
     if (!m_initialized) {
-        qWarning() << "[TileManager] 序列化失败：管理器未初始化";
         return QByteArray();
     }
     

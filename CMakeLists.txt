@@ -22,8 +22,8 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia REQUIRED)
 
 # Opus audio codec
-set(opus_DIR "G:/rust_projects/vcpkg/installed/x64-windows-static-md/share/opus")
-find_package(opus CONFIG REQUIRED)
+set(Opus_DIR "G:/rust_projects/vcpkg/installed/x64-windows-static-md/share/opus")
+find_package(Opus CONFIG REQUIRED)
 
 # --- VP9视频编解码支持 ---
 # 设置 libvpx 的安装路径
@@ -119,7 +119,7 @@ target_link_libraries(ScreenStreamApp PRIVATE
     Qt6::Network
     Qt6::Svg
     Qt6::Multimedia
-    opus::opus
+    Opus::opus
     unofficial::libvpx::libvpx
     yuv
 )
@@ -137,7 +137,7 @@ target_link_libraries(CaptureProcess PRIVATE
     Qt6::WebSockets
     Qt6::Gui
     Qt6::Multimedia
-    opus::opus
+    Opus::opus
     unofficial::libvpx::libvpx
     yuv
 )
@@ -149,7 +149,7 @@ target_link_libraries(PlayerProcess PRIVATE
     Qt6::WebSockets
     Qt6::Gui
     Qt6::Multimedia
-    opus::opus
+    Opus::opus
     unofficial::libvpx::libvpx
     yuv
 )

@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QApplication>
+#include <QIcon>
 #include "video_components/VideoDisplayWidget.h"
 
 class VideoWindow : public QWidget
@@ -33,6 +34,7 @@ private slots:
     void onMaximizeClicked();
     void onCloseClicked();
     void toggleFullscreen();
+    void onMicToggled(bool checked);
 
 private:
     void setupUI();
@@ -46,6 +48,9 @@ private:
     QPushButton *m_minimizeButton;
     QPushButton *m_maximizeButton;
     QPushButton *m_closeButton;
+    QPushButton *m_micButton;
+    QIcon m_micIconOn;
+    QIcon m_micIconOff;
     VideoDisplayWidget *m_videoDisplayWidget;
     
     // 窗口拖拽相关

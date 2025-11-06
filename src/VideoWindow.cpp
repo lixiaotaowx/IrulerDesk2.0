@@ -2,6 +2,7 @@
 #include <QPainter>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QCoreApplication>
 #include <QDebug>
 #include <windows.h>
 
@@ -125,6 +126,39 @@ void VideoWindow::setupCustomTitleBar()
         "    background-color: rgba(255, 255, 255, 0.25);"
         "}";
     
+    // 麦克风按钮（置于标题栏最右侧区域，靠近最小化）
+    m_micButton = new QPushButton("", m_titleBar);
+    m_micButton->setCheckable(true);
+    m_micButton->setChecked(false);
+    m_micButton->setToolTip(QStringLiteral("点击开启/关闭麦克风"));
+    // 使用与头像相同的相对路径策略：appDir/maps/logo
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString iconDir = appDir + "/maps/logo";
+    m_micIconOff = QIcon(iconDir + "/Mic_off.png");
+    m_micIconOn  = QIcon(iconDir + "/Mic_on.png");
+    m_micButton->setIcon(m_micIconOff);
+    m_micButton->setIconSize(QSize(16, 16));
+    // 与窗口控制按钮风格一致
+    QString micButtonStyle = 
+        "QPushButton {"
+        "    background-color: transparent;"
+        "    border: none;"
+        "    width: 24px;"
+        "    height: 24px;"
+        "    border-radius: 12px;"
+        "    font-size: 14px;"
+        "    font-weight: 500;"
+        "    margin: 1px;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: rgba(255, 255, 255, 0.15);"
+        "}"
+        "QPushButton:pressed {"
+        "    background-color: rgba(255, 255, 255, 0.25);"
+        "}";
+    m_micButton->setStyleSheet(micButtonStyle);
+    connect(m_micButton, &QPushButton::toggled, this, &VideoWindow::onMicToggled);
+
     // 最小化按钮
     m_minimizeButton = new QPushButton("−", m_titleBar);
     m_minimizeButton->setStyleSheet(buttonStyle + 
@@ -143,7 +177,9 @@ void VideoWindow::setupCustomTitleBar()
         "QPushButton:hover { background-color: rgba(220, 53, 69, 0.8); }");
     connect(m_closeButton, &QPushButton::clicked, this, &VideoWindow::onCloseClicked);
     
-    // 按钮对齐 - 添加适当间距
+    // 按钮对齐 - 添加适当间距（麦克风靠近最小化）
+    m_titleBarLayout->addWidget(m_micButton);
+    m_titleBarLayout->addSpacing(2);
     m_titleBarLayout->addWidget(m_minimizeButton);
     m_titleBarLayout->addSpacing(2);  // 按钮间添加小间距
     m_titleBarLayout->addWidget(m_maximizeButton);
@@ -234,6 +270,13 @@ void VideoWindow::onMaximizeClicked()
 void VideoWindow::onCloseClicked()
 {
     hide();
+}
+
+void VideoWindow::onMicToggled(bool checked)
+{
+    // 更新图标反馈；暂不接入实际麦克风逻辑
+    m_micButton->setIcon(checked ? m_micIconOn : m_micIconOff);
+    m_micButton->setToolTip(checked ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
 }
 
 void VideoWindow::toggleFullscreen()

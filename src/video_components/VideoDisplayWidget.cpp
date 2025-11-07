@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QAction>
 #include <windows.h>
+#include <iostream>
 
 VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     : QWidget(parent)
@@ -147,6 +148,8 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     connect(m_tileCleanupTimer, &QTimer::timeout, this, &VideoDisplayWidget::cleanupOldTiles);
     m_tileCleanupTimer->start(2000); // 每2秒清理一次过期瓦片
     
+    // 继续观看提示定时器初始化（默认30分钟，可通过环境变量覆盖）
+    setupContinuePrompt();
 }
 
 VideoDisplayWidget::~VideoDisplayWidget()
@@ -208,28 +211,35 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
 {
     // 如果已经在接收且URL相同，则不需要重新连接
     if (m_isReceiving && m_serverUrl == serverUrl) {
+        std::cout << "[VideoWidget] startReceiving skipped: already receiving from "
+                  << serverUrl.toStdString() << std::endl;
         return;
     }
     
     // 如果正在接收但URL不同，或者需要重新连接，先断开之前的连接
     if (m_isReceiving) {
+        std::cout << "[VideoWidget] startReceiving: stopping current session before reconnect" << std::endl;
         stopReceiving();
-        // 给一点时间让断开连接完成
-        QThread::msleep(100);
+        // 断开后直接重建接收器，避免旧实例残留状态导致卡死
+        recreateReceiver();
     }
     
     m_serverUrl = serverUrl;
+    std::cout << "[VideoWidget] startReceiving: serverUrl=" << m_serverUrl.toStdString() << std::endl;
     
     // 初始化VP9解码器
     // qDebug() << "初始化VP9解码器...";
     if (!m_decoder->initialize()) {
+        std::cout << "[VideoWidget] decoder initialize failed" << std::endl;
         return;
     }
+    std::cout << "[VideoWidget] decoder initialize ok" << std::endl;
     // qDebug() << "VP9解码器初始化成功";
     
     // qDebug() << "开始连接到:" << m_serverUrl;
     m_receiver->connectToServer(m_serverUrl);
-    
+    std::cout << "[VideoWidget] connectToServer invoked" << std::endl;
+
     m_isReceiving = true;
     updateButtonText();
     
@@ -238,14 +248,36 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     m_stats.connectionStatus = "Connecting...";
     
     emit connectionStatusChanged(m_stats.connectionStatus);
+
+    // 启动“是否继续观看”周期提示定时器
+    if (!m_continuePromptTimer) {
+        setupContinuePrompt();
+    }
+    if (m_continuePromptTimer) {
+        m_continuePromptTimer->stop();
+        m_continuePromptTimer->setInterval(m_promptIntervalMinutes * 60 * 1000);
+        // 测试时可通过环境变量将分钟设为1
+        m_continuePromptTimer->start();
+    }
+
+    // 如果之前已经有viewer/target信息，连接后自动重发观看请求，以便恢复推流
+    if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+        QTimer::singleShot(800, this, [this]() {
+            if (m_receiver) {
+                m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+            }
+        });
+    }
 }
 
 void VideoDisplayWidget::stopReceiving()
 {
     if (!m_isReceiving) {
+        std::cout << "[VideoWidget] stopReceiving skipped: not receiving" << std::endl;
         return;
     }
     
+    std::cout << "[VideoWidget] stopReceiving: disconnect and cleanup" << std::endl;
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
@@ -253,6 +285,26 @@ void VideoDisplayWidget::stopReceiving()
         // qDebug() << "清理解码器缓存...";
         m_decoder->cleanup();
     }
+
+    // 停止并清理音频输出，避免残留状态影响下一次播放
+    if (m_audioSink) {
+        if (m_audioSink->state() != QAudio::StoppedState) {
+            m_audioSink->stop();
+        }
+    }
+    m_audioIO = nullptr;
+    m_audioInitialized = false;
+    
+    // 清理瓦片相关状态，防止残留导致新会话不初始化配置而黑屏
+    clearTiles();
+    m_tileComposition.frameSize = QSize();
+    m_tileComposition.tileSize = QSize();
+    m_tileComposition.tilesPerRow = 0;
+    m_tileComposition.tilesPerColumn = 0;
+    m_tileComposition.lastUpdateTime = 0;
+    setTileMode(false);
+    m_compositeFrame = QPixmap();
+    std::cout << "[VideoWidget] tiles reset and tile mode disabled" << std::endl;
     
     // 清理显示缓存
     m_videoLabel->clear();
@@ -266,15 +318,29 @@ void VideoDisplayWidget::stopReceiving()
     m_stats.connectionStatus = "Disconnected";
     emit connectionStatusChanged(m_stats.connectionStatus);
     
+    // 停止“是否继续观看”的周期提示与倒计时弹窗
+    if (m_continuePromptTimer) {
+        m_continuePromptTimer->stop();
+    }
+    if (m_promptCountdownTimer) {
+        m_promptCountdownTimer->stop();
+    }
+    if (m_promptDialog) {
+        m_promptDialog->hide();
+    }
 }
 
 void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString &targetId)
 {
+    // 保存最近一次viewer/target，用于在重新开始接收或重连后自动重发
+    m_lastViewerId = viewerId;
+    m_lastTargetId = targetId;
     if (m_receiver) {
-        // qDebug() << "[VideoDisplayWidget] 发送观看请求，观看者ID:" << viewerId << "目标ID:" << targetId;
+        std::cout << "[VideoWidget] sendWatchRequest: viewer=" << viewerId.toStdString()
+                  << ", target=" << targetId.toStdString() << std::endl;
         m_receiver->sendWatchRequest(viewerId, targetId);
     } else {
-        // qDebug() << "[VideoDisplayWidget] WebSocketReceiver未初始化，无法发送观看请求";
+        std::cout << "[VideoWidget] sendWatchRequest skipped: receiver not initialized" << std::endl;
     }
 }
 
@@ -960,4 +1026,170 @@ void VideoDisplayWidget::closeEvent(QCloseEvent *event)
     // 关闭窗口时，主动停止接收并断开连接（会发送 stop_streaming）
     stopReceiving();
     QWidget::closeEvent(event);
+}
+
+// ====== 继续观看提示与倒计时 ======
+void VideoDisplayWidget::setupContinuePrompt()
+{
+    if (!m_continuePromptTimer) {
+        m_continuePromptTimer = new QTimer(this);
+        m_continuePromptTimer->setSingleShot(false);
+        // 读取环境变量 IRULER_PROMPT_MINUTES（整数，单位分钟），用于测试覆盖
+        bool ok = false;
+        int envMin = qEnvironmentVariableIntValue("IRULER_PROMPT_MINUTES", &ok);
+        if (ok && envMin > 0) {
+            m_promptIntervalMinutes = envMin;
+        } else {
+            m_promptIntervalMinutes = 30;
+        }
+        m_continuePromptTimer->setInterval(m_promptIntervalMinutes * 60 * 1000);
+        connect(m_continuePromptTimer, &QTimer::timeout, this, &VideoDisplayWidget::showContinuePrompt);
+    }
+}
+
+void VideoDisplayWidget::showContinuePrompt()
+{
+    // 仅在接收中且窗口可见时提示
+    if (!m_isReceiving || !isVisible()) {
+        return;
+    }
+
+    // 防止重入：展示弹窗期间暂停周期定时器，结束后再恢复
+    if (m_continuePromptTimer) {
+        m_continuePromptTimer->stop();
+    }
+
+    if (!m_promptDialog) {
+        m_promptDialog = new QDialog(this);
+        m_promptDialog->setWindowTitle(QStringLiteral("是否继续观看"));
+        m_promptDialog->setModal(true);
+        m_promptDialog->setWindowFlags(m_promptDialog->windowFlags() | Qt::WindowStaysOnTopHint);
+        auto *layout = new QVBoxLayout(m_promptDialog);
+        m_promptLabel = new QLabel(m_promptDialog);
+        m_continueButton = new QPushButton(QStringLiteral("继续观看"), m_promptDialog);
+        layout->addWidget(m_promptLabel);
+        layout->addWidget(m_continueButton);
+        connect(m_continueButton, &QPushButton::clicked, this, &VideoDisplayWidget::onContinueClicked);
+    }
+
+    m_remainingSeconds = 10;
+    m_promptLabel->setText(QStringLiteral("是否继续观看？%1秒后将自动关闭此窗口").arg(m_remainingSeconds));
+
+    if (!m_promptCountdownTimer) {
+        m_promptCountdownTimer = new QTimer(this);
+        m_promptCountdownTimer->setInterval(1000);
+        connect(m_promptCountdownTimer, &QTimer::timeout, this, &VideoDisplayWidget::onPromptCountdownTick);
+    }
+    m_promptCountdownTimer->start();
+    m_promptDialog->resize(320, 120);
+    m_promptDialog->show();
+}
+
+void VideoDisplayWidget::onContinueClicked()
+{
+    if (m_promptCountdownTimer) {
+        m_promptCountdownTimer->stop();
+    }
+    if (m_promptDialog) {
+        m_promptDialog->hide();
+    }
+    // 恢复周期定时器，等待下一个周期再提示
+    if (m_continuePromptTimer) {
+        m_continuePromptTimer->setInterval(m_promptIntervalMinutes * 60 * 1000);
+        m_continuePromptTimer->start();
+    }
+}
+
+void VideoDisplayWidget::onPromptCountdownTick()
+{
+    m_remainingSeconds -= 1;
+    if (m_remainingSeconds < 0) m_remainingSeconds = 0;
+    if (m_promptLabel) {
+        m_promptLabel->setText(QStringLiteral("是否继续观看？%1秒后将自动关闭此窗口").arg(m_remainingSeconds));
+    }
+    if (m_remainingSeconds == 0) {
+        if (m_promptCountdownTimer) {
+            m_promptCountdownTimer->stop();
+        }
+        if (m_promptDialog) {
+            m_promptDialog->hide();
+        }
+        // 倒计时结束：将自动关闭此窗口
+        stopReceiving();
+        QWidget *top = this->window();
+        // 统一改为隐藏顶层窗口，避免关闭整个主程序
+        if (top) {
+            top->hide();
+        } else {
+            this->hide();
+        }
+    }
+}
+void VideoDisplayWidget::recreateReceiver()
+{
+    // 删除旧接收器实例
+    m_receiver.reset();
+    // 创建新实例并重新连接信号
+    m_receiver = std::make_unique<WebSocketReceiver>();
+    std::cout << "[VideoWidget] recreateReceiver: new instance created" << std::endl;
+
+    connect(m_receiver.get(), &WebSocketReceiver::frameReceivedWithTimestamp,
+            this, [this](const QByteArray &frameData, qint64 captureTimestamp) {
+                m_stats.framesReceived++;
+                m_currentCaptureTimestamp = captureTimestamp;
+                m_decoder->decodeFrame(frameData);
+            });
+
+    connect(m_receiver.get(), &WebSocketReceiver::connectionStatusChanged,
+            this, &VideoDisplayWidget::updateConnectionStatus);
+
+    connect(m_receiver.get(), &WebSocketReceiver::mousePositionReceived,
+            this, &VideoDisplayWidget::onMousePositionReceived);
+
+    connect(m_receiver.get(), &WebSocketReceiver::tileCompleted,
+            this, [this](int tileId, const QByteArray &completeData) {
+                QRect sourceRect = calculateTileSourceRect(tileId);
+                qint64 timestamp = QDateTime::currentMSecsSinceEpoch();
+                renderTile(tileId, completeData, sourceRect, timestamp);
+            });
+
+    connect(m_receiver.get(), &WebSocketReceiver::tileUpdateReceived,
+            this, [this](const WebSocketReceiver::TileUpdate &update) {
+                QRect updateRect(update.x, update.y, update.width, update.height);
+                updateTile(update.tileId, update.deltaData, updateRect, update.timestamp);
+            });
+
+    connect(m_receiver.get(), &WebSocketReceiver::tileMetadataReceived,
+            this, [this](const WebSocketReceiver::TileMetadata &metadata) {
+                if (m_tileComposition.frameSize.isEmpty()) {
+                    QSize frameSize(metadata.x + metadata.width, metadata.y + metadata.height);
+                    QSize tileSize(metadata.width, metadata.height);
+                    std::cout << "[VideoWidget] tileMetadataReceived: setTileConfiguration frame="
+                              << frameSize.width() << "x" << frameSize.height()
+                              << ", tile=" << tileSize.width() << "x" << tileSize.height() << std::endl;
+                    setTileConfiguration(frameSize, tileSize);
+                    setTileMode(true);
+                    std::cout << "[VideoWidget] tile mode enabled" << std::endl;
+                }
+            });
+
+    connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
+            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 /*timestamp*/) {
+                if (!m_speakerEnabled) {
+                    return;
+                }
+                initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
+                if (!m_audioSink) {
+                    return;
+                }
+                if (m_audioSink->state() == QAudio::StoppedState) {
+                    m_audioIO = m_audioSink->start();
+                }
+                if (m_audioSink->state() == QAudio::SuspendedState) {
+                    m_audioSink->resume();
+                }
+                if (m_audioIO) {
+                    m_audioIO->write(pcmData);
+                }
+            });
 }

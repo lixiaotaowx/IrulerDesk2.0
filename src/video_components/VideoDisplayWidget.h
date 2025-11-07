@@ -7,6 +7,7 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QTimer>
+#include <QDialog>
 #include <QPixmap>
 #include <QPoint>
 #include <QMutex>
@@ -123,6 +124,8 @@ private slots:
     void updateStatsDisplay();
     
 private:
+    // 重新创建并连接WebSocket接收器，防止旧实例卡死或残留状态
+    void recreateReceiver();
     void setupUI();
     void updateButtonText();
     void drawMouseCursor(QPixmap &pixmap, const QPoint &position); // 新增：绘制鼠标光标
@@ -139,6 +142,11 @@ private:
     QRect calculateTileSourceRect(int tileId) const;
     void markTilesDirty();
     void cleanupOldTiles();
+    // 定时继续观看提示逻辑
+    void setupContinuePrompt();
+    void showContinuePrompt();
+    void onContinueClicked();
+    void onPromptCountdownTick();
     
     // UI组件
     QVBoxLayout *m_mainLayout;
@@ -176,6 +184,10 @@ private:
     QPoint m_mousePosition; // 当前鼠标位置
     qint64 m_mouseTimestamp = 0; // 鼠标位置时间戳
     bool m_hasMousePosition = false; // 是否有有效的鼠标位置数据
+
+    // 最近一次观看者与目标ID（用于重发watch_request以恢复推流）
+    QString m_lastViewerId;
+    QString m_lastTargetId;
     bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）
     bool m_mouseButtonsSwapped = false; // 系统是否交换了鼠标左右键
     
@@ -188,6 +200,15 @@ private:
     qint64 m_tileTimeout;         // 瓦片超时时间（毫秒）
     QTimer *m_tileCleanupTimer;   // 瓦片清理定时器
     std::atomic<bool> m_compositionInProgress; // 合成进行中标志
+    
+    // 继续观看提示定时与对话框
+    QTimer *m_continuePromptTimer = nullptr; // 周期触发30分钟/测试1分钟
+    int m_promptIntervalMinutes = 30;        // 默认30分钟，可通过环境变量覆盖
+    QDialog *m_promptDialog = nullptr;       // 弹窗
+    QLabel *m_promptLabel = nullptr;         // 提示文字，显示剩余秒数
+    QPushButton *m_continueButton = nullptr; // 继续观看按钮
+    QTimer *m_promptCountdownTimer = nullptr;// 倒计时定时器（10秒）
+    int m_remainingSeconds = 0;              // 剩余倒计时秒数
 };
 
 #endif // VIDEODISPLAYWIDGET_H

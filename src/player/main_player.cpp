@@ -68,6 +68,7 @@ int main(int argc, char *argv[])
     
     // 检查是否提供了目标设备ID
     if (targetDeviceId.isEmpty()) {
+        std::cout << "[PlayerProcess] missing --target device id, exiting" << std::endl;
         return -1;
     }
     
@@ -100,10 +101,14 @@ int main(int argc, char *argv[])
         });
         
         // 连接到WebSocket服务器
+        std::cout << "[PlayerProcess] connecting: url=" << serverUrl.toStdString()
+                  << ", target=" << targetDeviceId.toStdString() << std::endl;
         receiver.connectToServer(serverUrl);
         
         // 发送观看请求
         QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
+        std::cout << "[PlayerProcess] sendWatchRequest: viewer=" << viewerId.toStdString()
+                  << ", target=" << targetDeviceId.toStdString() << std::endl;
         receiver.sendWatchRequest(viewerId, targetDeviceId);
         
         
@@ -119,12 +124,15 @@ int main(int argc, char *argv[])
         videoWidget->show();
         
         // 自动开始接收
+        std::cout << "[PlayerProcess] UI-mode startReceiving: url=" << serverUrl.toStdString() << std::endl;
         videoWidget->startReceiving(serverUrl);
         
         // 发送观看请求（独立窗口模式也需要）
         QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
         // 延迟发送观看请求，确保连接已建立
         QTimer::singleShot(2000, [videoWidget, viewerId, targetDeviceId]() {
+            std::cout << "[PlayerProcess] UI-mode sendWatchRequest after delay: viewer="
+                      << viewerId.toStdString() << ", target=" << targetDeviceId.toStdString() << std::endl;
             videoWidget->sendWatchRequest(viewerId, targetDeviceId);
             
         });

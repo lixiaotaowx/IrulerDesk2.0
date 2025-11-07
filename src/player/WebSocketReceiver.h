@@ -214,6 +214,9 @@ private:
     int m_audioFrameSamples = 0; // 每帧采样数（20ms）
     qint64 m_audioLastTimestamp = 0;
     void initOpusDecoderIfNeeded(int sampleRate, int channels);
+
+    // 文本瓦片消息兼容开关（默认关闭，通过环境变量 IRULER_TEXT_TILE=1 开启）
+    bool m_textTileEnabled = false;
 };
 
 #endif // WEBSOCKETRECEIVER_H

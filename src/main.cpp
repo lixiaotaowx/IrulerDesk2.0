@@ -37,13 +37,14 @@ int main(int argc, char *argv[])
     // 设置现代化样式
     app.setStyle(QStyleFactory::create("Fusion"));
     
-    // 设置深色主题
+    // 设置深色主题（含黑底白字的工具提示）
     QPalette darkPalette;
     darkPalette.setColor(QPalette::Window, QColor(53, 53, 53));
     darkPalette.setColor(QPalette::WindowText, Qt::white);
     darkPalette.setColor(QPalette::Base, QColor(25, 25, 25));
     darkPalette.setColor(QPalette::AlternateBase, QColor(53, 53, 53));
-    darkPalette.setColor(QPalette::ToolTipBase, Qt::white);
+    // 工具提示：黑背景白文字
+    darkPalette.setColor(QPalette::ToolTipBase, QColor(0, 0, 0));
     darkPalette.setColor(QPalette::ToolTipText, Qt::white);
     darkPalette.setColor(QPalette::Text, Qt::white);
     darkPalette.setColor(QPalette::Button, QColor(53, 53, 53));
@@ -53,6 +54,15 @@ int main(int argc, char *argv[])
     darkPalette.setColor(QPalette::Highlight, QColor(42, 130, 218));
     darkPalette.setColor(QPalette::HighlightedText, Qt::black);
     app.setPalette(darkPalette);
+
+    // 进一步通过样式表确保所有样式一致
+    app.setStyleSheet(
+        "QToolTip {\n"
+        "    color: #ffffff;\n"
+        "    background-color: #000000;\n"
+        "    border: 1px solid #4c4c4c;\n"
+        "}"
+    );
     
     // 创建并显示主窗口
     MainWindow window;

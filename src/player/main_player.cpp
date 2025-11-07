@@ -32,6 +32,14 @@ int main(int argc, char *argv[])
 #endif
 
     QApplication app(argc, argv); // 使用QApplication支持GUI窗口
+    // 统一工具提示样式为黑底白字（播放器窗口也受益）
+    app.setStyleSheet(
+        "QToolTip {\n"
+        "    color: #ffffff;\n"
+        "    background-color: #000000;\n"
+        "    border: 1px solid #4c4c4c;\n"
+        "}"
+    );
     
     
     

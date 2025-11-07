@@ -14,6 +14,7 @@
 #include <QHash>
 #include <QMap>
 #include <QSet>
+#include <QQueue>
 #include <opus/opus.h>
 
 class WebSocketReceiver : public QObject
@@ -207,6 +208,11 @@ private:
     int m_opusSampleRate = 16000;
     int m_opusChannels = 1;
     bool m_opusInitialized = false;
+    // 简易抖动缓冲（20ms节拍定时解码）
+    QTimer *m_audioTimer = nullptr;
+    QQueue<QByteArray> m_opusQueue;
+    int m_audioFrameSamples = 0; // 每帧采样数（20ms）
+    qint64 m_audioLastTimestamp = 0;
     void initOpusDecoderIfNeeded(int sampleRate, int channels);
 };
 

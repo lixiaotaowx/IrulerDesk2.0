@@ -40,6 +40,50 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     connect(m_statsTimer, &QTimer::timeout, this, &WebSocketReceiver::updateStats);
     m_statsTimer->start(1000); // 每秒更新一次统计
     
+    // 音频：初始化20ms节拍的抖动缓冲定时器
+    m_audioTimer = new QTimer(this);
+    m_audioTimer->setInterval(20);
+    connect(m_audioTimer, &QTimer::timeout, [this]() {
+        if (!m_opusInitialized || !m_opusDecoder) return;
+        int frameSamples = m_audioFrameSamples > 0 ? m_audioFrameSamples : (m_opusSampleRate / 50);
+
+        QByteArray opusData;
+        if (!m_opusQueue.isEmpty()) {
+            opusData = m_opusQueue.dequeue();
+        }
+
+        QByteArray pcm;
+        pcm.resize(frameSamples * m_opusChannels * sizeof(opus_int16));
+        int decodedSamples = 0;
+        if (opusData.isEmpty()) {
+            // 队列为空：执行丢包掩蔽（PLC），维持时间连续性
+            decodedSamples = opus_decode(m_opusDecoder,
+                                         nullptr,
+                                         0,
+                                         reinterpret_cast<opus_int16*>(pcm.data()),
+                                         frameSamples,
+                                         0);
+            if (decodedSamples < 0) return;
+        } else {
+            decodedSamples = opus_decode(m_opusDecoder,
+                                         reinterpret_cast<const unsigned char*>(opusData.constData()),
+                                         opusData.size(),
+                                         reinterpret_cast<opus_int16*>(pcm.data()),
+                                         frameSamples,
+                                         0);
+            if (decodedSamples < 0) return;
+        }
+        pcm.resize(decodedSamples * m_opusChannels * sizeof(opus_int16));
+        // 使用简单的时间推进：上次时间 +20ms（微秒单位）
+        if (m_audioLastTimestamp == 0) {
+            m_audioLastTimestamp = QDateTime::currentMSecsSinceEpoch() * 1000;
+        } else {
+            m_audioLastTimestamp += 20000; // 20ms
+        }
+        emit audioFrameReceived(pcm, m_opusSampleRate, m_opusChannels, 16, m_audioLastTimestamp);
+    });
+    // 定时器按需在收到第一帧后启动
+    
     // 设置重连定时器
     m_reconnectTimer = new QTimer(this);
     m_reconnectTimer->setSingleShot(true);
@@ -312,26 +356,15 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             if (!m_opusInitialized || !m_opusDecoder) {
                 return; // 解码器不可用
             }
-
-            QByteArray pcm;
-            pcm.resize(frameSamples * channels * sizeof(opus_int16));
-            int decodedSamples = opus_decode(m_opusDecoder,
-                                             reinterpret_cast<const unsigned char*>(opusData.constData()),
-                                             opusData.size(),
-                                             reinterpret_cast<opus_int16*>(pcm.data()),
-                                             frameSamples,
-                                             0);
-            if (decodedSamples < 0) {
-                // 解码失败，忽略本帧
-                return;
+            // 入队以按固定20ms节拍解码，降低颤抖
+            m_opusSampleRate = sampleRate;
+            m_opusChannels = channels;
+            m_audioFrameSamples = frameSamples;
+            m_opusQueue.enqueue(opusData);
+            if (!m_audioTimer->isActive()) {
+                m_audioLastTimestamp = timestamp; // 初始与捕获时间对齐
+                m_audioTimer->start();
             }
-            pcm.resize(decodedSamples * channels * sizeof(opus_int16));
-
-            std::cout << "[Receiver] audio_opus decoded: "
-                      << pcm.size() << " bytes, sr=" << sampleRate
-                      << ", ch=" << channels << ", ts=" << timestamp << std::endl;
-
-            emit audioFrameReceived(pcm, sampleRate, channels, 16, timestamp);
             return;
         }
     }

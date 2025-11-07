@@ -129,6 +129,7 @@ private:
     // 捕获鼠标并映射到源坐标
     bool eventFilter(QObject *obj, QEvent *event) override;
     QPoint mapLabelToSource(const QPoint &labelPoint) const;
+    void closeEvent(QCloseEvent *event) override;
     
     // 瓦片渲染私有方法
     void updateTileMapping();

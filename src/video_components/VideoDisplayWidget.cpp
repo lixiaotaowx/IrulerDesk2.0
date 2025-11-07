@@ -954,3 +954,10 @@ void VideoDisplayWidget::sendCloseOverlay()
         m_receiver->sendAnnotationEvent("overlay_close", 0, 0);
     }
 }
+
+void VideoDisplayWidget::closeEvent(QCloseEvent *event)
+{
+    // 关闭窗口时，主动停止接收并断开连接（会发送 stop_streaming）
+    stopReceiving();
+    QWidget::closeEvent(event);
+}

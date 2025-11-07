@@ -160,6 +160,12 @@ void WebSocketReceiver::disconnectFromServer()
     stopReconnectTimer();
     
     if (m_webSocket && m_connected) {
+        // 在断开前通知采集端停止推流
+        QJsonObject stopMsg;
+        stopMsg["type"] = "stop_streaming";
+        QJsonDocument stopDoc(stopMsg);
+        m_webSocket->sendTextMessage(stopDoc.toJson(QJsonDocument::Compact));
+        
         m_webSocket->close();
     }
     

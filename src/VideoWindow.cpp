@@ -71,6 +71,9 @@ void VideoWindow::setupUI()
     // 双击全屏切换
     connect(m_videoDisplayWidget, &VideoDisplayWidget::fullscreenToggleRequested,
             this, &VideoWindow::toggleFullscreen);
+    // 颜色变化时更新标题栏按钮外观
+    connect(m_videoDisplayWidget, &VideoDisplayWidget::annotationColorChanged,
+            this, [this](int colorId){ updateColorButtonVisual(colorId); });
     
     m_mainLayout->addWidget(m_videoDisplayWidget, 1);
 }
@@ -159,6 +162,19 @@ void VideoWindow::setupCustomTitleBar()
     m_micButton->setStyleSheet(micButtonStyle);
     connect(m_micButton, &QPushButton::toggled, this, &VideoWindow::onMicToggled);
 
+    // 批注颜色按钮（循环切换红/绿/蓝/黄）- 使用自绘圆形按钮确保纯圆与抗锯齿
+    m_colorButton = new ColorCircleButton(m_titleBar);
+    m_colorButton->setToolTip(QStringLiteral("批注颜色"));
+    m_colorButton->setFixedSize(13, 13);
+    m_colorButton->setCursor(Qt::PointingHandCursor);
+    connect(m_colorButton, &ColorCircleButton::clicked, this, &VideoWindow::onColorClicked);
+    // 初始颜色与按钮外观
+    if (m_videoDisplayWidget) {
+        updateColorButtonVisual(m_videoDisplayWidget->annotationColorId());
+    } else {
+        updateColorButtonVisual(0);
+    }
+
     // 扬声器按钮（本地播放开/关，不影响推流端）
     m_speakerButton = new QPushButton("", m_titleBar);
     m_speakerButton->setCheckable(true);
@@ -189,7 +205,12 @@ void VideoWindow::setupCustomTitleBar()
         "QPushButton:hover { background-color: rgba(220, 53, 69, 0.8); }");
     connect(m_closeButton, &QPushButton::clicked, this, &VideoWindow::onCloseClicked);
     
-    // 按钮对齐 - 添加适当间距（麦克风靠近最小化）
+    // 布局调整：将颜色按钮居中到标题栏中间
+    // 左侧：标题标签（已添加）
+    // 中间：颜色按钮（居中）
+    m_titleBarLayout->addWidget(m_colorButton, 0, Qt::AlignCenter);
+    m_titleBarLayout->addStretch();
+    // 右侧：扬声器、麦克风、窗口控制按钮
     m_titleBarLayout->addWidget(m_speakerButton);
     m_titleBarLayout->addSpacing(2);
     m_titleBarLayout->addWidget(m_micButton);
@@ -308,6 +329,31 @@ void VideoWindow::onSpeakerToggled(bool checked)
     m_speakerButton->setToolTip(checked ? QStringLiteral("扬声器：开") : QStringLiteral("扬声器：关"));
     if (m_videoDisplayWidget) {
         m_videoDisplayWidget->setSpeakerEnabled(checked);
+    }
+}
+
+void VideoWindow::onColorClicked()
+{
+    int current = m_videoDisplayWidget ? m_videoDisplayWidget->annotationColorId() : 0;
+    int next = (current + 1) % 4; // 0:红,1:绿,2:蓝,3:黄
+    if (m_videoDisplayWidget) {
+        m_videoDisplayWidget->setAnnotationColorId(next);
+    }
+    updateColorButtonVisual(next);
+}
+
+void VideoWindow::updateColorButtonVisual(int colorId)
+{
+    QString tip;
+    switch (colorId) {
+    case 0: tip = QStringLiteral("批注颜色：红"); break;
+    case 1: tip = QStringLiteral("批注颜色：绿"); break;
+    case 2: tip = QStringLiteral("批注颜色：蓝"); break;
+    default: tip = QStringLiteral("批注颜色：黄"); break;
+    }
+    if (m_colorButton) {
+        m_colorButton->setColorId(colorId);
+        m_colorButton->setToolTip(tip);
     }
 }
 

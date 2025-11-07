@@ -63,6 +63,7 @@ private slots:
     void onAvatarSelected(int iconId);  // 新增：头像选择完成槽函数
     void onClearMarksRequested(); // 新增：清理标记槽函数
     void onExitRequested();       // 新增：退出槽函数
+    void onAnnotationColorChanged(int colorId); // 新增：批注颜色变化持久化
 
 private:
     void setupUI();
@@ -80,6 +81,8 @@ private:
     void saveRandomIdToConfig(int randomId);
     int loadOrGenerateIconId();  // 新增：读取或生成icon ID
     void saveIconIdToConfig(int iconId);  // 新增：保存icon ID到配置文件
+    int loadOrGenerateColorId();  // 新增：读取或生成批注颜色ID
+    void saveColorIdToConfig(int colorId); // 新增：保存批注颜色ID到配置文件
     QString getDeviceId() const;  // 获取设备ID字符串
     QString generateUniqueDeviceId() const;  // 生成唯一设备ID
     void saveDeviceIdToConfig(const QString& deviceId);  // 保存设备ID到配置文件
@@ -95,6 +98,7 @@ private:
     void sendWatchRequest(const QString& targetDeviceId);
     void startVideoReceiving(const QString& targetDeviceId);
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
+private:
     
     // UI组件
     QWidget *m_centralWidget;

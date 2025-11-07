@@ -49,6 +49,8 @@ set(MAIN_SOURCES
     src/ui/AvatarSettingsWindow.h         # 头像设置窗口声明：UI与交互接口
     src/ui/SystemSettingsWindow.cpp       # 系统设置窗口实现：应用参数与行为配置
     src/ui/SystemSettingsWindow.h         # 系统设置窗口声明：设置项与信号槽
+    src/ui/ColorCircleButton.cpp          # 圆形颜色按钮：自绘抗锯齿纯圆显示
+    src/ui/ColorCircleButton.h            # 圆形颜色按钮声明
 )
 
 # 屏幕捕获编码进程源文件

@@ -82,6 +82,9 @@ public:
     
     // 设置显示模式
     void setShowControls(bool show);
+    // 批注颜色设置与获取
+    void setAnnotationColorId(int colorId);
+    int annotationColorId() const { return m_currentColorId; }
 
     // 显示切换中提示
     void showSwitchingIndicator(const QString &message = QStringLiteral("切换中..."));
@@ -108,6 +111,8 @@ signals:
     void statsUpdated(const VideoStats &stats);
     // 双击视频区域触发全屏切换
     void fullscreenToggleRequested();
+    // 批注颜色变化（用于持久化与UI同步）
+    void annotationColorChanged(int colorId);
     
 public slots:
     void renderFrame(const QByteArray &frameData, const QSize &frameSize);
@@ -209,6 +214,8 @@ private:
     QPushButton *m_continueButton = nullptr; // 继续观看按钮
     QTimer *m_promptCountdownTimer = nullptr;// 倒计时定时器（10秒）
     int m_remainingSeconds = 0;              // 剩余倒计时秒数
+    // 批注颜色ID（0:红,1:绿,2:蓝,3:黄）
+    int m_currentColorId = 0;
 };
 
 #endif // VIDEODISPLAYWIDGET_H

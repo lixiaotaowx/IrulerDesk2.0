@@ -539,6 +539,17 @@ void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
     }
 }
 
+// 设置批注颜色ID（0:红,1:绿,2:蓝,3:黄），越界归一到有效范围
+void VideoDisplayWidget::setAnnotationColorId(int colorId)
+{
+    int normalized = colorId;
+    if (normalized < 0) normalized = 0;
+    if (normalized > 3) normalized = 3;
+    if (m_currentColorId == normalized) return;
+    m_currentColorId = normalized;
+    emit annotationColorChanged(m_currentColorId);
+}
+
 void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample)
 {
     bool needsReinit = (!m_audioInitialized) ||
@@ -923,7 +934,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             if (src.x() >= 0 && isPrimary) { // 仅主键开始绘制（随系统设置）
                 m_isAnnotating = true;
                 if (m_receiver) {
-                    m_receiver->sendAnnotationEvent("down", src.x(), src.y());
+                    m_receiver->sendAnnotationEvent("down", src.x(), src.y(), m_currentColorId);
                 }
             }
             return true; // 消费事件
@@ -933,7 +944,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             if (m_isAnnotating) {
                 QPoint src = mapLabelToSource(me->pos());
                 if (src.x() >= 0 && m_receiver) {
-                    m_receiver->sendAnnotationEvent("move", src.x(), src.y());
+                    m_receiver->sendAnnotationEvent("move", src.x(), src.y(), m_currentColorId);
                 }
                 return true;
             }
@@ -946,7 +957,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                                (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
             if (src.x() >= 0 && isPrimary) { // 仅主键结束绘制
                 if (m_receiver) {
-                    m_receiver->sendAnnotationEvent("up", src.x(), src.y());
+                    m_receiver->sendAnnotationEvent("up", src.x(), src.y(), m_currentColorId);
                 }
             }
             m_isAnnotating = false;
@@ -984,7 +995,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             QKeyEvent *ke = static_cast<QKeyEvent*>(event);
             if ((ke->modifiers() & Qt::ControlModifier) && ke->key() == Qt::Key_Z) {
                 if (m_receiver) {
-                    m_receiver->sendAnnotationEvent("undo", 0, 0);
+    m_receiver->sendAnnotationEvent("undo", 0, 0, m_currentColorId);
                 }
                 return true; // 消费Ctrl+Z
             }
@@ -1001,7 +1012,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
 void VideoDisplayWidget::sendUndo()
 {
     if (m_receiver) {
-        m_receiver->sendAnnotationEvent("undo", 0, 0);
+    m_receiver->sendAnnotationEvent("undo", 0, 0, m_currentColorId);
     }
 }
 
@@ -1009,7 +1020,7 @@ void VideoDisplayWidget::sendUndo()
 void VideoDisplayWidget::sendClear()
 {
     if (m_receiver) {
-        m_receiver->sendAnnotationEvent("clear", 0, 0);
+    m_receiver->sendAnnotationEvent("clear", 0, 0, m_currentColorId);
     }
     m_isAnnotating = false;
 }
@@ -1017,7 +1028,7 @@ void VideoDisplayWidget::sendClear()
 void VideoDisplayWidget::sendCloseOverlay()
 {
     if (m_receiver) {
-        m_receiver->sendAnnotationEvent("overlay_close", 0, 0);
+    m_receiver->sendAnnotationEvent("overlay_close", 0, 0, m_currentColorId);
     }
 }
 

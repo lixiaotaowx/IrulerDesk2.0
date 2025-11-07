@@ -93,6 +93,10 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     QString serverUrl = QString("ws://%1/subscribe/%2").arg(serverAddress, targetDeviceId);
     
     
+    // 初始化批注颜色（从配置加载）
+    int initialColorId = loadOrGenerateColorId();
+    videoWidget->setAnnotationColorId(initialColorId);
+
     // 使用VideoDisplayWidget开始接收视频流
     videoWidget->startReceiving(serverUrl);
 
@@ -696,6 +700,83 @@ void MainWindow::saveIconIdToConfig(int iconId)
         configFile.close();
     } else {
     }
+}
+
+// 读取或生成批注颜色ID（0-3）。如果不存在则默认0并写入配置
+int MainWindow::loadOrGenerateColorId()
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("color_id=")) {
+                bool ok = false;
+                int val = line.mid(9).toInt(&ok);
+                if (ok && val >= 0 && val <= 3) {
+                    configFile.close();
+                    return val;
+                }
+            }
+        }
+        configFile.close();
+    }
+
+    int defaultColorId = 0;
+    saveColorIdToConfig(defaultColorId);
+    return defaultColorId;
+}
+
+// 保存批注颜色ID到配置文件（覆盖或追加），范围约束为0-3
+void MainWindow::saveColorIdToConfig(int colorId)
+{
+    if (colorId < 0) colorId = 0;
+    if (colorId > 3) colorId = 3;
+
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+
+    QStringList configLines;
+    bool colorIdExists = false;
+
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("color_id=")) {
+                configLines << QString("color_id=%1").arg(colorId);
+                colorIdExists = true;
+            } else if (!line.startsWith("#")) {
+                configLines << line;
+            }
+        }
+        configFile.close();
+    }
+
+    if (!colorIdExists) {
+        configLines << QString("color_id=%1").arg(colorId);
+    }
+
+    configLines << "# This file stores the application configuration";
+    configLines << "# Delete this file to regenerate IDs and settings";
+    configLines << "# Set server_address to your cloud server IP:port (e.g., 1.2.3.4:8765)";
+
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString& line : configLines) {
+            out << line << "\n";
+        }
+        configFile.close();
+    } else {
+    }
+}
+
+// 槽：批注颜色变化后持久化到配置
+void MainWindow::onAnnotationColorChanged(int colorId)
+{
+    saveColorIdToConfig(colorId);
 }
 
 QString MainWindow::getDeviceId() const

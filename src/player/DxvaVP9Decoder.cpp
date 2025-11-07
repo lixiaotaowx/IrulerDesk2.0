@@ -4,6 +4,7 @@
 #include <QMutexLocker>
 #include <QApplication>
 #include <QThread>
+#include <iostream>
 
 // 暂时移除所有Windows头文件包含，避免与Qt MOC系统冲突
 // 硬件解码功能将在后续版本中重新实现
@@ -219,6 +220,8 @@ void DxvaVP9Decoder::fallbackToSoftware(const QString& reason)
         m_stats.decoderType = "libvpx Software";
         
         emit hardwareStatusChanged(false);
+        // 按要求：硬件失败时打印"std"
+        std::cout << "std" << std::endl;
         
         // 确保软件解码器已初始化
         if (!m_softwareDecoder->getStats().totalFrames && m_initialized) {

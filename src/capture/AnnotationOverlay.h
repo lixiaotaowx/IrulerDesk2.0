@@ -15,15 +15,16 @@ public:
     void clear();
 
 public slots:
-    void onAnnotationEvent(const QString &phase, int x, int y, const QString &viewerId);
+    void onAnnotationEvent(const QString &phase, int x, int y, const QString &viewerId, int colorId);
     void hideOverlay();
 
 protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    QVector<QPoint> m_currentStroke;
-    QVector<QVector<QPoint>> m_strokes;
+    struct Stroke { QVector<QPoint> points; int colorId = 0; };
+    Stroke m_currentStroke;
+    QVector<Stroke> m_strokes;
 };
 
 #endif // ANNOTATIONOVERLAY_H

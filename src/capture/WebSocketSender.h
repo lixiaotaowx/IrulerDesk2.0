@@ -87,8 +87,8 @@ signals:
     void tileUpdateSent(int updatedTileCount);
     void tileMetadataSent(int totalTileCount);
 
-    // 远程批注事件（观看端发来）
-    void annotationEventReceived(const QString &phase, int x, int y, const QString &viewerId);
+    // 远程批注事件（观看端发来），包含颜色ID
+    void annotationEventReceived(const QString &phase, int x, int y, const QString &viewerId, int colorId);
     // 切换屏幕请求（观看端发来）
     void switchScreenRequested(const QString &direction, int index);
     // 质量变更请求（观看端发来）

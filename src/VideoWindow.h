@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QIcon>
 #include "video_components/VideoDisplayWidget.h"
+#include "ui/ColorCircleButton.h"
 
 class VideoWindow : public QWidget
 {
@@ -36,6 +37,7 @@ private slots:
     void toggleFullscreen();
     void onMicToggled(bool checked);
     void onSpeakerToggled(bool checked);
+    void onColorClicked();
 
 private:
     void setupUI();
@@ -49,6 +51,7 @@ private:
     QPushButton *m_minimizeButton;
     QPushButton *m_maximizeButton;
     QPushButton *m_closeButton;
+    ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
     QPushButton *m_speakerButton;
     QIcon m_micIconOn;
@@ -62,6 +65,7 @@ private:
     QPoint m_dragPosition;
     bool m_isMaximized;
     QRect m_normalGeometry;
+    void updateColorButtonVisual(int colorId);
 };
 
 #endif // VIDEOWINDOW_H

@@ -720,7 +720,7 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     m_webSocket->sendTextMessage(startStreamingJsonString);
 }
 
-void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y)
+void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, int colorId)
 {
     if (!m_connected || !m_webSocket) {
         return;
@@ -747,6 +747,7 @@ void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y)
     message["viewer_id"] = viewerId;
     message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    message["color_id"] = colorId;
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);

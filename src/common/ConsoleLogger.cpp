@@ -11,29 +11,35 @@
  #endif
  
  namespace {
-     static void qtConsoleMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &msg) {
-         const char *level = "DEBUG";
-         switch (type) {
-             case QtDebugMsg: level = "DEBUG"; break;
-             case QtInfoMsg: level = "INFO"; break;
-             case QtWarningMsg: level = "WARN"; break;
-             case QtCriticalMsg: level = "ERROR"; break;
-             case QtFatalMsg: level = "FATAL"; break;
-         }
-         QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
-         QByteArray text = msg.toLocal8Bit();
-         const char *file = ctx.file ? ctx.file : "";
-         const char *func = ctx.function ? ctx.function : "";
-         int line = ctx.line;
-         FILE *out = (type == QtCriticalMsg || type == QtFatalMsg) ? stderr : stdout;
-         std::fprintf(out, "[%s] [%s] %s (%s:%d %s)\n",
-                      ts.toUtf8().constData(), level, text.constData(), file, line, func);
-         std::fflush(out);
-         if (type == QtFatalMsg) {
-             // 保持默认行为
-             std::abort();
-         }
-     }
+    static void qtConsoleMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &msg) {
+#ifdef DISABLE_ALL_LOGS
+        // 静音非致命日志，保留 Critical/Fatal
+        if (type == QtDebugMsg || type == QtInfoMsg || type == QtWarningMsg) {
+            return;
+        }
+#endif
+        const char *level = "DEBUG";
+        switch (type) {
+            case QtDebugMsg: level = "DEBUG"; break;
+            case QtInfoMsg: level = "INFO"; break;
+            case QtWarningMsg: level = "WARN"; break;
+            case QtCriticalMsg: level = "ERROR"; break;
+            case QtFatalMsg: level = "FATAL"; break;
+        }
+        QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
+        QByteArray text = msg.toLocal8Bit();
+        const char *file = ctx.file ? ctx.file : "";
+        const char *func = ctx.function ? ctx.function : "";
+        int line = ctx.line;
+        FILE *out = (type == QtCriticalMsg || type == QtFatalMsg) ? stderr : stdout;
+        std::fprintf(out, "[%s] [%s] %s (%s:%d %s)\n",
+                     ts.toUtf8().constData(), level, text.constData(), file, line, func);
+        std::fflush(out);
+        if (type == QtFatalMsg) {
+            // 保持默认行为
+            std::abort();
+        }
+    }
  }
  
  namespace ConsoleLogger {

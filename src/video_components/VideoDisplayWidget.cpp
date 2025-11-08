@@ -211,34 +211,27 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
 {
     // 如果已经在接收且URL相同，则不需要重新连接
     if (m_isReceiving && m_serverUrl == serverUrl) {
-        std::cout << "[VideoWidget] startReceiving skipped: already receiving from "
-                  << serverUrl.toStdString() << std::endl;
         return;
     }
     
     // 如果正在接收但URL不同，或者需要重新连接，先断开之前的连接
     if (m_isReceiving) {
-        std::cout << "[VideoWidget] startReceiving: stopping current session before reconnect" << std::endl;
         stopReceiving();
         // 断开后直接重建接收器，避免旧实例残留状态导致卡死
         recreateReceiver();
     }
     
     m_serverUrl = serverUrl;
-    std::cout << "[VideoWidget] startReceiving: serverUrl=" << m_serverUrl.toStdString() << std::endl;
     
     // 初始化VP9解码器
     // qDebug() << "初始化VP9解码器...";
     if (!m_decoder->initialize()) {
-        std::cout << "[VideoWidget] decoder initialize failed" << std::endl;
         return;
     }
-    std::cout << "[VideoWidget] decoder initialize ok" << std::endl;
     // qDebug() << "VP9解码器初始化成功";
     
     // qDebug() << "开始连接到:" << m_serverUrl;
     m_receiver->connectToServer(m_serverUrl);
-    std::cout << "[VideoWidget] connectToServer invoked" << std::endl;
 
     m_isReceiving = true;
     updateButtonText();
@@ -273,11 +266,9 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
 void VideoDisplayWidget::stopReceiving()
 {
     if (!m_isReceiving) {
-        std::cout << "[VideoWidget] stopReceiving skipped: not receiving" << std::endl;
         return;
     }
     
-    std::cout << "[VideoWidget] stopReceiving: disconnect and cleanup" << std::endl;
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
@@ -304,7 +295,6 @@ void VideoDisplayWidget::stopReceiving()
     m_tileComposition.lastUpdateTime = 0;
     setTileMode(false);
     m_compositeFrame = QPixmap();
-    std::cout << "[VideoWidget] tiles reset and tile mode disabled" << std::endl;
     
     // 清理显示缓存
     m_videoLabel->clear();
@@ -336,11 +326,8 @@ void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString
     m_lastViewerId = viewerId;
     m_lastTargetId = targetId;
     if (m_receiver) {
-        std::cout << "[VideoWidget] sendWatchRequest: viewer=" << viewerId.toStdString()
-                  << ", target=" << targetId.toStdString() << std::endl;
         m_receiver->sendWatchRequest(viewerId, targetId);
     } else {
-        std::cout << "[VideoWidget] sendWatchRequest skipped: receiver not initialized" << std::endl;
     }
 }
 
@@ -1142,7 +1129,7 @@ void VideoDisplayWidget::recreateReceiver()
     m_receiver.reset();
     // 创建新实例并重新连接信号
     m_receiver = std::make_unique<WebSocketReceiver>();
-    std::cout << "[VideoWidget] recreateReceiver: new instance created" << std::endl;
+    // 日志清理：移除接收器重建提示
 
     connect(m_receiver.get(), &WebSocketReceiver::frameReceivedWithTimestamp,
             this, [this](const QByteArray &frameData, qint64 captureTimestamp) {
@@ -1175,12 +1162,9 @@ void VideoDisplayWidget::recreateReceiver()
                 if (m_tileComposition.frameSize.isEmpty()) {
                     QSize frameSize(metadata.x + metadata.width, metadata.y + metadata.height);
                     QSize tileSize(metadata.width, metadata.height);
-                    std::cout << "[VideoWidget] tileMetadataReceived: setTileConfiguration frame="
-                              << frameSize.width() << "x" << frameSize.height()
-                              << ", tile=" << tileSize.width() << "x" << tileSize.height() << std::endl;
+                    // 日志清理：移除瓦片配置打印
                     setTileConfiguration(frameSize, tileSize);
                     setTileMode(true);
-                    std::cout << "[VideoWidget] tile mode enabled" << std::endl;
                 }
             });
 

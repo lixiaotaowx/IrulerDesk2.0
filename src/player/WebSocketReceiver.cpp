@@ -102,7 +102,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     } else {
         m_textTileEnabled = false;
     }
-    std::cout << "[Receiver] text tile handling enabled=" << (m_textTileEnabled ? "true" : "false") << std::endl;
+    // 日志清理：移除冗余控制台输出
 }
 
 WebSocketReceiver::~WebSocketReceiver()
@@ -135,15 +135,11 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     
     // 如果已经连接到相同的URL，则不需要重新连接
     if (m_connected && m_serverUrl == url) {
-        std::cout << "[Receiver] connectToServer skipped: already connected to "
-                  << url.toStdString() << std::endl;
         return true;
     }
     
     // 如果已经连接但URL不同，先断开之前的连接
     if (m_connected) {
-        std::cout << "[Receiver] connectToServer: closing previous connection to "
-                  << m_serverUrl.toStdString() << std::endl;
         m_reconnectEnabled = false;
         stopReconnectTimer();
         if (m_webSocket) {
@@ -174,8 +170,7 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     
     m_serverUrl = url;
     m_reconnectEnabled = true;
-    std::cout << "[Receiver] connectToServer: opening " << url.toStdString() << std::endl;
-    
+
     m_webSocket->open(QUrl(url));
     return true;
 }
@@ -188,7 +183,6 @@ void WebSocketReceiver::disconnectFromServer()
     stopReconnectTimer();
     
     if (m_webSocket && m_connected) {
-        std::cout << "[Receiver] disconnectFromServer: sending stop_streaming and closing" << std::endl;
         // 在断开前通知采集端停止推流
         QJsonObject stopMsg;
         stopMsg["type"] = "stop_streaming";
@@ -221,7 +215,6 @@ void WebSocketReceiver::disconnectFromServer()
     }
     
     m_connected = false;
-    std::cout << "[Receiver] disconnectFromServer: done" << std::endl;
 }
 
 bool WebSocketReceiver::isConnected() const
@@ -256,10 +249,7 @@ void WebSocketReceiver::onConnected()
     emit connected();
     emit connectionStatusChanged("已连接");
 
-    std::cout << "[Receiver] onConnected: url=" << m_serverUrl.toStdString()
-              << ", autoResend=" << (m_autoResendWatchRequest ? "true" : "false")
-              << ", lastViewerId=" << viewerIdCopy.toStdString()
-              << ", lastTargetId=" << targetIdCopy.toStdString() << std::endl;
+    // 日志清理：移除冗余连接状态输出
 
     // 连接成功后如定时器未运行则重启瓦片超时检查
     if (m_tileTimeoutTimer && !m_tileTimeoutTimer->isActive()) {
@@ -268,7 +258,6 @@ void WebSocketReceiver::onConnected()
 
     // 重连后自动重发观看请求，确保推流立即恢复（避免互斥锁重入造成死锁）
     if (m_autoResendWatchRequest && !viewerIdCopy.isEmpty() && !targetIdCopy.isEmpty()) {
-        std::cout << "[Receiver] onConnected: auto resend watch_request" << std::endl;
         sendWatchRequest(viewerIdCopy, targetIdCopy);
     }
 }
@@ -292,7 +281,6 @@ void WebSocketReceiver::onDisconnected()
     if (wasConnected) {
         emit disconnected();
         emit connectionStatusChanged("已断开");
-        std::cout << "[Receiver] onDisconnected: url=" << m_serverUrl.toStdString() << std::endl;
     }
     
     // 断开后停止瓦片超时定时器并清理瓦片缓存，避免断开状态下进行重传检查
@@ -315,8 +303,6 @@ void WebSocketReceiver::onDisconnected()
 
     // 如果启用了重连，开始重连尝试
     if (m_reconnectEnabled && m_reconnectAttempts < m_maxReconnectAttempts) {
-        std::cout << "[Receiver] onDisconnected: will attempt reconnect, attempt="
-                  << (m_reconnectAttempts + 1) << "/" << m_maxReconnectAttempts << std::endl;
         startReconnectTimer();
     }
 }
@@ -403,9 +389,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
     if (error.error == QJsonParseError::NoError && doc.isObject()) {
         QJsonObject obj = doc.object();
         QString type = obj["type"].toString();
-        if (type != "mouse_position" && type != "audio_pcm" && type != "audio_opus") {
-            std::cout << "[Receiver] text message: type=" << type.toStdString() << std::endl;
-        }
+        // 日志清理：不再输出文本消息类型
         
         // 处理鼠标位置消息
         if (type == "mouse_position") {
@@ -430,11 +414,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             QString base64 = obj.value("data_base64").toString();
             QByteArray pcm = QByteArray::fromBase64(base64.toUtf8());
 
-            // 使用 std 输出稳定日志
-            std::cout << "[Receiver] audio_pcm received: "
-                      << pcm.size() << " bytes, sr=" << sampleRate
-                      << ", ch=" << channels << ", bps=" << bitsPerSample
-                      << ", ts=" << timestamp << std::endl;
+            // 日志清理：移除音频帧接收日志
 
             emit audioFrameReceived(pcm, sampleRate, channels, bitsPerSample, timestamp);
             return;
@@ -461,12 +441,10 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             }
             return;
         } else if (type == "streaming_ok") {
-            std::cout << "[Receiver] streaming_ok received" << std::endl;
             return;
         } else if (type.startsWith("tile_")) {
             // 文本瓦片消息仅在开启兼容开关时处理
             if (!m_textTileEnabled) {
-                std::cout << "[Receiver] text tile disabled, ignore type=" << type.toStdString() << std::endl;
                 return;
             }
             // 兼容服务器以文本发送瓦片控制信息的情况
@@ -677,7 +655,6 @@ void WebSocketReceiver::initOpusDecoderIfNeeded(int sampleRate, int channels)
             m_opusChannels = channels;
         } else {
             m_opusInitialized = false;
-            std::cout << "[Receiver] Opus decoder init failed: " << err << std::endl;
         }
     }
 }
@@ -685,7 +662,6 @@ void WebSocketReceiver::initOpusDecoderIfNeeded(int sampleRate, int channels)
 void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString &targetId)
 {
     if (!m_connected || !m_webSocket) {
-        std::cout << "[Receiver] sendWatchRequest: not connected, skip" << std::endl;
         return;
     }
 
@@ -704,8 +680,7 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
-    std::cout << "[Receiver] sendWatchRequest: viewer=" << viewerId.toStdString()
-              << ", target=" << targetId.toStdString() << std::endl;
+    // 日志清理：移除观看请求打印
     
     m_webSocket->sendTextMessage(jsonString);
     
@@ -715,7 +690,7 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     
     QJsonDocument startStreamingDoc(startStreamingMessage);
     QString startStreamingJsonString = startStreamingDoc.toJson(QJsonDocument::Compact);
-    std::cout << "[Receiver] send start_streaming" << std::endl;
+    // 日志清理：移除开始推流提示
     
     m_webSocket->sendTextMessage(startStreamingJsonString);
 }
@@ -930,11 +905,7 @@ void WebSocketReceiver::handleTileMetadata(const QJsonObject &header)
     // 更新统计
     m_stats.totalTiles++;
 
-    std::cout << "[Receiver] tile_metadata: id=" << metadata.tileId
-              << ", x=" << metadata.x << ", y=" << metadata.y
-              << ", w=" << metadata.width << ", h=" << metadata.height
-              << ", chunks=" << metadata.totalChunks << ", size=" << metadata.dataSize
-              << std::endl;
+    // 日志清理：移除瓦片元数据的冗余打印
 
     emit tileMetadataReceived(metadata);
 }

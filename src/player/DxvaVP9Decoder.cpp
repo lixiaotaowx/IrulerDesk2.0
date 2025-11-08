@@ -220,8 +220,7 @@ void DxvaVP9Decoder::fallbackToSoftware(const QString& reason)
         m_stats.decoderType = "libvpx Software";
         
         emit hardwareStatusChanged(false);
-        // 按要求：硬件失败时打印"std"
-        std::cout << "std" << std::endl;
+        // 日志清理：移除硬件失败时的控制台输出
         
         // 确保软件解码器已初始化
         if (!m_softwareDecoder->getStats().totalFrames && m_initialized) {

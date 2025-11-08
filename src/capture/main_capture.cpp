@@ -414,7 +414,6 @@ int main(int argc, char *argv[])
             audioSampleRate = micFormat.sampleRate();
         } else {
             // 如果不支持 Int16，则仍使用首选格式，但可能与播放器不匹配
-            std::cout << "[Capture] Warning: default input does not support Int16, using preferred format." << std::endl;
             micFormat = preferred;
             audioSampleRate = micFormat.sampleRate();
         }
@@ -512,11 +511,7 @@ int main(int argc, char *argv[])
         msg["data_base64"] = QString::fromUtf8(opusOut.toBase64());
         QJsonDocument doc(msg);
         staticSender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
-        // 降低日志噪音：只在偶尔打印
-        static int audioCount = 0; audioCount++; if (audioCount % 50 == 0) {
-            std::cout << "[Capture] audio_opus sent: " << opusOut.size() << " bytes, sr="
-                      << opusSampleRate << ", ch=1" << std::endl;
-        }
+        // 日志清理：移除音频发送打印
     });
 
     // 新增：质量应用方法
@@ -731,7 +726,7 @@ int main(int argc, char *argv[])
                         opus_encoder_ctl(opusEnc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
                         opus_encoder_ctl(opusEnc, OPUS_SET_INBAND_FEC(1));
                     } else {
-                        std::cout << "[Capture] Opus encoder init failed: " << err << std::endl;
+                        // 日志清理：移除 Opus 初始化失败输出
                     }
                 }
                 audioTimer->start();

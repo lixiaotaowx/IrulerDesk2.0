@@ -2,29 +2,18 @@
 #include <QStyleFactory>
 #include <iostream>
 #ifdef _WIN32
-#include <io.h>
-#include <fcntl.h>
 #include <windows.h>
 #endif
+#include "common/ConsoleLogger.h"
+#include "common/CrashGuard.h"
 #include "MainWindow.h"
 
 int main(int argc, char *argv[])
 {
-#ifdef _WIN32
-    // 在Windows上分配控制台以显示调试输出
-    if (AllocConsole()) {
-        freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
-        freopen_s((FILE**)stderr, "CONOUT$", "w", stderr);
-        freopen_s((FILE**)stdin, "CONIN$", "r", stdin);
-        std::cout.clear();
-        std::cerr.clear();
-        std::cin.clear();
-        
-        // 设置控制台编码为UTF-8以正确显示中文
-        SetConsoleOutputCP(CP_UTF8);
-        SetConsoleCP(CP_UTF8);
-    }
-#endif
+    // 安装崩溃守护与控制台日志重定向
+    CrashGuard::install();
+    ConsoleLogger::attachToParentConsole();
+    ConsoleLogger::installQtMessageHandler();
 
     QApplication app(argc, argv);
     

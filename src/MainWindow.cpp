@@ -120,6 +120,8 @@ void MainWindow::startPlayerProcess(const QString& targetDeviceId)
         m_playerProcess = new QProcess(this);
         connect(m_playerProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
                 this, &MainWindow::onPlayerProcessFinished);
+        // 将子进程标准输出/错误直接转发到当前终端
+        m_playerProcess->setProcessChannelMode(QProcess::ForwardedChannels);
     }
     
     QString playerPath = QCoreApplication::applicationDirPath() + "/PlayerProcess.exe";
@@ -443,6 +445,8 @@ void MainWindow::startProcesses()
     m_captureProcess = new QProcess(this);
     connect(m_captureProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MainWindow::onCaptureProcessFinished);
+    // 将子进程标准输出/错误直接转发到当前终端
+    m_captureProcess->setProcessChannelMode(QProcess::ForwardedChannels);
     
     QString captureExe = appDir + "/CaptureProcess.exe";
     
@@ -486,11 +490,7 @@ void MainWindow::onCaptureProcessFinished(int exitCode, QProcess::ExitStatus exi
 {
     
     
-    if (m_captureProcess) {
-        QString output = m_captureProcess->readAllStandardOutput();
-        QString error = m_captureProcess->readAllStandardError();
-        
-    }
+    // 输出已通过 ForwardedChannels 直接转发到控制台，这里无需读取缓冲
     
     if (m_isStreaming) {
         m_statusLabel->setText("屏幕捕获进程已退出");

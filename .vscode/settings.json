@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "xstring": "cpp",
-        "xlocmes": "cpp"
+        "xlocmes": "cpp",
+        "cstdio": "cpp"
     }
 }

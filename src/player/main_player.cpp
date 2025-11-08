@@ -9,27 +9,17 @@
 #include <QDateTime>
 #include <iostream>
 #ifdef _WIN32
-#include <io.h>
-#include <fcntl.h>
 #include <windows.h>
 #endif
+#include "../common/ConsoleLogger.h"
+#include "../common/CrashGuard.h"
 
 int main(int argc, char *argv[])
 {
-#ifdef _WIN32
-    // 在Windows上分配控制台以显示调试输出
-    if (AllocConsole()) {
-        freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
-        freopen_s((FILE**)stderr, "CONOUT$", "w", stderr);
-        freopen_s((FILE**)stdin, "CONIN$", "r", stdin);
-        std::cout.clear();
-        std::cerr.clear();
-        std::cin.clear();
-    }
-    // 设置控制台编码
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
-#endif
+    // 安装崩溃守护与控制台日志重定向
+    CrashGuard::install();
+    ConsoleLogger::attachToParentConsole();
+    ConsoleLogger::installQtMessageHandler();
 
     QApplication app(argc, argv); // 使用QApplication支持GUI窗口
     // 统一工具提示样式为黑底白字（播放器窗口也受益）

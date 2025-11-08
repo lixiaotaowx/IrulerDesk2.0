@@ -8,6 +8,17 @@
 
 VideoWindow::VideoWindow(QWidget *parent)
     : QWidget(parent)
+    , m_mainLayout(nullptr)
+    , m_titleBar(nullptr)
+    , m_titleBarLayout(nullptr)
+    , m_titleLabel(nullptr)
+    , m_minimizeButton(nullptr)
+    , m_maximizeButton(nullptr)
+    , m_closeButton(nullptr)
+    , m_colorButton(nullptr)
+    , m_micButton(nullptr)
+    , m_speakerButton(nullptr)
+    , m_videoDisplayWidget(nullptr)
     , m_dragging(false)
     , m_isMaximized(false)
 {

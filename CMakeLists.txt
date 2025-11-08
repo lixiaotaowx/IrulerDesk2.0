@@ -39,6 +39,10 @@ set(MAIN_SOURCES
     src/main.cpp                          # 程序入口：初始化应用并启动主窗口
     src/MainWindow.cpp                    # 主窗口实现：主界面布局、交互逻辑、控制流程
     src/MainWindow.h                      # 主窗口声明：成员与信号槽声明
+    src/common/ConsoleLogger.cpp          # 控制台日志重定向
+    src/common/ConsoleLogger.h            # 控制台日志重定向声明
+    src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
+    src/common/CrashGuard.h               # 崩溃守护声明
     src/video_components/VideoDisplayWidget.cpp # 视频显示控件实现：绘制视频帧与批注事件处理
     src/video_components/VideoDisplayWidget.h   # 视频显示控件声明：接口与状态
     src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件
@@ -56,6 +60,10 @@ set(MAIN_SOURCES
 # 屏幕捕获编码进程源文件
 set(CAPTURE_SOURCES
     src/capture/main_capture.cpp          # 捕获进程入口：初始化捕获、编码与传输流程
+    src/common/ConsoleLogger.cpp          # 控制台日志重定向
+    src/common/ConsoleLogger.h            # 控制台日志重定向声明
+    src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
+    src/common/CrashGuard.h               # 崩溃守护声明
     src/capture/ScreenCapture.cpp         # 屏幕捕获实现：抓取屏幕帧/区域
     src/capture/ScreenCapture.h           # 屏幕捕获声明
     src/capture/VP9Encoder.cpp            # VP9 编码器实现：将原始帧编码为 VP9
@@ -77,6 +85,10 @@ set(CAPTURE_SOURCES
 # 解码播放进程源文件
 set(PLAYER_SOURCES
     src/player/main_player.cpp            # 播放器进程入口：初始化解码与渲染管线
+    src/common/ConsoleLogger.cpp          # 控制台日志重定向
+    src/common/ConsoleLogger.h            # 控制台日志重定向声明
+    src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
+    src/common/CrashGuard.h               # 崩溃守护声明
     src/player/VP9Decoder.cpp             # VP9 软件解码器实现
     src/player/VP9Decoder.h               # VP9 软件解码器声明
     src/player/DxvaVP9Decoder.cpp         # DXVA 硬件加速 VP9 解码实现
@@ -167,10 +179,10 @@ endif()
 
 # 添加Windows特定库
 if(WIN32)
-    target_link_libraries(CaptureProcess PRIVATE d3d11 dxgi)
-    target_link_libraries(ScreenStreamApp PRIVATE d3d11 dxva2 ole32)
-    target_link_libraries(PlayerProcess PRIVATE d3d11 dxva2 ole32)
-    message(STATUS "检测到Windows平台，正在链接d3d11、dxgi、dxva2和ole32")
+    target_link_libraries(CaptureProcess PRIVATE d3d11 dxgi dbghelp)
+    target_link_libraries(ScreenStreamApp PRIVATE d3d11 dxva2 ole32 dbghelp)
+    target_link_libraries(PlayerProcess PRIVATE d3d11 dxva2 ole32 dbghelp)
+    message(STATUS "检测到Windows平台，正在链接d3d11、dxgi、dxva2、ole32、dbghelp")
 endif()
 
 # 设置输出目录
@@ -183,6 +195,38 @@ set_target_properties(CaptureProcess PROPERTIES
 set_target_properties(PlayerProcess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
+
+# 为 Release/RelWithDebInfo 生成 PDB 并拷贝到输出目录（仅 MSVC 有效）
+if(MSVC)
+    # 确保为每个目标在 Release/RelWithDebInfo 生成 PDB
+    target_compile_options(ScreenStreamApp PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
+    target_link_options(ScreenStreamApp    PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
+    target_compile_options(CaptureProcess  PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
+    target_link_options(CaptureProcess     PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
+    target_compile_options(PlayerProcess   PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
+    target_link_options(PlayerProcess      PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
+
+    if(WIN32)
+        add_custom_command(TARGET ScreenStreamApp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for ScreenStreamApp..."
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_PDB_FILE:ScreenStreamApp>
+                $<TARGET_FILE_DIR:ScreenStreamApp>/
+        )
+        add_custom_command(TARGET CaptureProcess POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for CaptureProcess..."
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_PDB_FILE:CaptureProcess>
+                $<TARGET_FILE_DIR:CaptureProcess>/
+        )
+        add_custom_command(TARGET PlayerProcess POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for PlayerProcess..."
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_PDB_FILE:PlayerProcess>
+                $<TARGET_FILE_DIR:PlayerProcess>/
+        )
+    endif()
+endif()
 
 # 自动部署Qt DLL
 if(WIN32)

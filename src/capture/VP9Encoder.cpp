@@ -4,6 +4,8 @@
 #include <cstring>
 #include <algorithm>
 #include <chrono>
+// 为编码器并行度获取CPU理想线程数
+#include <QThread>
 
 VP9Encoder::VP9Encoder(QObject *parent)
     : QObject(parent)
@@ -243,6 +245,10 @@ bool VP9Encoder::initializeEncoder()
     
     // 更新实际使用的分辨率
     m_frameSize = QSize(width, height);
+
+    // 设置编码线程数以提升并行度
+    // 使用系统理想线程数，至少为1
+    m_config.g_threads = std::max(1, QThread::idealThreadCount());
     
     // 初始化编码器
     res = vpx_codec_enc_init(&m_codec, vpx_codec_vp9_cx(), &m_config, 0);
@@ -263,6 +269,15 @@ bool VP9Encoder::initializeEncoder()
     ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_TILE_COLUMNS, 3);
     if (ctrl_res != VPX_CODEC_OK) {
         
+    }
+
+    // 根据分辨率设置Tile Rows以提升并行度（高分辨率开启1行分片）
+    {
+        int tile_rows = (m_config.g_h >= 1080) ? 1 : 0;
+        ctrl_res = vpx_codec_control(&m_codec, VP9E_SET_TILE_ROWS, tile_rows);
+        if (ctrl_res != VPX_CODEC_OK) {
+            
+        }
     }
     
     // 启用帧并行解码以提升多线程性能

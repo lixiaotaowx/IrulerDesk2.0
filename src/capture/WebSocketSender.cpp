@@ -350,8 +350,10 @@ void WebSocketSender::sendTileData(const QVector<int> &tileIndices, const QByteA
         m_totalTilesSent += tileIndices.size();
         m_totalTileDataSent += serializedData.size();
         
-        // 更新性能统计
-        updateSenderStats(encodingTime, sendingTime, serializationTime, bytesSent, tileIndices.size());
+        // 更新性能统计（默认关闭以减少开销）
+        if (m_enableStats) {
+            updateSenderStats(encodingTime, sendingTime, serializationTime, bytesSent, tileIndices.size());
+        }
         
         emit tileDataSent(tileIndices.size(), serializedData.size());
         

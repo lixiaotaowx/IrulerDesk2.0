@@ -135,10 +135,13 @@ public:
         double detectionFPS;                  // 检测帧率
         qint64 lastDetectionTime;             // 上次检测时间戳
     };
-    
+
     // 获取性能统计
     PerformanceStats getPerformanceStats() const { return m_perfStats; }
     void resetPerformanceStats();
+    // 控制是否启用性能统计，默认禁用以减少开销
+    void setPerfStatsEnabled(bool enabled) { m_enablePerfStats = enabled; }
+    bool isPerfStatsEnabled() const { return m_enablePerfStats; }
     
     // 调试信息
     void printTileInfo() const;
@@ -182,6 +185,7 @@ private:
     
     bool m_initialized;         // 是否已初始化
     bool m_fastMode;            // 性能优化模式
+    bool m_enablePerfStats = false; // 性能统计开关（默认关闭）
     bool m_adaptiveTileSize;    // 自适应瓦片大小模式
     
     // 性能监控相关

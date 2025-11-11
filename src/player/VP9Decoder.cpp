@@ -1,6 +1,7 @@
 #include "VP9Decoder.h"
 #include <QElapsedTimer>
 #include <QMutexLocker>
+#include <QThread>
 #include <cstring>
 
 // libyuv用于颜色空间转换
@@ -129,7 +130,8 @@ bool VP9Decoder::setupDecoder()
     // 初始化解码器配置 - 使用多线程以提升解码速度
     vpx_codec_dec_cfg_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    cfg.threads = 4; // 使用4线程解码以提升速度
+    // 使用系统理想线程数，至少为1
+    cfg.threads = std::max(1, QThread::idealThreadCount());
     
     
     // 初始化解码器 - 使用最基本的配置

@@ -72,6 +72,9 @@ public:
     // 获取性能统计
     SenderStats getSenderStats() const;
     void resetSenderStats();
+    // 控制是否启用统计（默认关闭）
+    void setStatsEnabled(bool enabled) { m_enableStats = enabled; }
+    bool isStatsEnabled() const { return m_enableStats; }
     
 signals:
     void connected();
@@ -138,6 +141,7 @@ private:
     QVector<qint64> m_serializationTimes;       // 最近的序列化时间记录
     qint64 m_lastStatsUpdateTime;               // 上次统计更新时间
     qint64 m_disconnectStartTime;               // 断线开始时间
+    bool m_enableStats = false;                 // 统计开关（默认关闭）
     
     // 线程安全
     mutable QMutex m_mutex;

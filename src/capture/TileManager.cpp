@@ -248,7 +248,10 @@ QVector<int> TileManager::compareAndUpdateTiles(const QImage& currentFrame)
     qint64 detectionTime = detectionEndTime - detectionStartTime;
     
     // 更新性能统计
-    updatePerformanceStats(detectionTime, totalHashTime, totalCrcTime, changedTiles.size());
+    // 可选：更新性能统计（默认关闭以减少开销）
+    if (m_enablePerfStats) {
+        updatePerformanceStats(detectionTime, totalHashTime, totalCrcTime, changedTiles.size());
+    }
     
     // 只在有变化时发出信号
     if (!changedTiles.isEmpty()) {

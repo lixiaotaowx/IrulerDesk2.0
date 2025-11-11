@@ -24,7 +24,7 @@
 #include "VP9Encoder.h"
 #include "WebSocketSender.h"
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
-#include "PerformanceMonitor.h" // 新增：性能监控头文件
+// 性能监控禁用：避免统计带来的额外开销
 #include "AnnotationOverlay.h"
 
 
@@ -303,7 +303,8 @@ int main(int argc, char *argv[])
     QSize actualScreenSize = capture->getScreenSize();
     
     VP9Encoder *encoder = new VP9Encoder(&app);
-    if (!encoder->initialize(actualScreenSize.width(), actualScreenSize.height(), 60)) {
+    // 保持现有帧率设置以降低编码负载（避免强制60fps）
+    if (!encoder->initialize(actualScreenSize.width(), actualScreenSize.height(), encoder->getFrameRate())) {
         return -1;
     }
     // qDebug() << "[CaptureProcess] VP9编码器初始化成功";
@@ -337,23 +338,7 @@ int main(int argc, char *argv[])
     }
     // qDebug() << "[CaptureProcess] 正在连接到WebSocket服务器:" << serverUrl;
     
-    // 创建性能监控器
-    
-    PerformanceMonitor *perfMonitor = new PerformanceMonitor(&app);
-    
-    // 注册WebSocketSender到性能监控器
-    perfMonitor->registerWebSocketSender(sender);
-    
-    // 注册TileManager到性能监控器
-    perfMonitor->registerTileManager(&capture->getTileManager());
-    
-    // 设置性能监控参数
-    perfMonitor->setVerboseLogging(false);   
-    
-    // 启动性能监控（直接传递10秒间隔）
-    perfMonitor->startMonitoring(10000); // 每10秒输出一次性能报告
-    
-    
+    // 已禁用性能监控，减少CPU开销
     // 连接信号槽
     // qDebug() << "[CaptureProcess] 连接编码器和服务器信号槽...";
     QObject::connect(encoder, &VP9Encoder::frameEncoded,
@@ -544,7 +529,8 @@ int main(int argc, char *argv[])
 
         // 重新初始化编码器以匹配目标分辨率
         staticEncoder->cleanup();
-        if (!staticEncoder->initialize(desired.width(), desired.height(), 60)) {
+    // 切换分辨率时保持既有帧率，减少重初始化引入的负载
+    if (!staticEncoder->initialize(desired.width(), desired.height(), staticEncoder->getFrameRate())) {
             return; // 保持旧状态以避免崩溃
         }
         targetEncodeSize = staticEncoder->getFrameSize();
@@ -684,7 +670,8 @@ int main(int argc, char *argv[])
 
         // 重新初始化编码器以匹配新分辨率
         staticEncoder->cleanup();
-        if (!staticEncoder->initialize(newSize.width(), newSize.height(), 60)) {
+        // 切屏后保持既有帧率，避免强制提升到60fps
+        if (!staticEncoder->initialize(newSize.width(), newSize.height(), staticEncoder->getFrameRate())) {
             isSwitching = false;
             return;
         }

@@ -169,7 +169,7 @@ target_link_libraries(PlayerProcess PRIVATE
 )
 
 # 一键禁用所有日志输出（qDebug/qInfo/qWarning），并提供总开关
-option(DISABLE_ALL_LOGS "Disable all application logging output" ON)
+option(DISABLE_ALL_LOGS "Disable all application logging output" OFF)
 if(DISABLE_ALL_LOGS)
     message(STATUS "日志输出已禁用: 使用 QT_NO_DEBUG_OUTPUT/INFO/WARNING 并定义 DISABLE_ALL_LOGS")
     target_compile_definitions(ScreenStreamApp PRIVATE DISABLE_ALL_LOGS QT_NO_DEBUG_OUTPUT QT_NO_INFO_OUTPUT QT_NO_WARNING_OUTPUT)

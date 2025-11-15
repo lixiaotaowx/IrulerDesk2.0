@@ -18,6 +18,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     
     
+    
     // 设置应用程序信息
     app.setApplicationName("ScreenStreamApp");
     app.setApplicationVersion("1.0");

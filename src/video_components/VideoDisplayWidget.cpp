@@ -119,23 +119,17 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 音频帧接收（本地扬声器开关控制是否处理）
     connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
             this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 /*timestamp*/) {
-                if (!m_speakerEnabled) {
-                    return; // 本地关闭扬声器时不处理音频
-                }
-                // 初始化或重建音频输出
+                if (!m_isReceiving) { return; }
+                if (!m_speakerEnabled) { return; }
                 initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
-                if (!m_audioSink) {
-                    return;
-                }
+                if (!m_audioSink) { return; }
                 if (m_audioSink->state() == QAudio::StoppedState) {
                     m_audioIO = m_audioSink->start();
                 }
                 if (m_audioSink->state() == QAudio::SuspendedState) {
                     m_audioSink->resume();
                 }
-                if (m_audioIO) {
-                    m_audioIO->write(pcmData);
-                }
+                if (m_audioIO) { m_audioIO->write(pcmData); }
             });
     
     // 统计定时器
@@ -1170,13 +1164,10 @@ void VideoDisplayWidget::recreateReceiver()
 
     connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
             this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 /*timestamp*/) {
-                if (!m_speakerEnabled) {
-                    return;
-                }
+                if (!m_isReceiving) { return; }
+                if (!m_speakerEnabled) { return; }
                 initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
-                if (!m_audioSink) {
-                    return;
-                }
+                if (!m_audioSink) { return; }
                 if (m_audioSink->state() == QAudio::StoppedState) {
                     m_audioIO = m_audioSink->start();
                 }

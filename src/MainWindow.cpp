@@ -120,8 +120,7 @@ void MainWindow::startPlayerProcess(const QString& targetDeviceId)
         m_playerProcess = new QProcess(this);
         connect(m_playerProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
                 this, &MainWindow::onPlayerProcessFinished);
-        // 将子进程标准输出/错误直接转发到当前终端
-        m_playerProcess->setProcessChannelMode(QProcess::ForwardedChannels);
+        m_playerProcess->setProcessChannelMode(QProcess::SeparateChannels);
     }
     
     QString playerPath = QCoreApplication::applicationDirPath() + "/PlayerProcess.exe";
@@ -446,7 +445,7 @@ void MainWindow::startProcesses()
     connect(m_captureProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MainWindow::onCaptureProcessFinished);
     // 将子进程标准输出/错误直接转发到当前终端
-    m_captureProcess->setProcessChannelMode(QProcess::ForwardedChannels);
+    m_captureProcess->setProcessChannelMode(QProcess::SeparateChannels);
     
     QString captureExe = appDir + "/CaptureProcess.exe";
     

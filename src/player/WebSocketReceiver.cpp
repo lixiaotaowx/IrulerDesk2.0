@@ -64,6 +64,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                                          frameSamples,
                                          0);
             if (decodedSamples < 0) return;
+            // std::cout << "[Receiver] plc frameSamples=" << frameSamples << std::endl;
         } else {
             decodedSamples = opus_decode(m_opusDecoder,
                                          reinterpret_cast<const unsigned char*>(opusData.constData()),
@@ -72,6 +73,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                                          frameSamples,
                                          0);
             if (decodedSamples < 0) return;
+            // std::cout << "[Receiver] decoded samples=" << decodedSamples << std::endl;
         }
         pcm.resize(decodedSamples * m_opusChannels * sizeof(opus_int16));
         // 使用简单的时间推进：上次时间 +20ms（微秒单位）
@@ -188,10 +190,23 @@ void WebSocketReceiver::disconnectFromServer()
         stopMsg["type"] = "stop_streaming";
         QJsonDocument stopDoc(stopMsg);
         m_webSocket->sendTextMessage(stopDoc.toJson(QJsonDocument::Compact));
-        
+
         m_webSocket->close();
     }
     
+    // 停止音频定时器与清空音频队列，销毁解码器，避免断开后仍有PLC输出
+    if (m_audioTimer && m_audioTimer->isActive()) {
+        m_audioTimer->stop();
+    }
+    m_opusQueue.clear();
+    if (m_opusDecoder) {
+        opus_decoder_destroy(m_opusDecoder);
+        m_opusDecoder = nullptr;
+    }
+    m_opusInitialized = false;
+    m_audioLastTimestamp = 0;
+    m_audioFrameSamples = 0;
+
     // 清理缓存数据
     memset(&m_stats, 0, sizeof(m_stats));
     m_frameSizes.clear();
@@ -266,6 +281,19 @@ void WebSocketReceiver::onDisconnected()
 {
     QMutexLocker locker(&m_mutex);
     
+    // 断开后确保音频完全停止
+    if (m_audioTimer && m_audioTimer->isActive()) {
+        m_audioTimer->stop();
+    }
+    m_opusQueue.clear();
+    if (m_opusDecoder) {
+        opus_decoder_destroy(m_opusDecoder);
+        m_opusDecoder = nullptr;
+    }
+    m_opusInitialized = false;
+    m_audioLastTimestamp = 0;
+    m_audioFrameSamples = 0;
+
     bool wasConnected = m_connected;
     m_connected = false;
     
@@ -436,8 +464,10 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             m_audioFrameSamples = frameSamples;
             m_opusQueue.enqueue(opusData);
             if (!m_audioTimer->isActive()) {
-                m_audioLastTimestamp = timestamp; // 初始与捕获时间对齐
-                m_audioTimer->start();
+                if (m_opusQueue.size() >= m_audioPrebufferFrames) {
+                    m_audioLastTimestamp = timestamp;
+                    m_audioTimer->start();
+                }
             }
             return;
         } else if (type == "streaming_ok") {

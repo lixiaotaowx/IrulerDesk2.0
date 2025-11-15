@@ -213,6 +213,11 @@ private:
     QQueue<QByteArray> m_opusQueue;
     int m_audioFrameSamples = 0; // 每帧采样数（20ms）
     qint64 m_audioLastTimestamp = 0;
+    int m_audioPrebufferFrames = 10;
+    int m_audioTargetBufferFrames = 15;
+    int m_audioMinBufferFrames = 6;
+    int m_audioMaxBufferFrames = 30;
+    int m_audioUnderflowCount = 0;
     void initOpusDecoderIfNeeded(int sampleRate, int channels);
 
     // 文本瓦片消息兼容开关（默认关闭，通过环境变量 IRULER_TEXT_TILE=1 开启）

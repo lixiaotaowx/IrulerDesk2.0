@@ -24,6 +24,13 @@ void AnnotationOverlay::clear()
     m_currentStroke.points.clear();
     m_currentStroke.colorId = 0;
     m_strokes.clear();
+    m_drawingRect = false;
+    m_rectStart = QPoint();
+    m_rectEnd = QPoint();
+    m_drawingCircle = false;
+    m_circleCenter = QPoint();
+    m_circleRadius = 0;
+    m_texts.clear();
     update();
 }
 
@@ -160,6 +167,24 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
             }
             if (hitCur) m_currentStroke.points.clear();
         }
+
+        // 擦除文本项：命中圆与文本边框相交则删除
+        QFont f;
+        for (int i = m_texts.size() - 1; i >= 0; --i) {
+            const auto &t = m_texts[i];
+            QFont tf = f; tf.setPixelSize(t.fontSize);
+            QFontMetrics fm(tf);
+            QRect rect(QPoint(t.pos.x(), t.pos.y() - fm.ascent()), QSize(fm.horizontalAdvance(t.text), fm.height()));
+            rect.adjust(-6, -6, 6, 6);
+            int cx = p.x(); int cy = p.y();
+            int nearestX = qBound(rect.left(), cx, rect.right());
+            int nearestY = qBound(rect.top(), cy, rect.bottom());
+            int dx = cx - nearestX;
+            int dy = cy - nearestY;
+            if (dx*dx + dy*dy <= r2) {
+                m_texts.removeAt(i);
+            }
+        }
     }
     update();
 }
@@ -218,4 +243,22 @@ void AnnotationOverlay::paintEvent(QPaintEvent *event)
         painter.setPen(pen);
         painter.drawEllipse(m_circleCenter, m_circleRadius, m_circleRadius);
     }
+    // 绘制文本项
+    for (const auto &t : m_texts) {
+        QPen pen(colorForId(t.colorId));
+        pen.setWidth(1);
+        painter.setPen(pen);
+        QFont font = painter.font();
+        font.setPixelSize(t.fontSize);
+        painter.setFont(font);
+        painter.drawText(t.pos, t.text);
+    }
+}
+void AnnotationOverlay::onTextAnnotation(const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize)
+{
+    Q_UNUSED(viewerId);
+    if (text.isEmpty()) return;
+    TextItem item; item.text = text; item.pos = QPoint(x, y); item.colorId = colorId; item.fontSize = fontSize;
+    m_texts.push_back(item);
+    update();
 }

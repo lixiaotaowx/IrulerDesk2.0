@@ -14,6 +14,8 @@
 #include <QMenu>
 #include <QAction>
 #include <QCursor>
+#include <QLineEdit>
+#include <QFont>
 #include <windows.h>
 #include <iostream>
 
@@ -935,6 +937,35 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                     if (m_receiver) {
                         m_receiver->sendAnnotationEvent("circle_down", src.x(), src.y(), m_currentColorId);
                     }
+                } else if (m_toolMode == 4) {
+                    if (m_receiver) {
+                        m_lastTextSrcPoint = src;
+                        QLineEdit *edit = new QLineEdit(m_videoLabel);
+                        QFont f; f.setPixelSize(m_textFontSize);
+                        edit->setFont(f);
+                        edit->setText("");
+                        edit->setMinimumWidth(80);
+                        edit->resize(200, m_textFontSize + 10);
+                        edit->move(me->pos());
+                        edit->setStyleSheet("QLineEdit { background: rgba(0,0,0,120); color: white; border: 1px solid rgba(255,255,255,180); padding: 2px; } ");
+                        edit->setFocusPolicy(Qt::StrongFocus);
+                        edit->setFocus();
+                        edit->show();
+                        connect(edit, &QLineEdit::returnPressed, this, [this, edit]() {
+                            QString txt = edit->text();
+                            if (!txt.isEmpty() && m_receiver) {
+                                m_receiver->sendTextAnnotation(txt, m_lastTextSrcPoint.x(), m_lastTextSrcPoint.y(), m_currentColorId, m_textFontSize);
+                            }
+                            edit->deleteLater();
+                        });
+                        connect(edit, &QLineEdit::editingFinished, this, [this, edit]() {
+                            QString txt = edit->text();
+                            if (!txt.isEmpty() && m_receiver) {
+                                m_receiver->sendTextAnnotation(txt, m_lastTextSrcPoint.x(), m_lastTextSrcPoint.y(), m_currentColorId, m_textFontSize);
+                            }
+                            edit->deleteLater();
+                        });
+                    }
                 }
             }
             return true; // 消费事件
@@ -1136,7 +1167,7 @@ void VideoDisplayWidget::setToolMode(int mode)
 {
     int m = mode;
     if (m < 0) m = 0;
-    if (m > 3) m = 3;
+    if (m > 4) m = 4;
     m_toolMode = m;
     if (m_videoLabel) {
         if (m_toolMode == 1) {
@@ -1152,10 +1183,22 @@ void VideoDisplayWidget::setToolMode(int mode)
             p.drawEllipse(QPoint(r + 1, r + 1), r, r);
             QCursor cur(pix, r + 1, r + 1);
             m_videoLabel->setCursor(cur);
+        } else if (m_toolMode == 2 || m_toolMode == 3) {
+            m_videoLabel->setCursor(Qt::CrossCursor);
+        } else if (m_toolMode == 4) {
+            m_videoLabel->setCursor(Qt::IBeamCursor);
         } else {
             m_videoLabel->setCursor(Qt::ArrowCursor);
         }
     }
+}
+
+void VideoDisplayWidget::setTextFontSize(int size)
+{
+    int s = size;
+    if (s < 8) s = 8;
+    if (s > 72) s = 72;
+    m_textFontSize = s;
 }
 
 void VideoDisplayWidget::onPromptCountdownTick()

@@ -4,6 +4,7 @@
 #include <QGuiApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QAbstractItemView>
 #ifdef _WIN32
 #define NOMINMAX
 #endif
@@ -253,6 +254,39 @@ void VideoWindow::setupCustomTitleBar()
         std::cout << "[UI] volume slider show x=" << x << " y=" << y << std::endl;
     });
 
+    m_textSizeSlider = new QSlider(Qt::Horizontal, this);
+    m_textSizeSlider->setRange(8, 72);
+    m_textSizeSlider->setValue(m_textFontSize);
+    m_textSizeSlider->setVisible(false);
+    connect(m_textSizeSlider, &QSlider::valueChanged, this, [this](int v){
+        m_textFontSize = v;
+        if (m_textSizeLabel) m_textSizeLabel->setText(QString::number(m_textFontSize));
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setTextFontSize(m_textFontSize);
+    });
+    m_textSizeLongPressTimer = new QTimer(this);
+    m_textSizeLongPressTimer->setSingleShot(true);
+    connect(m_textSizeLongPressTimer, &QTimer::timeout, this, [this]() {
+        if (!m_leftPressing) return;
+        int current = m_textFontSize;
+        m_textSizeSlider->setValue(current);
+        QPushButton *btn = m_textButton;
+        QPoint g = btn->mapToGlobal(QPoint(btn->width()/2, btn->height()));
+        QPoint l = mapFromGlobal(g);
+        int w = 160;
+        int h = 20;
+        int x = std::max(0, std::min(l.x() - w/2, this->width() - w));
+        int y = std::max(0, std::min(l.y() + 4, this->height() - h));
+        m_textSizeSlider->setGeometry(x, y, w, h);
+        m_textSizeSlider->setStyleSheet(
+            "QSlider::groove:horizontal { background: #4CAF50; height: 3px; border-radius: 2px; }"
+            "QSlider::handle:horizontal { background: #1565C0; width: 8px; margin: -8px 0; border-radius: 3px; }"
+        );
+        m_textSizeSlider->setVisible(true);
+        m_textSizeSlider->raise();
+        m_textSizeDragActive = true;
+        std::cout << "[UI] text size longpress success" << std::endl;
+    });
+
     // 最小化按钮
     m_minimizeButton = new QPushButton("−", m_titleBar);
     m_minimizeButton->setStyleSheet(buttonStyle + 
@@ -294,6 +328,7 @@ void VideoWindow::setupCustomTitleBar()
     m_textButton->setIconSize(QSize(16, 16));
     m_textButton->setStyleSheet(micButtonStyle);
     m_textButton->setToolTip(QStringLiteral("文字"));
+    m_textButton->installEventFilter(this);
 
     m_eraserButton = new QPushButton("", m_titleBar);
     m_eraserButton->setIcon(QIcon(iconDir + "/xiangpi.png"));
@@ -327,6 +362,13 @@ void VideoWindow::setupCustomTitleBar()
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_textButton);
     m_toolBarLayout->addSpacing(2);
+    m_textSizeLabel = new QLabel(QString::number(m_textFontSize), m_titleBar);
+    m_textSizeLabel->setStyleSheet(
+        "QLabel { color: #ffffff; background: transparent; font-size: 12px; }"
+    );
+    m_textSizeLabel->setFixedWidth(24);
+    m_textSizeLabel->setAlignment(Qt::AlignCenter);
+    m_toolBarLayout->addWidget(m_textSizeLabel);
     m_toolBarLayout->addWidget(m_eraserButton);
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_undoButton);
@@ -362,20 +404,26 @@ void VideoWindow::setupCustomTitleBar()
         applyToolSelection(m_penButton);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(0);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(true);
+        if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
     });
     connect(m_rectButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_rectButton);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(2);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+        if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
     });
     connect(m_circleButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_circleButton);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(3);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+        if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
     });
     connect(m_textButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_textButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(4);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setTextFontSize(m_textFontSize);
+        if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
     });
     connect(m_eraserButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_eraserButton);
@@ -486,6 +534,46 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                     if (m_volumeTargetMic) { std::cout << "[UI] mic set final=" << m_volumeSlider->value() << std::endl; }
                     else { std::cout << "[UI] volume set final=" << m_volumeSlider->value() << std::endl; }
                     QTimer::singleShot(1000, this, [this](){ if (m_volumeSlider) m_volumeSlider->setVisible(false); });
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+    if (obj == m_textButton) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                m_leftPressing = true;
+                m_textSizeDragStartPos = me->globalPosition().toPoint();
+                m_textSizeDragStartValue = m_textFontSize;
+                if (m_textSizeLongPressTimer) m_textSizeLongPressTimer->start(500);
+                return false;
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            QMouseEvent *mm = static_cast<QMouseEvent*>(event);
+            if (m_textSizeDragActive && (mm->buttons() & Qt::LeftButton)) {
+                int dx = mm->globalPosition().toPoint().x() - m_textSizeDragStartPos.x();
+                int v = m_textSizeDragStartValue + dx / 2;
+                if (v < 8) v = 8;
+                if (v > 72) v = 72;
+                if (m_textSizeSlider) m_textSizeSlider->setValue(v);
+                m_textFontSize = v;
+                if (m_textSizeLabel) m_textSizeLabel->setText(QString::number(m_textFontSize));
+                if (m_videoDisplayWidget) m_videoDisplayWidget->setTextFontSize(m_textFontSize);
+                return true;
+            }
+            return false;
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            QMouseEvent *mr = static_cast<QMouseEvent*>(event);
+            if (mr->button() == Qt::LeftButton) {
+                m_leftPressing = false;
+                if (m_textSizeLongPressTimer && m_textSizeLongPressTimer->isActive()) {
+                    m_textSizeLongPressTimer->stop();
+                }
+                if (m_textSizeDragActive) {
+                    m_textSizeDragActive = false;
+                    QTimer::singleShot(800, this, [this](){ if (m_textSizeSlider) m_textSizeSlider->setVisible(false); });
                     return true;
                 }
                 return false;

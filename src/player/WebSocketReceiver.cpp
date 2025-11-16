@@ -777,6 +777,38 @@ void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, 
     m_webSocket->sendTextMessage(jsonString);
 }
 
+void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, int colorId, int fontSize)
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        return;
+    }
+
+    QJsonObject message;
+    message["type"] = "text_annotation";
+    message["text"] = text;
+    message["x"] = x;
+    message["y"] = y;
+    message["color_id"] = colorId;
+    message["font_size"] = fontSize;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+}
+
 void WebSocketReceiver::sendSwitchScreenNext()
 {
     if (!m_connected || !m_webSocket) {

@@ -69,6 +69,7 @@ public:
     void sendWatchRequest(const QString &viewerId, const QString &targetId);
     // 发送远程批注事件：phase为"down"/"move"/"up"，坐标为源屏幕坐标，附带颜色ID
     void sendAnnotationEvent(const QString &phase, int x, int y, int colorId = 0);
+    void sendTextAnnotation(const QString &text, int x, int y, int colorId, int fontSize);
     // 发送切换屏幕请求（滚动到下一屏幕）
     void sendSwitchScreenNext();
     // 按索引切换屏幕（不断流热切换，不修改配置）

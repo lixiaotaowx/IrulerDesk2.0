@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QLabel>
+#include <QComboBox>
 #include <QMouseEvent>
 #include <QApplication>
 #include <QIcon>
@@ -66,6 +67,9 @@ private:
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
     QPushButton *m_speakerButton;
+    QSlider *m_textSizeSlider;
+    QTimer *m_textSizeLongPressTimer;
+    QLabel *m_textSizeLabel;
     QSlider *m_volumeSlider;
     QTimer *m_volumeLongPressTimer;
     QIcon m_micIconOn;
@@ -85,6 +89,10 @@ private:
     int m_volumeDragStartValue = 100;
     bool m_leftPressing = false;
     bool m_volumeTargetMic = false;
+    int m_textFontSize = 16;
+    bool m_textSizeDragActive = false;
+    QPoint m_textSizeDragStartPos;
+    int m_textSizeDragStartValue = 16;
 };
 
 #endif // VIDEOWINDOW_H

@@ -16,6 +16,7 @@ public:
 
 public slots:
     void onAnnotationEvent(const QString &phase, int x, int y, const QString &viewerId, int colorId);
+    void onTextAnnotation(const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize);
     void hideOverlay();
 
 protected:
@@ -23,8 +24,10 @@ protected:
 
 private:
     struct Stroke { QVector<QPoint> points; int colorId = 0; };
+    struct TextItem { QString text; QPoint pos; int colorId = 0; int fontSize = 16; };
     Stroke m_currentStroke;
     QVector<Stroke> m_strokes;
+    QVector<TextItem> m_texts;
     bool m_drawingRect = false;
     QPoint m_rectStart;
     QPoint m_rectEnd;

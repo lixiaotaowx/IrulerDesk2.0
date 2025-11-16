@@ -575,6 +575,8 @@ int main(int argc, char *argv[])
     // 连接批注事件到叠加层
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
                      overlay, &AnnotationOverlay::onAnnotationEvent);
+    QObject::connect(sender, &WebSocketSender::textAnnotationReceived,
+                     overlay, &AnnotationOverlay::onTextAnnotation);
 
     // 对齐叠加层到目标屏幕
     const auto screens = QApplication::screens();

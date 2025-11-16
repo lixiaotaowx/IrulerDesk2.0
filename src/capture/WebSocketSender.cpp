@@ -284,6 +284,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         int colorId = obj.value("color_id").toInt(0);
         
         emit annotationEventReceived(phase, x, y, viewerId, colorId);
+    } else if (type == "text_annotation") {
+        QString txt = obj.value("text").toString();
+        int x = obj.value("x").toInt();
+        int y = obj.value("y").toInt();
+        QString viewerId = obj.value("viewer_id").toString();
+        int colorId = obj.value("color_id").toInt(0);
+        int fontSize = obj.value("font_size").toInt(16);
+        emit textAnnotationReceived(txt, x, y, viewerId, colorId, fontSize);
     } else if (type == "switch_screen") {
         QString direction = obj.value("direction").toString();
         int index = obj.value("index").toInt(-1);

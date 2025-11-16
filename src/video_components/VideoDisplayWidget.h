@@ -87,6 +87,7 @@ public:
     int annotationColorId() const { return m_currentColorId; }
     void setAnnotationEnabled(bool enabled);
     void setToolMode(int mode);
+    void setTextFontSize(int size);
 
     // 显示切换中提示
     void showSwitchingIndicator(const QString &message = QStringLiteral("切换中..."));
@@ -227,6 +228,8 @@ private:
     int m_remainingSeconds = 0;              // 剩余倒计时秒数
     // 批注颜色ID（0:红,1:绿,2:蓝,3:黄）
     int m_currentColorId = 0;
+    int m_textFontSize = 16;
+    QPoint m_lastTextSrcPoint;
 };
 
 #endif // VIDEODISPLAYWIDGET_H

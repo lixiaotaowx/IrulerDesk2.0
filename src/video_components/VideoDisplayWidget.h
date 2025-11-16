@@ -97,6 +97,8 @@ public:
     // 本地播放开关（不影响推流端）
     void setSpeakerEnabled(bool enabled);
     bool isSpeakerEnabled() const { return m_speakerEnabled; }
+    void setVolumePercent(int percent);
+    int volumePercent() const { return m_volumePercent; }
     
     // 瓦片渲染方法
     void renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp);
@@ -179,6 +181,7 @@ private:
     QIODevice *m_audioIO = nullptr;
     bool m_audioInitialized = false;
     void initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample);
+    int m_volumePercent = 100;
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;

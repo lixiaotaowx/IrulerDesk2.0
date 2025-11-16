@@ -4,7 +4,12 @@
 #include <QGuiApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#ifdef _WIN32
+#define NOMINMAX
+#endif
 #include <windows.h>
+#include <iostream>
+#include <algorithm>
 
 VideoWindow::VideoWindow(QWidget *parent)
     : QWidget(parent)
@@ -197,6 +202,36 @@ void VideoWindow::setupCustomTitleBar()
     m_speakerButton->setIconSize(QSize(16, 16));
     m_speakerButton->setStyleSheet(micButtonStyle);
     connect(m_speakerButton, &QPushButton::toggled, this, &VideoWindow::onSpeakerToggled);
+    m_speakerButton->installEventFilter(this);
+
+    m_volumeSlider = new QSlider(Qt::Horizontal, this);
+    m_volumeSlider->setRange(0, 100);
+    m_volumeSlider->setValue(100);
+    m_volumeSlider->setVisible(false);
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int v){ if (m_videoDisplayWidget) { m_videoDisplayWidget->setVolumePercent(v); } });
+    m_volumeLongPressTimer = new QTimer(this);
+    m_volumeLongPressTimer->setSingleShot(true);
+    connect(m_volumeLongPressTimer, &QTimer::timeout, this, [this]() {
+        if (!m_leftPressing) return;
+        int current = m_videoDisplayWidget ? m_videoDisplayWidget->volumePercent() : 100;
+        m_volumeSlider->setValue(current);
+        QPoint g = m_speakerButton->mapToGlobal(QPoint(m_speakerButton->width()/2, m_speakerButton->height()));
+        QPoint l = mapFromGlobal(g);
+        int w = 160;
+        int h = 20;
+        int x = std::max(0, std::min(l.x() - w/2, this->width() - w));
+        int y = std::max(0, std::min(l.y() + 4, this->height() - h));
+        m_volumeSlider->setGeometry(x, y, w, h);
+        m_volumeSlider->setStyleSheet(
+            "QSlider::groove:horizontal { background: #ff9800; height: 3px; border-radius: 2px; }"
+            "QSlider::handle:horizontal { background: #1565C0; width: 8px; margin: -8px 0; border-radius: 3px; }"
+        );
+        m_volumeSlider->setVisible(true);
+        m_volumeSlider->raise();
+        m_volumeDragActive = true;
+        std::cout << "[UI] volume longpress success" << std::endl;
+        std::cout << "[UI] volume slider show x=" << x << " y=" << y << std::endl;
+    });
 
     // 最小化按钮
     m_minimizeButton = new QPushButton("−", m_titleBar);
@@ -292,6 +327,50 @@ bool VideoWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
     // 不再拦截原生右键事件，交由Qt事件系统与VideoDisplayWidget处理
     Q_UNUSED(msg);
     return QWidget::nativeEvent(eventType, message, result);
+}
+
+bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_speakerButton) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                m_leftPressing = true;
+                m_volumeDragStartPos = me->globalPosition().toPoint();
+                m_volumeDragStartValue = m_volumeSlider->value();
+                m_volumeLongPressTimer->start(500);
+                return false;
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            QMouseEvent *mm = static_cast<QMouseEvent*>(event);
+            if (m_volumeDragActive && (mm->buttons() & Qt::LeftButton)) {
+                int dx = mm->globalPosition().toPoint().x() - m_volumeDragStartPos.x();
+                int v = m_volumeDragStartValue + dx / 2;
+                if (v < 0) v = 0;
+                if (v > 100) v = 100;
+                m_volumeSlider->setValue(v);
+                if (m_videoDisplayWidget) { m_videoDisplayWidget->setVolumePercent(v); }
+                return true;
+            }
+            return false;
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            QMouseEvent *mr = static_cast<QMouseEvent*>(event);
+            if (mr->button() == Qt::LeftButton) {
+                m_leftPressing = false;
+                if (m_volumeLongPressTimer->isActive()) {
+                    m_volumeLongPressTimer->stop();
+                }
+                if (m_volumeDragActive) {
+                    m_volumeDragActive = false;
+                    std::cout << "[UI] volume set final=" << m_volumeSlider->value() << std::endl;
+                    QTimer::singleShot(1000, this, [this](){ if (m_volumeSlider) m_volumeSlider->setVisible(false); });
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+    return QWidget::eventFilter(obj, event);
 }
 
 void VideoWindow::onMaximizeClicked()

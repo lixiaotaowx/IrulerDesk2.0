@@ -9,6 +9,8 @@
 #include <QMouseEvent>
 #include <QApplication>
 #include <QIcon>
+#include <QSlider>
+#include <QTimer>
 #include "video_components/VideoDisplayWidget.h"
 #include "ui/ColorCircleButton.h"
 
@@ -29,6 +31,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
     void onMinimizeClicked();
@@ -54,6 +57,8 @@ private:
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
     QPushButton *m_speakerButton;
+    QSlider *m_volumeSlider;
+    QTimer *m_volumeLongPressTimer;
     QIcon m_micIconOn;
     QIcon m_micIconOff;
     QIcon m_speakerIconOn;
@@ -66,6 +71,10 @@ private:
     bool m_isMaximized;
     QRect m_normalGeometry;
     void updateColorButtonVisual(int colorId);
+    bool m_volumeDragActive = false;
+    QPoint m_volumeDragStartPos;
+    int m_volumeDragStartValue = 100;
+    bool m_leftPressing = false;
 };
 
 #endif // VIDEOWINDOW_H

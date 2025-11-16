@@ -562,6 +562,7 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
     m_audioSink = new QAudioSink(outDev, m_audioFormat, this);
     m_audioSink->setBufferSize(4096);
     m_audioIO = m_audioSink->start();
+    if (m_audioSink) { m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0)); }
     m_audioInitialized = true;
 }
 
@@ -1178,4 +1179,14 @@ void VideoDisplayWidget::recreateReceiver()
                     m_audioIO->write(pcmData);
                 }
             });
+}
+void VideoDisplayWidget::setVolumePercent(int percent)
+{
+    int p = percent;
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+    m_volumePercent = p;
+    if (m_audioSink) {
+        m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
+    }
 }

@@ -73,6 +73,7 @@ public:
     void sendSetQuality(const QString &quality);
     // 发送音频测试开关（观看端控制被观看者是否发送测试音）
     void sendAudioToggle(bool enabled);
+    void sendAudioGain(int percent);
     
     // 断开连接
     void disconnectFromServer();
@@ -133,6 +134,7 @@ signals:
 
     // 新增：音频帧信号（PCM）
     void audioFrameReceived(const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 timestamp);
+    void audioGainChanged(int percent);
 
 private slots:
     void onConnected();

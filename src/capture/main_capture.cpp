@@ -419,6 +419,7 @@ int main(int argc, char *argv[])
 
     QAudioSource *audioSource = new QAudioSource(inDev, micFormat, &app);
     QIODevice *audioInput = nullptr;
+    int currentMicGainPercent = 100;
     // 同步 Opus 编码器所用的采样率与帧长（20ms）
     opusSampleRate = micFormat.sampleRate();
     opusFrameSize = opusSampleRate / 50;
@@ -835,6 +836,7 @@ int main(int argc, char *argv[])
                 // 回退到麦克风采集
                 if (audioSource) {
                     audioInput = audioSource->start();
+                    audioSource->setVolume(currentMicGainPercent / 100.0);
                 }
                 audioTimer->start();
             }
@@ -844,6 +846,16 @@ int main(int argc, char *argv[])
             if (audioSource) { audioSource->stop(); audioInput = nullptr; }
             if (mp3Decoder) { mp3Decoder->stop(); }
             if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
+        }
+    });
+
+    QObject::connect(sender, &WebSocketSender::audioGainRequested, [&, audioSource](int percent) {
+        int p = percent;
+        if (p < 0) p = 0;
+        if (p > 100) p = 100;
+        currentMicGainPercent = p;
+        if (audioSource) {
+            audioSource->setVolume(p / 100.0);
         }
     });
     

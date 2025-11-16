@@ -297,6 +297,11 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     } else if (type == "audio_toggle") {
         bool enabled = obj.value("enabled").toBool(false);
         emit audioToggleRequested(enabled);
+    } else if (type == "audio_gain") {
+        int percent = obj.value("percent").toInt(100);
+        if (percent < 0) percent = 0;
+        if (percent > 100) percent = 100;
+        emit audioGainRequested(percent);
     }
 }
 

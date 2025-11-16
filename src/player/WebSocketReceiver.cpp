@@ -892,6 +892,40 @@ void WebSocketReceiver::sendAudioToggle(bool enabled)
     m_webSocket->sendTextMessage(jsonString);
 }
 
+void WebSocketReceiver::sendAudioGain(int percent)
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        return;
+    }
+
+    int p = percent;
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+
+    QJsonObject message;
+    message["type"] = "audio_gain";
+    message["percent"] = p;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    QString jsonString = doc.toJson(QJsonDocument::Compact);
+    m_webSocket->sendTextMessage(jsonString);
+}
+
 // 瓦片消息处理方法实现
 void WebSocketReceiver::processTileMessage(const QJsonObject &header, const QByteArray &binaryData)
 {

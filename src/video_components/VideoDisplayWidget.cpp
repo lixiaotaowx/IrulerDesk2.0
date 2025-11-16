@@ -1190,3 +1190,13 @@ void VideoDisplayWidget::setVolumePercent(int percent)
         m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
     }
 }
+void VideoDisplayWidget::setMicGainPercent(int percent)
+{
+    int p = percent;
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+    m_micGainPercent = p;
+    if (m_receiver) {
+        m_receiver->sendAudioGain(m_micGainPercent);
+    }
+}

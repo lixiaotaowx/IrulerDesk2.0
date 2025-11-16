@@ -177,6 +177,7 @@ void VideoWindow::setupCustomTitleBar()
         "}";
     m_micButton->setStyleSheet(micButtonStyle);
     connect(m_micButton, &QPushButton::toggled, this, &VideoWindow::onMicToggled);
+    m_micButton->installEventFilter(this);
 
     // 批注颜色按钮（循环切换红/绿/蓝/黄）- 使用自绘圆形按钮确保纯圆与抗锯齿
     m_colorButton = new ColorCircleButton(m_titleBar);
@@ -208,14 +209,18 @@ void VideoWindow::setupCustomTitleBar()
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(100);
     m_volumeSlider->setVisible(false);
-    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int v){ if (m_videoDisplayWidget) { m_videoDisplayWidget->setVolumePercent(v); } });
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int v){ if (!m_videoDisplayWidget) return; if (m_volumeTargetMic) { m_videoDisplayWidget->setMicGainPercent(v); } else { m_videoDisplayWidget->setVolumePercent(v); } });
     m_volumeLongPressTimer = new QTimer(this);
     m_volumeLongPressTimer->setSingleShot(true);
     connect(m_volumeLongPressTimer, &QTimer::timeout, this, [this]() {
         if (!m_leftPressing) return;
-        int current = m_videoDisplayWidget ? m_videoDisplayWidget->volumePercent() : 100;
+        int current = 100;
+        if (m_videoDisplayWidget) {
+            current = m_volumeTargetMic ? m_videoDisplayWidget->micGainPercent() : m_videoDisplayWidget->volumePercent();
+        }
         m_volumeSlider->setValue(current);
-        QPoint g = m_speakerButton->mapToGlobal(QPoint(m_speakerButton->width()/2, m_speakerButton->height()));
+        QPushButton *btn = m_volumeTargetMic ? m_micButton : m_speakerButton;
+        QPoint g = btn->mapToGlobal(QPoint(btn->width()/2, btn->height()));
         QPoint l = mapFromGlobal(g);
         int w = 160;
         int h = 20;
@@ -229,7 +234,11 @@ void VideoWindow::setupCustomTitleBar()
         m_volumeSlider->setVisible(true);
         m_volumeSlider->raise();
         m_volumeDragActive = true;
-        std::cout << "[UI] volume longpress success" << std::endl;
+        if (m_volumeTargetMic) {
+            std::cout << "[UI] mic longpress success" << std::endl;
+        } else {
+            std::cout << "[UI] volume longpress success" << std::endl;
+        }
         std::cout << "[UI] volume slider show x=" << x << " y=" << y << std::endl;
     });
 
@@ -331,11 +340,12 @@ bool VideoWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
 
 bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
 {
-    if (obj == m_speakerButton) {
+    if (obj == m_speakerButton || obj == m_micButton) {
         if (event->type() == QEvent::MouseButtonPress) {
             QMouseEvent *me = static_cast<QMouseEvent*>(event);
             if (me->button() == Qt::LeftButton) {
                 m_leftPressing = true;
+                m_volumeTargetMic = (obj == m_micButton);
                 m_volumeDragStartPos = me->globalPosition().toPoint();
                 m_volumeDragStartValue = m_volumeSlider->value();
                 m_volumeLongPressTimer->start(500);
@@ -349,7 +359,7 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                 if (v < 0) v = 0;
                 if (v > 100) v = 100;
                 m_volumeSlider->setValue(v);
-                if (m_videoDisplayWidget) { m_videoDisplayWidget->setVolumePercent(v); }
+                if (m_videoDisplayWidget) { if (m_volumeTargetMic) { m_videoDisplayWidget->setMicGainPercent(v); } else { m_videoDisplayWidget->setVolumePercent(v); } }
                 return true;
             }
             return false;
@@ -362,7 +372,8 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                 }
                 if (m_volumeDragActive) {
                     m_volumeDragActive = false;
-                    std::cout << "[UI] volume set final=" << m_volumeSlider->value() << std::endl;
+                    if (m_volumeTargetMic) { std::cout << "[UI] mic set final=" << m_volumeSlider->value() << std::endl; }
+                    else { std::cout << "[UI] volume set final=" << m_volumeSlider->value() << std::endl; }
                     QTimer::singleShot(1000, this, [this](){ if (m_volumeSlider) m_volumeSlider->setVisible(false); });
                     return true;
                 }

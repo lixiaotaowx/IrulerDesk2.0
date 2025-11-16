@@ -99,6 +99,8 @@ public:
     bool isSpeakerEnabled() const { return m_speakerEnabled; }
     void setVolumePercent(int percent);
     int volumePercent() const { return m_volumePercent; }
+    void setMicGainPercent(int percent);
+    int micGainPercent() const { return m_micGainPercent; }
     
     // 瓦片渲染方法
     void renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp);
@@ -182,6 +184,7 @@ private:
     bool m_audioInitialized = false;
     void initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample);
     int m_volumePercent = 100;
+    int m_micGainPercent = 100;
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;

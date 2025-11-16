@@ -75,6 +75,7 @@ private:
     QPoint m_volumeDragStartPos;
     int m_volumeDragStartValue = 100;
     bool m_leftPressing = false;
+    bool m_volumeTargetMic = false;
 };
 
 #endif // VIDEOWINDOW_H

@@ -98,6 +98,7 @@ signals:
     void qualityChangeRequested(const QString &quality);
     // 音频测试开关请求（观看端发来）
     void audioToggleRequested(bool enabled);
+    void audioGainRequested(int percent);
 
 private slots:
     void onConnected();

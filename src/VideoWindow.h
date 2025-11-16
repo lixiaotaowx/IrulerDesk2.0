@@ -54,6 +54,15 @@ private:
     QPushButton *m_minimizeButton;
     QPushButton *m_maximizeButton;
     QPushButton *m_closeButton;
+    QWidget *m_toolBar;
+    QHBoxLayout *m_toolBarLayout;
+    QPushButton *m_penButton;
+    QPushButton *m_rectButton;
+    QPushButton *m_circleButton;
+    QPushButton *m_textButton;
+    QPushButton *m_eraserButton;
+    QPushButton *m_undoButton;
+    QPushButton *m_likeButton;
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
     QPushButton *m_speakerButton;

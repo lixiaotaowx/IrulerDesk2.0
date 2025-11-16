@@ -179,18 +179,12 @@ void VideoWindow::setupCustomTitleBar()
     connect(m_micButton, &QPushButton::toggled, this, &VideoWindow::onMicToggled);
     m_micButton->installEventFilter(this);
 
-    // 批注颜色按钮（循环切换红/绿/蓝/黄）- 使用自绘圆形按钮确保纯圆与抗锯齿
     m_colorButton = new ColorCircleButton(m_titleBar);
     m_colorButton->setToolTip(QStringLiteral("批注颜色"));
     m_colorButton->setFixedSize(13, 13);
     m_colorButton->setCursor(Qt::PointingHandCursor);
     connect(m_colorButton, &ColorCircleButton::clicked, this, &VideoWindow::onColorClicked);
-    // 初始颜色与按钮外观
-    if (m_videoDisplayWidget) {
-        updateColorButtonVisual(m_videoDisplayWidget->annotationColorId());
-    } else {
-        updateColorButtonVisual(0);
-    }
+    if (m_videoDisplayWidget) { updateColorButtonVisual(m_videoDisplayWidget->annotationColorId()); } else { updateColorButtonVisual(0); }
 
     // 扬声器按钮（本地播放开/关，不影响推流端）
     m_speakerButton = new QPushButton("", m_titleBar);
@@ -260,12 +254,70 @@ void VideoWindow::setupCustomTitleBar()
         "QPushButton:hover { background-color: rgba(220, 53, 69, 0.8); }");
     connect(m_closeButton, &QPushButton::clicked, this, &VideoWindow::onCloseClicked);
     
-    // 布局调整：将颜色按钮居中到标题栏中间
-    // 左侧：标题标签（已添加）
-    // 中间：颜色按钮（居中）
-    m_titleBarLayout->addWidget(m_colorButton, 0, Qt::AlignCenter);
+    m_penButton = new QPushButton("", m_titleBar);
+    m_penButton->setIcon(QIcon(iconDir + "/pen.png"));
+    m_penButton->setIconSize(QSize(16, 16));
+    m_penButton->setStyleSheet(micButtonStyle);
+    m_penButton->setToolTip(QStringLiteral("画笔"));
+
+    m_rectButton = new QPushButton("", m_titleBar);
+    m_rectButton->setIcon(QIcon(iconDir + "/sele_box.png"));
+    m_rectButton->setIconSize(QSize(16, 16));
+    m_rectButton->setStyleSheet(micButtonStyle);
+    m_rectButton->setToolTip(QStringLiteral("矩形"));
+
+    m_circleButton = new QPushButton("", m_titleBar);
+    m_circleButton->setIcon(QIcon(iconDir + "/sele.png"));
+    m_circleButton->setIconSize(QSize(16, 16));
+    m_circleButton->setStyleSheet(micButtonStyle);
+    m_circleButton->setToolTip(QStringLiteral("圆形"));
+
+    m_textButton = new QPushButton("", m_titleBar);
+    m_textButton->setIcon(QIcon(iconDir + "/text.png"));
+    m_textButton->setIconSize(QSize(16, 16));
+    m_textButton->setStyleSheet(micButtonStyle);
+    m_textButton->setToolTip(QStringLiteral("文字"));
+
+    m_eraserButton = new QPushButton("", m_titleBar);
+    m_eraserButton->setIcon(QIcon(iconDir + "/xiangpi.png"));
+    m_eraserButton->setIconSize(QSize(16, 16));
+    m_eraserButton->setStyleSheet(micButtonStyle);
+    m_eraserButton->setToolTip(QStringLiteral("橡皮擦"));
+
+    m_undoButton = new QPushButton("", m_titleBar);
+    m_undoButton->setIcon(QIcon(iconDir + "/z.png"));
+    m_undoButton->setIconSize(QSize(16, 16));
+    m_undoButton->setStyleSheet(micButtonStyle);
+    m_undoButton->setToolTip(QStringLiteral("撤销"));
+
+    m_likeButton = new QPushButton("", m_titleBar);
+    m_likeButton->setIcon(QIcon(iconDir + "/good.png"));
+    m_likeButton->setIconSize(QSize(16, 16));
+    m_likeButton->setStyleSheet(micButtonStyle);
+    m_likeButton->setToolTip(QStringLiteral("点赞"));
+
+    m_toolBar = new QWidget(m_titleBar);
+    m_toolBarLayout = new QHBoxLayout(m_toolBar);
+    m_toolBarLayout->setContentsMargins(0, 0, 0, 0);
+    m_toolBarLayout->setSpacing(2);
+    m_toolBarLayout->addWidget(m_penButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_colorButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_rectButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_circleButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_textButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_eraserButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_undoButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_likeButton);
+
+    m_titleBarLayout->addWidget(m_toolBar, 0, Qt::AlignCenter);
     m_titleBarLayout->addStretch();
-    // 右侧：扬声器、麦克风、窗口控制按钮
     m_titleBarLayout->addWidget(m_speakerButton);
     m_titleBarLayout->addSpacing(2);
     m_titleBarLayout->addWidget(m_micButton);

@@ -302,6 +302,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         if (percent < 0) percent = 0;
         if (percent > 100) percent = 100;
         emit audioGainRequested(percent);
+    } else if (type == "viewer_audio_opus") {
+        int sr = obj.value("sample_rate").toInt(16000);
+        int ch = obj.value("channels").toInt(1);
+        int frameSamples = obj.value("frame_samples").toInt(320);
+        qint64 ts = obj.value("timestamp").toVariant().toLongLong();
+        QByteArray b64 = obj.value("data_base64").toString().toUtf8();
+        QByteArray opusData = QByteArray::fromBase64(b64);
+        emit viewerAudioOpusReceived(opusData, sr, ch, frameSamples, ts);
     }
 }
 

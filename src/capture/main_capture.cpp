@@ -15,6 +15,7 @@
 #include <QtMultimedia/QMediaDevices>
 #include <QtMultimedia/QAudioBuffer>
 #include <QtMultimedia/QAudioDecoder>
+#include <QtMultimedia/QAudioSink>
 #include <QUrl>
 #include <QUrl>
 #include <opus/opus.h>
@@ -713,6 +714,12 @@ int main(int argc, char *argv[])
     });
 
     // 新增：处理音频开关请求（麦克风采集）
+    QAudioSink *remoteSink = nullptr;
+    QIODevice *remoteOutIO = nullptr;
+    QAudioFormat remoteFmt;
+    OpusDecoder *remoteOpusDec = nullptr;
+    int remoteSampleRate = 16000;
+    int remoteChannels = 1;
     QObject::connect(sender, &WebSocketSender::audioToggleRequested, [&, audioTimer, sender, audioSource](bool enabled) {
         if (enabled) {
             // std::cout << "[Sender] audio_toggle enabled" << std::endl;
@@ -734,7 +741,7 @@ int main(int argc, char *argv[])
                     // std::cout << "[Sender] opus encoder init failed" << std::endl;
                 }
             }
-            if (QFile::exists(testMp3Path)) {
+            if (false && QFile::exists(testMp3Path)) {
                 // std::cout << "[Sender] using mp3 file: " << testMp3Path.toStdString() << std::endl;
                 if (!mp3Decoder) {
                     mp3Decoder = new QAudioDecoder(&app);
@@ -846,6 +853,8 @@ int main(int argc, char *argv[])
             if (audioSource) { audioSource->stop(); audioInput = nullptr; }
             if (mp3Decoder) { mp3Decoder->stop(); }
             if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
+            if (remoteSink) { remoteSink->stop(); delete remoteSink; remoteSink = nullptr; remoteOutIO = nullptr; }
+            if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
         }
     });
 
@@ -857,6 +866,38 @@ int main(int argc, char *argv[])
         if (audioSource) {
             audioSource->setVolume(p / 100.0);
         }
+    });
+
+    QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
+        if (!remoteOpusDec || remoteSampleRate != sr || remoteChannels != ch) {
+            if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
+            remoteSampleRate = sr; remoteChannels = ch;
+            int err = OPUS_OK;
+            remoteOpusDec = opus_decoder_create(sr, ch, &err);
+            if (remoteSink) { remoteSink->stop(); delete remoteSink; remoteSink = nullptr; remoteOutIO = nullptr; }
+            remoteFmt = QAudioFormat();
+            remoteFmt.setSampleRate(sr);
+            remoteFmt.setChannelCount(ch);
+            remoteFmt.setSampleFormat(QAudioFormat::Int16);
+            QAudioDevice outDev = QMediaDevices::defaultAudioOutput();
+            remoteSink = new QAudioSink(outDev, remoteFmt, &app);
+            remoteSink->setBufferSize(4096);
+            remoteOutIO = remoteSink->start();
+        }
+        if (!remoteOpusDec || !remoteSink) return;
+        QByteArray pcm;
+        pcm.resize(frameSamples * ch * sizeof(opus_int16));
+        int decodedSamples = opus_decode(remoteOpusDec,
+                                        reinterpret_cast<const unsigned char*>(opus.constData()),
+                                        opus.size(),
+                                        reinterpret_cast<opus_int16*>(pcm.data()),
+                                        frameSamples,
+                                        0);
+        if (decodedSamples <= 0) return;
+        pcm.resize(decodedSamples * ch * sizeof(opus_int16));
+        if (remoteSink->state() == QAudio::StoppedState) { remoteOutIO = remoteSink->start(); }
+        if (remoteSink->state() == QAudio::SuspendedState) { remoteSink->resume(); }
+        if (remoteOutIO) remoteOutIO->write(pcm);
     });
     
     QObject::connect(captureTimer, &QTimer::timeout, []() {

@@ -99,6 +99,7 @@ signals:
     // 音频测试开关请求（观看端发来）
     void audioToggleRequested(bool enabled);
     void audioGainRequested(int percent);
+    void viewerAudioOpusReceived(const QByteArray &opusData, int sampleRate, int channels, int frameSamples, qint64 timestamp);
 
 private slots:
     void onConnected();

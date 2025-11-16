@@ -4,6 +4,10 @@
 #include <QObject>
 #include <QWebSocket>
 #include <QTimer>
+#include <QtMultimedia/QAudioSource>
+#include <QtMultimedia/QAudioSink>
+#include <QtMultimedia/QAudioFormat>
+#include <QtMultimedia/QMediaDevices>
 #include <QUrl>
 #include <QByteArray>
 #include <QMutex>
@@ -74,6 +78,7 @@ public:
     // 发送音频测试开关（观看端控制被观看者是否发送测试音）
     void sendAudioToggle(bool enabled);
     void sendAudioGain(int percent);
+    void setTalkEnabled(bool enabled);
     
     // 断开连接
     void disconnectFromServer();
@@ -221,6 +226,13 @@ private:
     int m_audioMaxBufferFrames = 30;
     int m_audioUnderflowCount = 0;
     void initOpusDecoderIfNeeded(int sampleRate, int channels);
+    QAudioSource *m_localAudioSource = nullptr;
+    QIODevice *m_localAudioInput = nullptr;
+    QTimer *m_localAudioTimer = nullptr;
+    OpusEncoder *m_localOpusEnc = nullptr;
+    int m_localOpusSampleRate = 16000;
+    int m_localOpusFrameSize = 16000 / 50;
+    int m_localMicGainPercent = 100;
 
     // 文本瓦片消息兼容开关（默认关闭，通过环境变量 IRULER_TEXT_TILE=1 开启）
     bool m_textTileEnabled = false;

@@ -1200,3 +1200,7 @@ void VideoDisplayWidget::setMicGainPercent(int percent)
         m_receiver->sendAudioGain(m_micGainPercent);
     }
 }
+void VideoDisplayWidget::setTalkEnabled(bool enabled)
+{
+    if (m_receiver) { m_receiver->setTalkEnabled(enabled); }
+}

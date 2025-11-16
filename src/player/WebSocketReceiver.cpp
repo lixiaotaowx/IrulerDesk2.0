@@ -9,6 +9,9 @@
 #include <QNetworkProxy>
 #include <cmath>
 #include <iostream>
+#include <QtMultimedia/QAudioSource>
+#include <QtMultimedia/QMediaDevices>
+#include <QtMultimedia/QAudioFormat>
 
 WebSocketReceiver::WebSocketReceiver(QObject *parent)
     : QObject(parent)
@@ -293,6 +296,15 @@ void WebSocketReceiver::onDisconnected()
     m_opusInitialized = false;
     m_audioLastTimestamp = 0;
     m_audioFrameSamples = 0;
+
+    if (m_localAudioTimer && m_localAudioTimer->isActive()) {
+        m_localAudioTimer->stop();
+    }
+    if (m_localAudioSource) {
+        m_localAudioSource->stop();
+    }
+    m_localAudioInput = nullptr;
+    if (m_localOpusEnc) { opus_encoder_destroy(m_localOpusEnc); m_localOpusEnc = nullptr; }
 
     bool wasConnected = m_connected;
     m_connected = false;
@@ -924,6 +936,72 @@ void WebSocketReceiver::sendAudioGain(int percent)
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
     m_webSocket->sendTextMessage(jsonString);
+}
+
+void WebSocketReceiver::setTalkEnabled(bool enabled)
+{
+    if (enabled) {
+        if (!m_localAudioSource) {
+            QAudioDevice inDev = QMediaDevices::defaultAudioInput();
+            QAudioFormat fmt;
+            fmt.setSampleRate(m_localOpusSampleRate);
+            fmt.setChannelCount(1);
+            fmt.setSampleFormat(QAudioFormat::Int16);
+            m_localAudioSource = new QAudioSource(inDev, fmt, this);
+        }
+        if (!m_localOpusEnc) {
+            int err = OPUS_OK;
+            m_localOpusEnc = opus_encoder_create(m_localOpusSampleRate, 1, OPUS_APPLICATION_VOIP, &err);
+            if (err == OPUS_OK && m_localOpusEnc) {
+                opus_encoder_ctl(m_localOpusEnc, OPUS_SET_BITRATE(24000));
+                opus_encoder_ctl(m_localOpusEnc, OPUS_SET_VBR(1));
+                opus_encoder_ctl(m_localOpusEnc, OPUS_SET_COMPLEXITY(5));
+                opus_encoder_ctl(m_localOpusEnc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+                opus_encoder_ctl(m_localOpusEnc, OPUS_SET_INBAND_FEC(1));
+            }
+        }
+        if (!m_localAudioTimer) {
+            m_localAudioTimer = new QTimer(this);
+            m_localAudioTimer->setInterval(20);
+            connect(m_localAudioTimer, &QTimer::timeout, this, [this]() {
+                if (!m_localOpusEnc || !m_localAudioSource) return;
+                if (!m_localAudioInput) return;
+                QByteArray pcm;
+                int bytesPerFrame = sizeof(opus_int16);
+                pcm.resize(m_localOpusFrameSize * bytesPerFrame);
+                qint64 readBytes = m_localAudioInput->read(pcm.data(), pcm.size());
+                if (readBytes < pcm.size()) return;
+                QByteArray opusOut;
+                opusOut.resize(4096);
+                int nbytes = opus_encode(m_localOpusEnc,
+                                         reinterpret_cast<const opus_int16*>(pcm.constData()),
+                                         m_localOpusFrameSize,
+                                         reinterpret_cast<unsigned char*>(opusOut.data()),
+                                         opusOut.size());
+                if (nbytes < 0) return;
+                opusOut.resize(nbytes);
+                QJsonObject message;
+                message["type"] = "viewer_audio_opus";
+                message["sample_rate"] = m_localOpusSampleRate;
+                message["channels"] = 1;
+                message["frame_samples"] = m_localOpusFrameSize;
+                message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                message["data_base64"] = QString::fromUtf8(opusOut.toBase64());
+                QJsonDocument doc(message);
+                m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+            });
+        }
+        if (m_localAudioSource->state() != QAudio::ActiveState) {
+            m_localAudioInput = m_localAudioSource->start();
+            m_localAudioSource->setVolume(m_localMicGainPercent / 100.0);
+        }
+        if (!m_localAudioTimer->isActive()) m_localAudioTimer->start();
+    } else {
+        if (m_localAudioTimer && m_localAudioTimer->isActive()) m_localAudioTimer->stop();
+        if (m_localAudioSource) m_localAudioSource->stop();
+        m_localAudioInput = nullptr;
+        if (m_localOpusEnc) { opus_encoder_destroy(m_localOpusEnc); m_localOpusEnc = nullptr; }
+    }
 }
 
 // 瓦片消息处理方法实现

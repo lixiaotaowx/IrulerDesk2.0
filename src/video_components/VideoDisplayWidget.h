@@ -101,6 +101,7 @@ public:
     int volumePercent() const { return m_volumePercent; }
     void setMicGainPercent(int percent);
     int micGainPercent() const { return m_micGainPercent; }
+    void setTalkEnabled(bool enabled);
     
     // 瓦片渲染方法
     void renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp);

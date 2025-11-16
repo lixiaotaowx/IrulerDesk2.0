@@ -414,12 +414,11 @@ void VideoWindow::onCloseClicked()
 
 void VideoWindow::onMicToggled(bool checked)
 {
-    // 更新图标反馈；暂不接入实际麦克风逻辑
     m_micButton->setIcon(checked ? m_micIconOn : m_micIconOff);
     m_micButton->setToolTip(checked ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
-    // 发出音频测试开关到观看会话
     if (m_videoDisplayWidget) {
         m_videoDisplayWidget->sendAudioToggle(checked);
+        m_videoDisplayWidget->setTalkEnabled(checked);
     }
 }
 

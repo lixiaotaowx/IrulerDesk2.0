@@ -131,6 +131,7 @@ public slots:
     void sendUndo();
     void sendClear();
     void sendCloseOverlay();
+    void sendLike();
 
 private slots:
     void onStartStopClicked();

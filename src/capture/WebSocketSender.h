@@ -93,6 +93,7 @@ signals:
     // 远程批注事件（观看端发来），包含颜色ID
     void annotationEventReceived(const QString &phase, int x, int y, const QString &viewerId, int colorId);
     void textAnnotationReceived(const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize);
+    void likeRequested(const QString &viewerId);
     // 切换屏幕请求（观看端发来）
     void switchScreenRequested(const QString &direction, int index);
     // 质量变更请求（观看端发来）

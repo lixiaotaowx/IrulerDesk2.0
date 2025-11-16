@@ -2,6 +2,11 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QGuiApplication>
+#include <QCoreApplication>
+#include <QLabel>
+#include <QMovie>
+#include <QFile>
+#include <QTimer>
 
 AnnotationOverlay::AnnotationOverlay(QWidget *parent)
     : QWidget(parent)
@@ -193,6 +198,51 @@ void AnnotationOverlay::hideOverlay()
 {
     hide();
     clear();
+}
+
+void AnnotationOverlay::onLikeRequested(const QString &viewerId)
+{
+    Q_UNUSED(viewerId);
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString iconDir = appDir + "/maps/logo";
+    QString file = iconDir + "/zan.gif";
+    if (!m_likeLabel) {
+        m_likeLabel = new QLabel(this);
+        m_likeLabel->setStyleSheet("QLabel { background: transparent; }");
+    }
+    if (QFile::exists(file)) {
+        if (!m_likeMovie) {
+            m_likeMovie = new QMovie(file, QByteArray(), this);
+        } else {
+            m_likeMovie->setFileName(file);
+            m_likeMovie->stop();
+            QObject::disconnect(m_likeMovie, nullptr, this, nullptr);
+        }
+        m_likeMovie->setCacheMode(QMovie::CacheAll);
+        m_likeLabel->setMovie(m_likeMovie);
+        m_likeMovie->jumpToFrame(0);
+        QRect area = this->rect();
+        QSize sz = m_likeMovie->currentPixmap().size();
+        QPoint center(area.width()/2, area.height()/2);
+        int w = sz.width();
+        int h = sz.height();
+        m_likeLabel->setGeometry(center.x() - w/2, center.y() - h/2, w, h);
+        m_likeLabel->setVisible(true);
+        m_likeLabel->raise();
+        m_likeMovie->start();
+        int total = m_likeMovie->frameCount();
+        if (total > 0) {
+            QObject::connect(m_likeMovie, &QMovie::frameChanged, this, [this, total](int frame) {
+                if (frame >= total - 1) {
+                    if (m_likeLabel) m_likeLabel->setVisible(false);
+                    if (m_likeMovie) m_likeMovie->stop();
+                }
+            });
+        } else {
+            QTimer::singleShot(2000, this, [this]() { if (m_likeLabel) m_likeLabel->setVisible(false); if (m_likeMovie) m_likeMovie->stop(); });
+        }
+        return;
+    }
 }
 
 void AnnotationOverlay::paintEvent(QPaintEvent *event)

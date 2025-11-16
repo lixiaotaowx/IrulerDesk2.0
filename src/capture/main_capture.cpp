@@ -577,6 +577,8 @@ int main(int argc, char *argv[])
                      overlay, &AnnotationOverlay::onAnnotationEvent);
     QObject::connect(sender, &WebSocketSender::textAnnotationReceived,
                      overlay, &AnnotationOverlay::onTextAnnotation);
+    QObject::connect(sender, &WebSocketSender::likeRequested,
+                     overlay, &AnnotationOverlay::onLikeRequested);
 
     // 对齐叠加层到目标屏幕
     const auto screens = QApplication::screens();

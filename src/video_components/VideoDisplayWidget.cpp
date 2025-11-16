@@ -1079,6 +1079,13 @@ void VideoDisplayWidget::sendCloseOverlay()
     }
 }
 
+void VideoDisplayWidget::sendLike()
+{
+    if (m_receiver) {
+        m_receiver->sendLikeEvent();
+    }
+}
+
 void VideoDisplayWidget::closeEvent(QCloseEvent *event)
 {
     // 关闭窗口时，主动停止接收并断开连接（会发送 stop_streaming）

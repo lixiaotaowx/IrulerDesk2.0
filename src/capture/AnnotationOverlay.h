@@ -7,6 +7,9 @@
 #include <QString>
 #include <QScreen>
 
+class QLabel;
+class QMovie;
+
 class AnnotationOverlay : public QWidget {
     Q_OBJECT
 public:
@@ -18,6 +21,7 @@ public slots:
     void onAnnotationEvent(const QString &phase, int x, int y, const QString &viewerId, int colorId);
     void onTextAnnotation(const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize);
     void hideOverlay();
+    void onLikeRequested(const QString &viewerId);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -35,6 +39,8 @@ private:
     bool m_drawingCircle = false;
     QPoint m_circleCenter;
     int m_circleRadius = 0;
+    QLabel *m_likeLabel = nullptr;
+    QMovie *m_likeMovie = nullptr;
 };
 
 #endif // ANNOTATIONOVERLAY_H

@@ -80,6 +80,7 @@ public:
     void sendAudioToggle(bool enabled);
     void sendAudioGain(int percent);
     void setTalkEnabled(bool enabled);
+    void sendLikeEvent();
     
     // 断开连接
     void disconnectFromServer();

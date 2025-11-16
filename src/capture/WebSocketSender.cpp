@@ -292,6 +292,9 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         int colorId = obj.value("color_id").toInt(0);
         int fontSize = obj.value("font_size").toInt(16);
         emit textAnnotationReceived(txt, x, y, viewerId, colorId, fontSize);
+    } else if (type == "like_event") {
+        QString viewerId = obj.value("viewer_id").toString();
+        emit likeRequested(viewerId);
     } else if (type == "switch_screen") {
         QString direction = obj.value("direction").toString();
         int index = obj.value("index").toInt(-1);

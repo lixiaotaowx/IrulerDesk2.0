@@ -839,6 +839,30 @@ void WebSocketReceiver::sendSwitchScreenNext()
     m_webSocket->sendTextMessage(jsonString);
 }
 
+void WebSocketReceiver::sendLikeEvent()
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        return;
+    }
+    QJsonObject message;
+    message["type"] = "like_event";
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    QJsonDocument doc(message);
+    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+}
+
 void WebSocketReceiver::sendSwitchScreenIndex(int index)
 {
     if (!m_connected || !m_webSocket) {

@@ -7,6 +7,8 @@
 #include <QAbstractItemView>
 #include <QFile>
 #include <QMovie>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
 #ifdef _WIN32
 #define NOMINMAX
 #endif
@@ -746,13 +748,12 @@ void VideoWindow::toggleFullscreen()
 void VideoWindow::showLikeAnimation()
 {
     if (!m_videoDisplayWidget) return;
+    m_videoDisplayWidget->sendLike();
     QString appDir = QCoreApplication::applicationDirPath();
     QString iconDir = appDir + "/maps/logo";
-    QStringList candidates;
-    candidates << iconDir + "/good.gif" << appDir + "/maps/icon/like.gif" << iconDir + "/like.gif";
-    QString file;
-    for (const QString &c : candidates) {
-        if (QFile::exists(c)) { file = c; break; }
+    QString file = iconDir + "/zan.gif";
+    if (!QFile::exists(file)) {
+        file.clear();
     }
     if (!file.isEmpty()) {
         if (!m_likeMovie) {
@@ -760,9 +761,9 @@ void VideoWindow::showLikeAnimation()
         } else {
             m_likeMovie->setFileName(file);
             m_likeMovie->stop();
+            QObject::disconnect(m_likeMovie, nullptr, this, nullptr);
         }
         m_likeMovie->setCacheMode(QMovie::CacheAll);
-        m_likeMovie->setLoopCount(1);
         m_likeAnimLabel->setMovie(m_likeMovie);
         m_likeMovie->jumpToFrame(0);
         QSize sz = m_likeMovie->currentPixmap().size();
@@ -774,11 +775,42 @@ void VideoWindow::showLikeAnimation()
         m_likeAnimLabel->setVisible(true);
         m_likeAnimLabel->raise();
         m_likeMovie->start();
-        QTimer::singleShot(2000, this, [this]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); if (m_likeMovie) m_likeMovie->stop(); });
+        int total = m_likeMovie->frameCount();
+        if (total > 0) {
+            QObject::connect(m_likeMovie, &QMovie::frameChanged, this, [this, total](int frame) {
+                if (frame >= total - 1) {
+                    if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false);
+                    if (m_likeMovie) m_likeMovie->stop();
+                }
+            });
+        } else {
+            QTimer::singleShot(2000, this, [this]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); if (m_likeMovie) m_likeMovie->stop(); });
+        }
         return;
     }
     QPixmap pix(iconDir + "/good.png");
-    if (pix.isNull()) return;
+    if (pix.isNull()) {
+        QFont f; f.setPixelSize(48);
+        m_likeAnimLabel->setText(QStringLiteral("👍"));
+        m_likeAnimLabel->setAlignment(Qt::AlignCenter);
+        m_likeAnimLabel->setStyleSheet("QLabel { color: #ffffff; background: transparent; } ");
+        m_likeAnimLabel->setFont(f);
+        QRect area = m_videoDisplayWidget->rect();
+        QPoint center(area.width()/2, area.height()/2);
+        int w = 96; int h = 96;
+        m_likeAnimLabel->setGeometry(center.x() - w/2, center.y() - h/2, w, h);
+        auto effect = new QGraphicsOpacityEffect(m_likeAnimLabel);
+        m_likeAnimLabel->setGraphicsEffect(effect);
+        auto anim = new QPropertyAnimation(effect, "opacity", m_likeAnimLabel);
+        anim->setDuration(800);
+        anim->setStartValue(1.0);
+        anim->setEndValue(0.0);
+        m_likeAnimLabel->setVisible(true);
+        m_likeAnimLabel->raise();
+        QObject::connect(anim, &QPropertyAnimation::finished, this, [this, effect]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); effect->deleteLater(); });
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+        return;
+    }
     QRect area = m_videoDisplayWidget->rect();
     QPoint center(area.width()/2, area.height()/2);
     int w = pix.width();

@@ -25,6 +25,13 @@ private:
     struct Stroke { QVector<QPoint> points; int colorId = 0; };
     Stroke m_currentStroke;
     QVector<Stroke> m_strokes;
+    bool m_drawingRect = false;
+    QPoint m_rectStart;
+    QPoint m_rectEnd;
+    int m_currentShapeColor = 0;
+    bool m_drawingCircle = false;
+    QPoint m_circleCenter;
+    int m_circleRadius = 0;
 };
 
 #endif // ANNOTATIONOVERLAY_H

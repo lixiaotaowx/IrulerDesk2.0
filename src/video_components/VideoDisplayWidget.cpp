@@ -13,6 +13,7 @@
 #include <QShortcut>
 #include <QMenu>
 #include <QAction>
+#include <QCursor>
 #include <windows.h>
 #include <iostream>
 
@@ -913,10 +914,27 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 return true; // 消费右键事件
             }
             QPoint src = mapLabelToSource(me->pos());
-            if (src.x() >= 0 && isPrimary && m_annotationEnabled) { // 仅主键开始绘制（随系统设置）
-                m_isAnnotating = true;
-                if (m_receiver) {
-                    m_receiver->sendAnnotationEvent("down", src.x(), src.y(), m_currentColorId);
+            if (src.x() >= 0 && isPrimary) {
+                if (m_toolMode == 0 && m_annotationEnabled) {
+                    m_isAnnotating = true;
+                    if (m_receiver) {
+                        m_receiver->sendAnnotationEvent("down", src.x(), src.y(), m_currentColorId);
+                    }
+                } else if (m_toolMode == 1) {
+                    m_isAnnotating = true;
+                    if (m_receiver) {
+                        m_receiver->sendAnnotationEvent("erase_down", src.x(), src.y(), m_currentColorId);
+                    }
+                } else if (m_toolMode == 2) {
+                    m_isAnnotating = true;
+                    if (m_receiver) {
+                        m_receiver->sendAnnotationEvent("rect_down", src.x(), src.y(), m_currentColorId);
+                    }
+                } else if (m_toolMode == 3) {
+                    m_isAnnotating = true;
+                    if (m_receiver) {
+                        m_receiver->sendAnnotationEvent("circle_down", src.x(), src.y(), m_currentColorId);
+                    }
                 }
             }
             return true; // 消费事件
@@ -926,7 +944,15 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             if (m_isAnnotating) {
                 QPoint src = mapLabelToSource(me->pos());
                 if (src.x() >= 0 && m_receiver) {
-                    m_receiver->sendAnnotationEvent("move", src.x(), src.y(), m_currentColorId);
+                    if (m_toolMode == 0) {
+                        m_receiver->sendAnnotationEvent("move", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 1) {
+                        m_receiver->sendAnnotationEvent("erase_move", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 2) {
+                        m_receiver->sendAnnotationEvent("rect_move", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 3) {
+                        m_receiver->sendAnnotationEvent("circle_move", src.x(), src.y(), m_currentColorId);
+                    }
                 }
                 return true;
             }
@@ -937,9 +963,17 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             QPoint src = mapLabelToSource(me->pos());
             bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
                                (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
-            if (m_isAnnotating && src.x() >= 0 && isPrimary) { // 仅主键结束绘制
+            if (m_isAnnotating && src.x() >= 0 && isPrimary) {
                 if (m_receiver) {
-                    m_receiver->sendAnnotationEvent("up", src.x(), src.y(), m_currentColorId);
+                    if (m_toolMode == 0) {
+                        m_receiver->sendAnnotationEvent("up", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 1) {
+                        m_receiver->sendAnnotationEvent("erase_up", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 2) {
+                        m_receiver->sendAnnotationEvent("rect_up", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 3) {
+                        m_receiver->sendAnnotationEvent("circle_up", src.x(), src.y(), m_currentColorId);
+                    }
                 }
             }
             m_isAnnotating = false;
@@ -1096,6 +1130,32 @@ void VideoDisplayWidget::onContinueClicked()
 void VideoDisplayWidget::setAnnotationEnabled(bool enabled)
 {
     m_annotationEnabled = enabled;
+}
+
+void VideoDisplayWidget::setToolMode(int mode)
+{
+    int m = mode;
+    if (m < 0) m = 0;
+    if (m > 3) m = 3;
+    m_toolMode = m;
+    if (m_videoLabel) {
+        if (m_toolMode == 1) {
+            int r = 20;
+            QPixmap pix(2*r + 2, 2*r + 2);
+            pix.fill(Qt::transparent);
+            QPainter p(&pix);
+            p.setRenderHint(QPainter::Antialiasing, true);
+            QPen pen(QColor(255, 255, 255, 230));
+            pen.setWidth(2);
+            p.setPen(pen);
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(QPoint(r + 1, r + 1), r, r);
+            QCursor cur(pix, r + 1, r + 1);
+            m_videoLabel->setCursor(cur);
+        } else {
+            m_videoLabel->setCursor(Qt::ArrowCursor);
+        }
+    }
 }
 
 void VideoDisplayWidget::onPromptCountdownTick()

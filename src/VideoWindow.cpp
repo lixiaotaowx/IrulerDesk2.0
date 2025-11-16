@@ -360,14 +360,17 @@ void VideoWindow::setupCustomTitleBar()
 
     connect(m_penButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_penButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(0);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(true);
     });
     connect(m_rectButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_rectButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(2);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
     });
     connect(m_circleButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_circleButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(3);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
     });
     connect(m_textButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
@@ -376,6 +379,7 @@ void VideoWindow::setupCustomTitleBar()
     });
     connect(m_eraserButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_eraserButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(1);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
     });
     connect(m_likeButton, &QPushButton::clicked, this, [this]() {

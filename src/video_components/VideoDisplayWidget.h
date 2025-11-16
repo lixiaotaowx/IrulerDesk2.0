@@ -86,6 +86,7 @@ public:
     void setAnnotationColorId(int colorId);
     int annotationColorId() const { return m_currentColorId; }
     void setAnnotationEnabled(bool enabled);
+    void setToolMode(int mode);
 
     // 显示切换中提示
     void showSwitchingIndicator(const QString &message = QStringLiteral("切换中..."));
@@ -202,6 +203,7 @@ private:
     QString m_lastViewerId;
     QString m_lastTargetId;
     bool m_annotationEnabled = false;
+    int m_toolMode = 0;
     bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）
     bool m_mouseButtonsSwapped = false; // 系统是否交换了鼠标左右键
     

@@ -69,7 +69,7 @@ private:
     QPushButton *m_speakerButton;
     QSlider *m_textSizeSlider;
     QTimer *m_textSizeLongPressTimer;
-    QLabel *m_textSizeLabel;
+    QLabel *m_textSizeFloatLabel;
     QSlider *m_volumeSlider;
     QTimer *m_volumeLongPressTimer;
     QIcon m_micIconOn;
@@ -84,6 +84,7 @@ private:
     bool m_isMaximized;
     QRect m_normalGeometry;
     void updateColorButtonVisual(int colorId);
+    void updateTextSizeFloatLabelPos();
     bool m_volumeDragActive = false;
     QPoint m_volumeDragStartPos;
     int m_volumeDragStartValue = 100;

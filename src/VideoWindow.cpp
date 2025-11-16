@@ -260,7 +260,8 @@ void VideoWindow::setupCustomTitleBar()
     m_textSizeSlider->setVisible(false);
     connect(m_textSizeSlider, &QSlider::valueChanged, this, [this](int v){
         m_textFontSize = v;
-        if (m_textSizeLabel) m_textSizeLabel->setText(QString::number(m_textFontSize));
+        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setText(QString::number(m_textFontSize));
+        updateTextSizeFloatLabelPos();
         if (m_videoDisplayWidget) m_videoDisplayWidget->setTextFontSize(m_textFontSize);
     });
     m_textSizeLongPressTimer = new QTimer(this);
@@ -284,6 +285,14 @@ void VideoWindow::setupCustomTitleBar()
         m_textSizeSlider->setVisible(true);
         m_textSizeSlider->raise();
         m_textSizeDragActive = true;
+        if (!m_textSizeFloatLabel) {
+            m_textSizeFloatLabel = new QLabel(QString::number(m_textFontSize), this);
+            m_textSizeFloatLabel->setStyleSheet("QLabel { color: #ffffff; background-color: rgba(0,0,0,160); border: 1px solid rgba(255,255,255,120); padding: 1px 4px; font-size: 12px; }");
+        }
+        m_textSizeFloatLabel->setText(QString::number(m_textFontSize));
+        updateTextSizeFloatLabelPos();
+        m_textSizeFloatLabel->setVisible(true);
+        m_textSizeFloatLabel->raise();
         std::cout << "[UI] text size longpress success" << std::endl;
     });
 
@@ -362,13 +371,7 @@ void VideoWindow::setupCustomTitleBar()
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_textButton);
     m_toolBarLayout->addSpacing(2);
-    m_textSizeLabel = new QLabel(QString::number(m_textFontSize), m_titleBar);
-    m_textSizeLabel->setStyleSheet(
-        "QLabel { color: #ffffff; background: transparent; font-size: 12px; }"
-    );
-    m_textSizeLabel->setFixedWidth(24);
-    m_textSizeLabel->setAlignment(Qt::AlignCenter);
-    m_toolBarLayout->addWidget(m_textSizeLabel);
+    
     m_toolBarLayout->addWidget(m_eraserButton);
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_undoButton);
@@ -405,18 +408,21 @@ void VideoWindow::setupCustomTitleBar()
         if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(0);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(true);
         if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
     });
     connect(m_rectButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_rectButton);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(2);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
         if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
     });
     connect(m_circleButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_circleButton);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(3);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
         if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
     });
     connect(m_textButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_textButton);
@@ -424,11 +430,13 @@ void VideoWindow::setupCustomTitleBar()
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setTextFontSize(m_textFontSize);
         if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
     });
     connect(m_eraserButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
         applyToolSelection(m_eraserButton);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(1);
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
     });
     connect(m_likeButton, &QPushButton::clicked, this, [this]() {
         if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
@@ -559,7 +567,8 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                 if (v > 72) v = 72;
                 if (m_textSizeSlider) m_textSizeSlider->setValue(v);
                 m_textFontSize = v;
-                if (m_textSizeLabel) m_textSizeLabel->setText(QString::number(m_textFontSize));
+                if (m_textSizeFloatLabel) m_textSizeFloatLabel->setText(QString::number(m_textFontSize));
+                updateTextSizeFloatLabelPos();
                 if (m_videoDisplayWidget) m_videoDisplayWidget->setTextFontSize(m_textFontSize);
                 return true;
             }
@@ -573,7 +582,7 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                 }
                 if (m_textSizeDragActive) {
                     m_textSizeDragActive = false;
-                    QTimer::singleShot(800, this, [this](){ if (m_textSizeSlider) m_textSizeSlider->setVisible(false); });
+                    QTimer::singleShot(800, this, [this](){ if (m_textSizeSlider) m_textSizeSlider->setVisible(false); if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false); });
                     return true;
                 }
                 return false;
@@ -581,6 +590,23 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
         }
     }
     return QWidget::eventFilter(obj, event);
+}
+
+void VideoWindow::updateTextSizeFloatLabelPos()
+{
+    if (!m_textSizeSlider || !m_textSizeFloatLabel) return;
+    QRect r = m_textSizeSlider->geometry();
+    int min = m_textSizeSlider->minimum();
+    int max = m_textSizeSlider->maximum();
+    int v = m_textSizeSlider->value();
+    double t = (max == min) ? 0.0 : (double)(v - min) / (double)(max - min);
+    int w = m_textSizeFloatLabel->sizeHint().width();
+    int h = m_textSizeFloatLabel->sizeHint().height();
+    int x = r.x() + (int)std::round(t * r.width()) - w / 2;
+    if (x < r.x()) x = r.x();
+    if (x > r.x() + r.width() - w) x = r.x() + r.width() - w;
+    int y = r.y() + r.height() + 2;
+    m_textSizeFloatLabel->setGeometry(x, y, w, h);
 }
 
 void VideoWindow::onMaximizeClicked()

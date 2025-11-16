@@ -85,6 +85,7 @@ public:
     // 批注颜色设置与获取
     void setAnnotationColorId(int colorId);
     int annotationColorId() const { return m_currentColorId; }
+    void setAnnotationEnabled(bool enabled);
 
     // 显示切换中提示
     void showSwitchingIndicator(const QString &message = QStringLiteral("切换中..."));
@@ -200,6 +201,7 @@ private:
     // 最近一次观看者与目标ID（用于重发watch_request以恢复推流）
     QString m_lastViewerId;
     QString m_lastTargetId;
+    bool m_annotationEnabled = false;
     bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）
     bool m_mouseButtonsSwapped = false; // 系统是否交换了鼠标左右键
     

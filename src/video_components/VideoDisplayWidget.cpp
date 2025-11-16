@@ -913,7 +913,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 return true; // 消费右键事件
             }
             QPoint src = mapLabelToSource(me->pos());
-            if (src.x() >= 0 && isPrimary) { // 仅主键开始绘制（随系统设置）
+            if (src.x() >= 0 && isPrimary && m_annotationEnabled) { // 仅主键开始绘制（随系统设置）
                 m_isAnnotating = true;
                 if (m_receiver) {
                     m_receiver->sendAnnotationEvent("down", src.x(), src.y(), m_currentColorId);
@@ -937,7 +937,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             QPoint src = mapLabelToSource(me->pos());
             bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
                                (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
-            if (src.x() >= 0 && isPrimary) { // 仅主键结束绘制
+            if (m_isAnnotating && src.x() >= 0 && isPrimary) { // 仅主键结束绘制
                 if (m_receiver) {
                     m_receiver->sendAnnotationEvent("up", src.x(), src.y(), m_currentColorId);
                 }
@@ -1091,6 +1091,11 @@ void VideoDisplayWidget::onContinueClicked()
         m_continuePromptTimer->setInterval(m_promptIntervalMinutes * 60 * 1000);
         m_continuePromptTimer->start();
     }
+}
+
+void VideoDisplayWidget::setAnnotationEnabled(bool enabled)
+{
+    m_annotationEnabled = enabled;
 }
 
 void VideoDisplayWidget::onPromptCountdownTick()

@@ -175,6 +175,23 @@ void VideoWindow::setupCustomTitleBar()
         "QPushButton:pressed {"
         "    background-color: rgba(255, 255, 255, 0.25);"
         "}";
+    QString selectedToolStyle =
+        "QPushButton {"
+        "    background-color: rgba(32, 64, 120, 0.35);"
+        "    border: none;"
+        "    width: 24px;"
+        "    height: 24px;"
+        "    border-radius: 12px;"
+        "    font-size: 14px;"
+        "    font-weight: 500;"
+        "    margin: 1px;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: rgba(32, 64, 120, 0.45);"
+        "}"
+        "QPushButton:pressed {"
+        "    background-color: rgba(32, 64, 120, 0.55);"
+        "}";
     m_micButton->setStyleSheet(micButtonStyle);
     connect(m_micButton, &QPushButton::toggled, this, &VideoWindow::onMicToggled);
     m_micButton->installEventFilter(this);
@@ -329,6 +346,44 @@ void VideoWindow::setupCustomTitleBar()
     m_titleBarLayout->addWidget(m_closeButton);
     
     m_mainLayout->addWidget(m_titleBar);
+
+    auto applyToolSelection = [this, micButtonStyle, selectedToolStyle](QPushButton *sel) {
+        m_penButton->setStyleSheet(micButtonStyle);
+        m_rectButton->setStyleSheet(micButtonStyle);
+        m_circleButton->setStyleSheet(micButtonStyle);
+        m_textButton->setStyleSheet(micButtonStyle);
+        m_eraserButton->setStyleSheet(micButtonStyle);
+        m_undoButton->setStyleSheet(micButtonStyle);
+        m_likeButton->setStyleSheet(micButtonStyle);
+        if (sel) sel->setStyleSheet(selectedToolStyle);
+    };
+
+    connect(m_penButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
+        applyToolSelection(m_penButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(true);
+    });
+    connect(m_rectButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
+        applyToolSelection(m_rectButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+    });
+    connect(m_circleButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
+        applyToolSelection(m_circleButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+    });
+    connect(m_textButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
+        applyToolSelection(m_textButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+    });
+    connect(m_eraserButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
+        applyToolSelection(m_eraserButton);
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+    });
+    connect(m_likeButton, &QPushButton::clicked, this, [this]() {
+        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+    });
+    connect(m_undoButton, &QPushButton::clicked, this, [this]() {
+        if (m_videoDisplayWidget) m_videoDisplayWidget->sendUndo();
+    });
 }
 
 void VideoWindow::mousePressEvent(QMouseEvent *event)

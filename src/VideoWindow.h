@@ -94,6 +94,9 @@ private:
     bool m_textSizeDragActive = false;
     QPoint m_textSizeDragStartPos;
     int m_textSizeDragStartValue = 16;
+    QLabel *m_likeAnimLabel = nullptr;
+    QMovie *m_likeMovie = nullptr;
+    void showLikeAnimation();
 };
 
 #endif // VIDEOWINDOW_H

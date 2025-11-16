@@ -723,7 +723,7 @@ int MainWindow::loadOrGenerateColorId()
         configFile.close();
     }
 
-    int defaultColorId = 0;
+    int defaultColorId = 3;
     saveColorIdToConfig(defaultColorId);
     return defaultColorId;
 }

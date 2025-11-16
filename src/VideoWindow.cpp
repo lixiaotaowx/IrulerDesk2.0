@@ -5,6 +5,8 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QAbstractItemView>
+#include <QFile>
+#include <QMovie>
 #ifdef _WIN32
 #define NOMINMAX
 #endif
@@ -93,6 +95,10 @@ void VideoWindow::setupUI()
             this, [this](int colorId){ updateColorButtonVisual(colorId); });
     
     m_mainLayout->addWidget(m_videoDisplayWidget, 1);
+
+    m_likeAnimLabel = new QLabel(m_videoDisplayWidget);
+    m_likeAnimLabel->setVisible(false);
+    m_likeAnimLabel->setStyleSheet("QLabel { background: transparent; }");
 }
 
 void VideoWindow::setupCustomTitleBar()
@@ -319,18 +325,24 @@ void VideoWindow::setupCustomTitleBar()
     m_penButton->setIconSize(QSize(16, 16));
     m_penButton->setStyleSheet(micButtonStyle);
     m_penButton->setToolTip(QStringLiteral("画笔"));
+    m_penButton->setCheckable(true);
+    m_penButton->setChecked(false);
 
     m_rectButton = new QPushButton("", m_titleBar);
     m_rectButton->setIcon(QIcon(iconDir + "/sele_box.png"));
     m_rectButton->setIconSize(QSize(16, 16));
     m_rectButton->setStyleSheet(micButtonStyle);
     m_rectButton->setToolTip(QStringLiteral("矩形"));
+    m_rectButton->setCheckable(true);
+    m_rectButton->setChecked(false);
 
     m_circleButton = new QPushButton("", m_titleBar);
     m_circleButton->setIcon(QIcon(iconDir + "/sele.png"));
     m_circleButton->setIconSize(QSize(16, 16));
     m_circleButton->setStyleSheet(micButtonStyle);
     m_circleButton->setToolTip(QStringLiteral("圆形"));
+    m_circleButton->setCheckable(true);
+    m_circleButton->setChecked(false);
 
     m_textButton = new QPushButton("", m_titleBar);
     m_textButton->setIcon(QIcon(iconDir + "/text.png"));
@@ -338,12 +350,16 @@ void VideoWindow::setupCustomTitleBar()
     m_textButton->setStyleSheet(micButtonStyle);
     m_textButton->setToolTip(QStringLiteral("文字"));
     m_textButton->installEventFilter(this);
+    m_textButton->setCheckable(true);
+    m_textButton->setChecked(false);
 
     m_eraserButton = new QPushButton("", m_titleBar);
     m_eraserButton->setIcon(QIcon(iconDir + "/xiangpi.png"));
     m_eraserButton->setIconSize(QSize(16, 16));
     m_eraserButton->setStyleSheet(micButtonStyle);
     m_eraserButton->setToolTip(QStringLiteral("橡皮擦"));
+    m_eraserButton->setCheckable(true);
+    m_eraserButton->setChecked(false);
 
     m_undoButton = new QPushButton("", m_titleBar);
     m_undoButton->setIcon(QIcon(iconDir + "/z.png"));
@@ -361,9 +377,10 @@ void VideoWindow::setupCustomTitleBar()
     m_toolBarLayout = new QHBoxLayout(m_toolBar);
     m_toolBarLayout->setContentsMargins(0, 0, 0, 0);
     m_toolBarLayout->setSpacing(2);
-    m_toolBarLayout->addWidget(m_penButton);
-    m_toolBarLayout->addSpacing(2);
+    // 颜色切换放在第一个
     m_toolBarLayout->addWidget(m_colorButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_penButton);
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_rectButton);
     m_toolBarLayout->addSpacing(2);
@@ -392,55 +409,86 @@ void VideoWindow::setupCustomTitleBar()
     
     m_mainLayout->addWidget(m_titleBar);
 
-    auto applyToolSelection = [this, micButtonStyle, selectedToolStyle](QPushButton *sel) {
-        m_penButton->setStyleSheet(micButtonStyle);
-        m_rectButton->setStyleSheet(micButtonStyle);
-        m_circleButton->setStyleSheet(micButtonStyle);
-        m_textButton->setStyleSheet(micButtonStyle);
-        m_eraserButton->setStyleSheet(micButtonStyle);
+    auto updateToolStyles = [this, micButtonStyle, selectedToolStyle]() {
+        m_penButton->setStyleSheet(m_penButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        m_rectButton->setStyleSheet(m_rectButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        m_circleButton->setStyleSheet(m_circleButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        m_textButton->setStyleSheet(m_textButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        m_eraserButton->setStyleSheet(m_eraserButton->isChecked() ? selectedToolStyle : micButtonStyle);
         m_undoButton->setStyleSheet(micButtonStyle);
         m_likeButton->setStyleSheet(micButtonStyle);
-        if (sel) sel->setStyleSheet(selectedToolStyle);
     };
 
-    connect(m_penButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
-        applyToolSelection(m_penButton);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(0);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(true);
+    connect(m_penButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
+        if (checked) {
+            m_rectButton->setChecked(false);
+            m_circleButton->setChecked(false);
+            m_textButton->setChecked(false);
+            m_eraserButton->setChecked(false);
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(0); m_videoDisplayWidget->setAnnotationEnabled(true); }
+        } else {
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
+        }
         if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
         if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
+        updateToolStyles();
     });
-    connect(m_rectButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
-        applyToolSelection(m_rectButton);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(2);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+    connect(m_rectButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
+        if (checked) {
+            m_penButton->setChecked(false);
+            m_circleButton->setChecked(false);
+            m_textButton->setChecked(false);
+            m_eraserButton->setChecked(false);
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(2); m_videoDisplayWidget->setAnnotationEnabled(true); }
+        } else {
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
+        }
         if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
         if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
+        updateToolStyles();
     });
-    connect(m_circleButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
-        applyToolSelection(m_circleButton);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(3);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
+    connect(m_circleButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
+        if (checked) {
+            m_penButton->setChecked(false);
+            m_rectButton->setChecked(false);
+            m_textButton->setChecked(false);
+            m_eraserButton->setChecked(false);
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(3); m_videoDisplayWidget->setAnnotationEnabled(true); }
+        } else {
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
+        }
         if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
         if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
+        updateToolStyles();
     });
-    connect(m_textButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
-        applyToolSelection(m_textButton);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(4);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setTextFontSize(m_textFontSize);
-        if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+    connect(m_textButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
+        if (checked) {
+            m_penButton->setChecked(false);
+            m_rectButton->setChecked(false);
+            m_circleButton->setChecked(false);
+            m_eraserButton->setChecked(false);
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(4); m_videoDisplayWidget->setAnnotationEnabled(true); m_videoDisplayWidget->setTextFontSize(m_textFontSize); }
+        } else {
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
+            if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+            if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
+        }
+        updateToolStyles();
+    });
+    connect(m_eraserButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
+        if (checked) {
+            m_penButton->setChecked(false);
+            m_rectButton->setChecked(false);
+            m_circleButton->setChecked(false);
+            m_textButton->setChecked(false);
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(1); m_videoDisplayWidget->setAnnotationEnabled(true); }
+        } else {
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
+        }
         if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
+        updateToolStyles();
     });
-    connect(m_eraserButton, &QPushButton::clicked, this, [this, applyToolSelection]() {
-        applyToolSelection(m_eraserButton);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setToolMode(1);
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
-        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
-    });
-    connect(m_likeButton, &QPushButton::clicked, this, [this]() {
-        if (m_videoDisplayWidget) m_videoDisplayWidget->setAnnotationEnabled(false);
-    });
+    connect(m_likeButton, &QPushButton::clicked, this, [this]() { showLikeAnimation(); });
     connect(m_undoButton, &QPushButton::clicked, this, [this]() {
         if (m_videoDisplayWidget) m_videoDisplayWidget->sendUndo();
     });
@@ -693,4 +741,51 @@ void VideoWindow::toggleFullscreen()
         showFullScreen();
         if (m_titleBar) m_titleBar->hide();
     }
+}
+
+void VideoWindow::showLikeAnimation()
+{
+    if (!m_videoDisplayWidget) return;
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString iconDir = appDir + "/maps/logo";
+    QStringList candidates;
+    candidates << iconDir + "/good.gif" << appDir + "/maps/icon/like.gif" << iconDir + "/like.gif";
+    QString file;
+    for (const QString &c : candidates) {
+        if (QFile::exists(c)) { file = c; break; }
+    }
+    if (!file.isEmpty()) {
+        if (!m_likeMovie) {
+            m_likeMovie = new QMovie(file, QByteArray(), this);
+        } else {
+            m_likeMovie->setFileName(file);
+            m_likeMovie->stop();
+        }
+        m_likeMovie->setCacheMode(QMovie::CacheAll);
+        m_likeMovie->setLoopCount(1);
+        m_likeAnimLabel->setMovie(m_likeMovie);
+        m_likeMovie->jumpToFrame(0);
+        QSize sz = m_likeMovie->currentPixmap().size();
+        QRect area = m_videoDisplayWidget->rect();
+        QPoint center(area.width()/2, area.height()/2);
+        int w = sz.width();
+        int h = sz.height();
+        m_likeAnimLabel->setGeometry(center.x() - w/2, center.y() - h/2, w, h);
+        m_likeAnimLabel->setVisible(true);
+        m_likeAnimLabel->raise();
+        m_likeMovie->start();
+        QTimer::singleShot(2000, this, [this]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); if (m_likeMovie) m_likeMovie->stop(); });
+        return;
+    }
+    QPixmap pix(iconDir + "/good.png");
+    if (pix.isNull()) return;
+    QRect area = m_videoDisplayWidget->rect();
+    QPoint center(area.width()/2, area.height()/2);
+    int w = pix.width();
+    int h = pix.height();
+    m_likeAnimLabel->setPixmap(pix);
+    m_likeAnimLabel->setGeometry(center.x() - w/2, center.y() - h/2, w, h);
+    m_likeAnimLabel->setVisible(true);
+    m_likeAnimLabel->raise();
+    QTimer::singleShot(800, this, [this]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); });
 }

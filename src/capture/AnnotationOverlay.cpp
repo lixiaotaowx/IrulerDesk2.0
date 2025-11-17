@@ -62,12 +62,38 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
             m_currentStroke.points.clear();
         }
     } else if (phase == "undo") {
-        // 撤销上一笔
         if (!m_currentStroke.points.isEmpty()) {
-            // 正在绘制时撤销当前笔
             m_currentStroke.points.clear();
         } else if (!m_strokes.isEmpty()) {
-            m_strokes.removeLast();
+            int n = m_strokes.size();
+            if (n >= 3) {
+                const auto &a = m_strokes[n - 1];
+                const auto &b = m_strokes[n - 2];
+                const auto &c = m_strokes[n - 3];
+                bool cond = (a.thickness == 15 && b.thickness == 15 && c.thickness == 15 &&
+                             a.colorId == b.colorId && b.colorId == c.colorId &&
+                             a.points.size() == 2 && b.points.size() == 2 && c.points.size() == 2);
+                if (cond) {
+                    QPoint e = a.points[0];
+                    auto share = [](const Stroke &s, const QPoint &p) -> bool { return (s.points[0] == p || s.points[1] == p); };
+                    bool shareAll = share(b, e) && share(c, e);
+                    if (!shareAll) {
+                        e = a.points[1];
+                        shareAll = share(b, e) && share(c, e);
+                    }
+                    if (shareAll) {
+                        m_strokes.removeLast();
+                        m_strokes.removeLast();
+                        m_strokes.removeLast();
+                    } else {
+                        m_strokes.removeLast();
+                    }
+                } else {
+                    m_strokes.removeLast();
+                }
+            } else {
+                m_strokes.removeLast();
+            }
         }
     } else if (phase == "clear") {
         // 清空所有笔划

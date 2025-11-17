@@ -198,6 +198,7 @@ void VideoWindow::setupCustomTitleBar()
     // 使用与头像相同的相对路径策略：appDir/maps/logo
     QString appDir = QCoreApplication::applicationDirPath();
     QString iconDir = appDir + "/maps/logo";
+    setWindowIcon(QIcon(iconDir + "/logo.png"));
     m_micIconOff = QIcon(iconDir + "/Mic_off.png");
     m_micIconOn  = QIcon(iconDir + "/Mic_on.png");
     m_micButton->setIcon(m_micIconOff);
@@ -487,10 +488,12 @@ void VideoWindow::setupCustomTitleBar()
             QSignalBlocker b2(m_circleButton);
             QSignalBlocker b3(m_textButton);
             QSignalBlocker b4(m_eraserButton);
+            QSignalBlocker b5(m_arrowButton);
             m_rectButton->setChecked(false);
             m_circleButton->setChecked(false);
             m_textButton->setChecked(false);
             m_eraserButton->setChecked(false);
+            m_arrowButton->setChecked(false);
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(0); m_videoDisplayWidget->setAnnotationEnabled(true); }
         } else {
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
@@ -505,10 +508,12 @@ void VideoWindow::setupCustomTitleBar()
             QSignalBlocker b2(m_circleButton);
             QSignalBlocker b3(m_textButton);
             QSignalBlocker b4(m_eraserButton);
+            QSignalBlocker b5(m_arrowButton);
             m_penButton->setChecked(false);
             m_circleButton->setChecked(false);
             m_textButton->setChecked(false);
             m_eraserButton->setChecked(false);
+            m_arrowButton->setChecked(false);
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(2); m_videoDisplayWidget->setAnnotationEnabled(true); }
         } else {
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
@@ -563,10 +568,12 @@ void VideoWindow::setupCustomTitleBar()
             QSignalBlocker b2(m_rectButton);
             QSignalBlocker b3(m_circleButton);
             QSignalBlocker b4(m_eraserButton);
+            QSignalBlocker b5(m_arrowButton);
             m_penButton->setChecked(false);
             m_rectButton->setChecked(false);
             m_circleButton->setChecked(false);
             m_eraserButton->setChecked(false);
+            m_arrowButton->setChecked(false);
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(4); m_videoDisplayWidget->setAnnotationEnabled(true); m_videoDisplayWidget->setTextFontSize(m_textFontSize); }
         } else {
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
@@ -581,10 +588,12 @@ void VideoWindow::setupCustomTitleBar()
             QSignalBlocker b2(m_rectButton);
             QSignalBlocker b3(m_circleButton);
             QSignalBlocker b4(m_textButton);
+            QSignalBlocker b5(m_arrowButton);
             m_penButton->setChecked(false);
             m_rectButton->setChecked(false);
             m_circleButton->setChecked(false);
             m_textButton->setChecked(false);
+            m_arrowButton->setChecked(false);
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(1); m_videoDisplayWidget->setAnnotationEnabled(true); }
         } else {
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }

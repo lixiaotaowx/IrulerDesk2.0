@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QStyleFactory>
 #include <iostream>
 #ifdef _WIN32
@@ -17,7 +18,8 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     
-    
+    QString appDir = QCoreApplication::applicationDirPath();
+    app.setWindowIcon(QIcon(appDir + "/maps/logo/logo.png"));
     
     // 设置应用程序信息
     app.setApplicationName("ScreenStreamApp");

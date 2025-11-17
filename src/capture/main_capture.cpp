@@ -191,6 +191,7 @@ int main(int argc, char *argv[])
     ConsoleLogger::installQtMessageHandler();
 
     QApplication app(argc, argv);
+    app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/logo.png"));
     
     
     

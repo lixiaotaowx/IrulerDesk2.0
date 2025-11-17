@@ -1086,6 +1086,13 @@ void VideoDisplayWidget::sendLike()
     }
 }
 
+QImage VideoDisplayWidget::captureToImage() const
+{
+    if (!m_videoLabel) return QImage();
+    QPixmap pm = m_videoLabel->grab();
+    return pm.toImage();
+}
+
 void VideoDisplayWidget::closeEvent(QCloseEvent *event)
 {
     // 关闭窗口时，主动停止接收并断开连接（会发送 stop_streaming）

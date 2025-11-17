@@ -132,6 +132,7 @@ public slots:
     void sendClear();
     void sendCloseOverlay();
     void sendLike();
+    QImage captureToImage() const;
 
 private slots:
     void onStartStopClicked();

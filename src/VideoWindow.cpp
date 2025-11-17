@@ -9,6 +9,8 @@
 #include <QMovie>
 #include <QGraphicsOpacityEffect>
 #include <QPropertyAnimation>
+#include <QClipboard>
+#include <QGuiApplication>
 #ifdef _WIN32
 #define NOMINMAX
 #endif
@@ -395,6 +397,13 @@ void VideoWindow::setupCustomTitleBar()
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_undoButton);
     m_toolBarLayout->addSpacing(2);
+    m_cameraButton = new QPushButton("", m_titleBar);
+    m_cameraButton->setIcon(QIcon(iconDir + "/camera.png"));
+    m_cameraButton->setIconSize(QSize(16, 16));
+    m_cameraButton->setStyleSheet(micButtonStyle);
+    m_cameraButton->setToolTip(QStringLiteral("截图到剪贴板"));
+    m_toolBarLayout->addWidget(m_cameraButton);
+    m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_likeButton);
 
     m_titleBarLayout->addWidget(m_toolBar, 0, Qt::AlignCenter);
@@ -418,6 +427,7 @@ void VideoWindow::setupCustomTitleBar()
         m_textButton->setStyleSheet(m_textButton->isChecked() ? selectedToolStyle : micButtonStyle);
         m_eraserButton->setStyleSheet(m_eraserButton->isChecked() ? selectedToolStyle : micButtonStyle);
         m_undoButton->setStyleSheet(micButtonStyle);
+        m_cameraButton->setStyleSheet(micButtonStyle);
         m_likeButton->setStyleSheet(micButtonStyle);
     };
 
@@ -491,6 +501,15 @@ void VideoWindow::setupCustomTitleBar()
         updateToolStyles();
     });
     connect(m_likeButton, &QPushButton::clicked, this, [this]() { showLikeAnimation(); });
+    connect(m_cameraButton, &QPushButton::clicked, this, [this]() {
+        if (!m_videoDisplayWidget) return;
+        QImage img = m_videoDisplayWidget->captureToImage();
+        if (!img.isNull()) {
+            QClipboard *cb = QGuiApplication::clipboard();
+            if (cb) cb->setImage(img);
+            showClipboardToast();
+        }
+    });
     connect(m_undoButton, &QPushButton::clicked, this, [this]() {
         if (m_videoDisplayWidget) m_videoDisplayWidget->sendUndo();
     });
@@ -820,4 +839,32 @@ void VideoWindow::showLikeAnimation()
     m_likeAnimLabel->setVisible(true);
     m_likeAnimLabel->raise();
     QTimer::singleShot(800, this, [this]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); });
+}
+
+void VideoWindow::showClipboardToast()
+{
+    if (!m_videoDisplayWidget) return;
+    if (!m_clipToast) {
+        m_clipToast = new QLabel(m_videoDisplayWidget);
+        m_clipToast->setStyleSheet("QLabel { color: #ffffff; background-color: rgba(0,0,0,160); border: 1px solid rgba(255,255,255,100); padding: 6px 12px; border-radius: 6px; }");
+        m_clipToast->setAlignment(Qt::AlignCenter);
+    }
+    m_clipToast->setText(QStringLiteral("已存入粘贴板！"));
+    QRect area = m_videoDisplayWidget->rect();
+    QSize sz = m_clipToast->sizeHint();
+    int x = area.width()/2 - sz.width()/2;
+    int y = area.height() - sz.height() - 24;
+    m_clipToast->setGeometry(x, y, sz.width(), sz.height());
+    auto effect = new QGraphicsOpacityEffect(m_clipToast);
+    m_clipToast->setGraphicsEffect(effect);
+    m_clipToast->setVisible(true);
+    m_clipToast->raise();
+    QTimer::singleShot(1200, this, [this, effect]() {
+        auto anim = new QPropertyAnimation(effect, "opacity", m_clipToast);
+        anim->setDuration(800);
+        anim->setStartValue(1.0);
+        anim->setEndValue(0.0);
+        QObject::connect(anim, &QPropertyAnimation::finished, this, [this, effect]() { if (m_clipToast) m_clipToast->setVisible(false); effect->deleteLater(); });
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    });
 }

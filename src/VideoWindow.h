@@ -63,6 +63,7 @@ private:
     QPushButton *m_textButton;
     QPushButton *m_eraserButton;
     QPushButton *m_undoButton;
+    QPushButton *m_cameraButton;
     QPushButton *m_likeButton;
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
@@ -97,6 +98,8 @@ private:
     QLabel *m_likeAnimLabel = nullptr;
     QMovie *m_likeMovie = nullptr;
     void showLikeAnimation();
+    QLabel *m_clipToast = nullptr;
+    void showClipboardToast();
 };
 
 #endif // VIDEOWINDOW_H

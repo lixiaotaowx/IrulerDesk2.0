@@ -66,6 +66,23 @@ VideoWindow::VideoWindow(QWidget *parent)
 
 VideoWindow::~VideoWindow()
 {
+    if (m_textSizeLongPressTimer && m_textSizeLongPressTimer->isActive()) {
+        m_textSizeLongPressTimer->stop();
+    }
+    if (m_volumeLongPressTimer && m_volumeLongPressTimer->isActive()) {
+        m_volumeLongPressTimer->stop();
+    }
+    if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+    if (m_volumeSlider) m_volumeSlider->setVisible(false);
+    if (m_likeMovie) {
+        m_likeMovie->stop();
+    }
+    if (m_likeAnimLabel) {
+        m_likeAnimLabel->hide();
+    }
+    if (m_clipToast) {
+        m_clipToast->hide();
+    }
 }
 
 VideoDisplayWidget* VideoWindow::getVideoDisplayWidget() const
@@ -103,6 +120,22 @@ void VideoWindow::setupUI()
     m_likeAnimLabel = new QLabel(m_videoDisplayWidget);
     m_likeAnimLabel->setVisible(false);
     m_likeAnimLabel->setStyleSheet("QLabel { background: transparent; }");
+
+    m_fullscreenBar = new QWidget(this);
+    m_fullscreenBar->setFixedHeight(28);
+    m_fullscreenBar->setStyleSheet("QWidget { background: transparent; }");
+    m_fullscreenBar->setVisible(false);
+    m_fullscreenBarLayout = new QHBoxLayout(m_fullscreenBar);
+    m_fullscreenBarLayout->setContentsMargins(12, 0, 4, 0);
+    m_fullscreenBarLayout->setSpacing(0);
+    m_fullscreenPill = new QWidget(m_fullscreenBar);
+    m_fullscreenPill->setStyleSheet("QWidget { background-color: rgba(0,0,0,120); border-radius: 14px; } ");
+    m_fullscreenPillLayout = new QHBoxLayout(m_fullscreenPill);
+    m_fullscreenPillLayout->setContentsMargins(10, 2, 10, 2);
+    m_fullscreenPillLayout->setSpacing(6);
+    m_fullscreenBarLayout->addStretch();
+    m_fullscreenBarLayout->addWidget(m_fullscreenPill, 0, Qt::AlignCenter);
+    m_fullscreenBarLayout->addStretch();
 }
 
 void VideoWindow::setupCustomTitleBar()
@@ -406,7 +439,12 @@ void VideoWindow::setupCustomTitleBar()
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_likeButton);
 
-    m_titleBarLayout->addWidget(m_toolBar, 0, Qt::AlignCenter);
+    m_titleCenter = new QWidget(m_titleBar);
+    m_titleCenterLayout = new QHBoxLayout(m_titleCenter);
+    m_titleCenterLayout->setContentsMargins(0, 0, 0, 0);
+    m_titleCenterLayout->setSpacing(0);
+    m_titleCenterLayout->addWidget(m_toolBar);
+    m_titleBarLayout->addWidget(m_titleCenter, 0, Qt::AlignCenter);
     m_titleBarLayout->addStretch();
     m_titleBarLayout->addWidget(m_speakerButton);
     m_titleBarLayout->addSpacing(2);
@@ -756,11 +794,19 @@ void VideoWindow::toggleFullscreen()
     if (isFullScreen()) {
         showNormal();
         if (m_titleBar) m_titleBar->show();
+        detachToolbarToTitleBar();
+        if (m_fullscreenBar) m_fullscreenBar->setVisible(false);
     } else {
         // 记录当前几何以便恢复
         m_normalGeometry = geometry();
         showFullScreen();
         if (m_titleBar) m_titleBar->hide();
+        attachToolbarToFullscreenBar();
+        if (m_fullscreenBar) {
+            m_fullscreenBar->setGeometry(0, 0, width(), m_fullscreenBar->height());
+            m_fullscreenBar->raise();
+            m_fullscreenBar->setVisible(true);
+        }
     }
 }
 
@@ -795,15 +841,18 @@ void VideoWindow::showLikeAnimation()
         m_likeAnimLabel->raise();
         m_likeMovie->start();
         int total = m_likeMovie->frameCount();
+        QPointer<QLabel> lblPtr(m_likeAnimLabel);
+        QPointer<QMovie> mvPtr(m_likeMovie);
         if (total > 0) {
-            QObject::connect(m_likeMovie, &QMovie::frameChanged, this, [this, total](int frame) {
+            QObject::connect(m_likeMovie, &QMovie::frameChanged, this, [lblPtr, mvPtr, total](int frame) {
+                if (!lblPtr || !mvPtr) return;
                 if (frame >= total - 1) {
-                    if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false);
-                    if (m_likeMovie) m_likeMovie->stop();
+                    lblPtr->setVisible(false);
+                    mvPtr->stop();
                 }
-            });
+            }, Qt::QueuedConnection);
         } else {
-            QTimer::singleShot(2000, this, [this]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); if (m_likeMovie) m_likeMovie->stop(); });
+            QTimer::singleShot(2000, this, [lblPtr, mvPtr]() { if (lblPtr) lblPtr->setVisible(false); if (mvPtr) mvPtr->stop(); });
         }
         return;
     }
@@ -867,4 +916,62 @@ void VideoWindow::showClipboardToast()
         QObject::connect(anim, &QPropertyAnimation::finished, this, [this, effect]() { if (m_clipToast) m_clipToast->setVisible(false); effect->deleteLater(); });
         anim->start(QAbstractAnimation::DeleteWhenStopped);
     });
+}
+void VideoWindow::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (m_fullscreenBar && m_fullscreenBar->isVisible()) {
+        m_fullscreenBar->setGeometry(0, 0, width(), m_fullscreenBar->height());
+        m_fullscreenBar->raise();
+    }
+}
+
+void VideoWindow::attachToolbarToFullscreenBar()
+{
+    if (!m_toolBar || !m_fullscreenPillLayout) return;
+    // 从标题栏中心容器移除工具栏
+    if (m_titleCenterLayout) {
+        int cidx = m_titleCenterLayout->indexOf(m_toolBar);
+        if (cidx >= 0) { QLayoutItem *cit = m_titleCenterLayout->takeAt(cidx); if (cit) delete cit; }
+    }
+    // 同时移除扬声器和麦克按钮
+    if (m_titleBarLayout) {
+        int sidx = m_titleBarLayout->indexOf(m_speakerButton);
+        if (sidx >= 0) { QLayoutItem *it = m_titleBarLayout->takeAt(sidx); if (it) delete it; }
+        int midx = m_titleBarLayout->indexOf(m_micButton);
+        if (midx >= 0) { QLayoutItem *it = m_titleBarLayout->takeAt(midx); if (it) delete it; }
+    }
+    // 归属到全屏 pill
+    m_toolBar->setParent(m_fullscreenPill);
+    m_fullscreenPillLayout->addWidget(m_toolBar);
+    m_fullscreenPillLayout->addSpacing(8);
+    m_speakerButton->setParent(m_fullscreenPill);
+    m_fullscreenPillLayout->addWidget(m_speakerButton);
+    m_fullscreenPillLayout->addSpacing(4);
+    m_micButton->setParent(m_fullscreenPill);
+    m_fullscreenPillLayout->addWidget(m_micButton);
+}
+
+void VideoWindow::detachToolbarToTitleBar()
+{
+    if (!m_toolBar || !m_titleBarLayout) return;
+    if (m_fullscreenPillLayout) {
+        int idx = m_fullscreenPillLayout->indexOf(m_toolBar);
+        if (idx >= 0) { QLayoutItem *it = m_fullscreenPillLayout->takeAt(idx); if (it) delete it; }
+        int sidx = m_fullscreenPillLayout->indexOf(m_speakerButton);
+        if (sidx >= 0) { QLayoutItem *it = m_fullscreenPillLayout->takeAt(sidx); if (it) delete it; }
+        int midx = m_fullscreenPillLayout->indexOf(m_micButton);
+        if (midx >= 0) { QLayoutItem *it = m_fullscreenPillLayout->takeAt(midx); if (it) delete it; }
+    }
+    m_toolBar->setParent(m_titleCenter);
+    if (m_titleCenterLayout) m_titleCenterLayout->addWidget(m_toolBar);
+    // 把扬声器/麦克恢复到最小化按钮之前
+    int indexMin = m_titleBarLayout->indexOf(m_minimizeButton);
+    if (indexMin < 0) indexMin = m_titleBarLayout->count();
+    m_micButton->setParent(m_titleBar);
+    m_speakerButton->setParent(m_titleBar);
+    m_titleBarLayout->insertSpacing(indexMin, 2);
+    m_titleBarLayout->insertWidget(indexMin, m_micButton);
+    m_titleBarLayout->insertSpacing(indexMin, 2);
+    m_titleBarLayout->insertWidget(indexMin, m_speakerButton);
 }

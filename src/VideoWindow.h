@@ -33,6 +33,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void onMinimizeClicked();
@@ -100,6 +101,14 @@ private:
     void showLikeAnimation();
     QLabel *m_clipToast = nullptr;
     void showClipboardToast();
+    QWidget *m_fullscreenBar = nullptr;
+    QHBoxLayout *m_fullscreenBarLayout = nullptr;
+    QWidget *m_fullscreenPill = nullptr;
+    QHBoxLayout *m_fullscreenPillLayout = nullptr;
+    QWidget *m_titleCenter = nullptr;
+    QHBoxLayout *m_titleCenterLayout = nullptr;
+    void attachToolbarToFullscreenBar();
+    void detachToolbarToTitleBar();
 };
 
 #endif // VIDEOWINDOW_H

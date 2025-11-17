@@ -231,15 +231,18 @@ void AnnotationOverlay::onLikeRequested(const QString &viewerId)
         m_likeLabel->raise();
         m_likeMovie->start();
         int total = m_likeMovie->frameCount();
+        QPointer<QLabel> lblPtr(m_likeLabel);
+        QPointer<QMovie> mvPtr(m_likeMovie);
         if (total > 0) {
-            QObject::connect(m_likeMovie, &QMovie::frameChanged, this, [this, total](int frame) {
+            QObject::connect(m_likeMovie, &QMovie::frameChanged, this, [lblPtr, mvPtr, total](int frame) {
+                if (!lblPtr || !mvPtr) return;
                 if (frame >= total - 1) {
-                    if (m_likeLabel) m_likeLabel->setVisible(false);
-                    if (m_likeMovie) m_likeMovie->stop();
+                    lblPtr->setVisible(false);
+                    mvPtr->stop();
                 }
-            });
+            }, Qt::QueuedConnection);
         } else {
-            QTimer::singleShot(2000, this, [this]() { if (m_likeLabel) m_likeLabel->setVisible(false); if (m_likeMovie) m_likeMovie->stop(); });
+            QTimer::singleShot(2000, this, [lblPtr, mvPtr]() { if (lblPtr) lblPtr->setVisible(false); if (mvPtr) mvPtr->stop(); });
         }
         return;
     }

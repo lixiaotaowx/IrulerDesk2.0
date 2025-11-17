@@ -27,7 +27,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    struct Stroke { QVector<QPoint> points; int colorId = 0; };
+    struct Stroke { QVector<QPoint> points; int colorId = 0; int thickness = 3; };
     struct TextItem { QString text; QPoint pos; int colorId = 0; int fontSize = 16; };
     Stroke m_currentStroke;
     QVector<Stroke> m_strokes;
@@ -39,8 +39,13 @@ private:
     bool m_drawingCircle = false;
     QPoint m_circleCenter;
     int m_circleRadius = 0;
+    bool m_drawingArrow = false;
+    QPoint m_arrowStart;
+    QPoint m_arrowEnd;
     QLabel *m_likeLabel = nullptr;
     QMovie *m_likeMovie = nullptr;
+    QTimer *m_idleTimer = nullptr;
+    qint64 m_lastEventMs = 0;
 };
 
 #endif // ANNOTATIONOVERLAY_H

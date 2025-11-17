@@ -37,10 +37,14 @@
             searchPath = exeDir + ";" + std::string(cwdA);
         }
 
-        if (!SymInitialize(process, searchPath.c_str(), TRUE)) {
+        BOOL symInitOk = SymInitialize(process, searchPath.c_str(), TRUE);
+        if (!symInitOk) {
             std::fprintf(out, "[CrashGuard] SymInitialize failed (%lu)\n", GetLastError());
             std::fflush(out);
-            return EXCEPTION_EXECUTE_HANDLER;
+            symInitOk = SymInitialize(process, nullptr, TRUE);
+            if (symInitOk) {
+                SymSetSearchPath(process, searchPath.c_str());
+            }
         }
  
          CONTEXT ctx = *ep->ContextRecord; // 复制上下文
@@ -90,9 +94,12 @@
                  std::fprintf(out, "#%02d  [0x%llx]\n", i, (unsigned long long)addr);
              }
          }
-         std::fflush(out);
-         SymCleanup(process);
-         return EXCEPTION_EXECUTE_HANDLER; // 防止系统弹窗
+        std::fflush(out);
+        if (symInitOk) {
+            SymCleanup(process);
+        }
+        ExitProcess(1);
+        return EXCEPTION_EXECUTE_HANDLER;
      }
  #endif
  }

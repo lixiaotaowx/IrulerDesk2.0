@@ -966,6 +966,11 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                             edit->deleteLater();
                         });
                     }
+                } else if (m_toolMode == 5) {
+                    m_isAnnotating = true;
+                    if (m_receiver) {
+                        m_receiver->sendAnnotationEvent("arrow_down", src.x(), src.y(), m_currentColorId);
+                    }
                 }
             }
             return true; // 消费事件
@@ -983,6 +988,8 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                         m_receiver->sendAnnotationEvent("rect_move", src.x(), src.y(), m_currentColorId);
                     } else if (m_toolMode == 3) {
                         m_receiver->sendAnnotationEvent("circle_move", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 5) {
+                        m_receiver->sendAnnotationEvent("arrow_move", src.x(), src.y(), m_currentColorId);
                     }
                 }
                 return true;
@@ -1004,6 +1011,8 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                         m_receiver->sendAnnotationEvent("rect_up", src.x(), src.y(), m_currentColorId);
                     } else if (m_toolMode == 3) {
                         m_receiver->sendAnnotationEvent("circle_up", src.x(), src.y(), m_currentColorId);
+                    } else if (m_toolMode == 5) {
+                        m_receiver->sendAnnotationEvent("arrow_up", src.x(), src.y(), m_currentColorId);
                     }
                 }
             }
@@ -1181,7 +1190,7 @@ void VideoDisplayWidget::setToolMode(int mode)
 {
     int m = mode;
     if (m < 0) m = 0;
-    if (m > 4) m = 4;
+    if (m > 5) m = 5;
     m_toolMode = m;
     if (m_videoLabel) {
         if (m_toolMode == 1) {
@@ -1201,6 +1210,8 @@ void VideoDisplayWidget::setToolMode(int mode)
             m_videoLabel->setCursor(Qt::CrossCursor);
         } else if (m_toolMode == 4) {
             m_videoLabel->setCursor(Qt::IBeamCursor);
+        } else if (m_toolMode == 5) {
+            m_videoLabel->setCursor(Qt::CrossCursor);
         } else {
             m_videoLabel->setCursor(Qt::ArrowCursor);
         }

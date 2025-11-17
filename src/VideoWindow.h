@@ -61,6 +61,7 @@ private:
     QPushButton *m_penButton;
     QPushButton *m_rectButton;
     QPushButton *m_circleButton;
+    QPushButton *m_arrowButton;
     QPushButton *m_textButton;
     QPushButton *m_eraserButton;
     QPushButton *m_undoButton;
@@ -69,11 +70,11 @@ private:
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
     QPushButton *m_speakerButton;
-    QSlider *m_textSizeSlider;
-    QTimer *m_textSizeLongPressTimer;
-    QLabel *m_textSizeFloatLabel;
-    QSlider *m_volumeSlider;
-    QTimer *m_volumeLongPressTimer;
+    QSlider *m_textSizeSlider = nullptr;
+    QTimer *m_textSizeLongPressTimer = nullptr;
+    QLabel *m_textSizeFloatLabel = nullptr;
+    QSlider *m_volumeSlider = nullptr;
+    QTimer *m_volumeLongPressTimer = nullptr;
     QIcon m_micIconOn;
     QIcon m_micIconOff;
     QIcon m_speakerIconOn;

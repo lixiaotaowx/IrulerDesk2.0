@@ -35,6 +35,9 @@ void AnnotationOverlay::clear()
     m_drawingCircle = false;
     m_circleCenter = QPoint();
     m_circleRadius = 0;
+    m_drawingArrow = false;
+    m_arrowStart = QPoint();
+    m_arrowEnd = QPoint();
     m_texts.clear();
     update();
 }
@@ -46,6 +49,7 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
     if (phase == "down") {
         m_currentStroke.points.clear();
         m_currentStroke.colorId = colorId;
+        m_currentStroke.thickness = 3;
         m_currentStroke.points.push_back(p);
     } else if (phase == "move") {
         if (!m_currentStroke.points.isEmpty()) {
@@ -84,6 +88,7 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
         if (m_drawingRect) {
             Stroke s;
             s.colorId = m_currentShapeColor;
+            s.thickness = 3;
             QPoint tl(qMin(m_rectStart.x(), m_rectEnd.x()), qMin(m_rectStart.y(), m_rectEnd.y()));
             QPoint br(qMax(m_rectStart.x(), m_rectEnd.x()), qMax(m_rectStart.y(), m_rectEnd.y()));
             QPoint tr(br.x(), tl.y());
@@ -107,6 +112,7 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
         if (m_drawingCircle && m_circleRadius > 0) {
             Stroke s;
             s.colorId = m_currentShapeColor;
+            s.thickness = 3;
             int segments = 64;
             for (int i = 0; i <= segments; ++i) {
                 double t = (static_cast<double>(i) / segments) * 2.0 * 3.14159265358979323846;
@@ -117,6 +123,40 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
             m_strokes.push_back(s);
         }
         m_drawingCircle = false;
+    } else if (phase == "arrow_down") {
+        m_drawingArrow = true;
+        m_arrowStart = p;
+        m_arrowEnd = p;
+        m_currentShapeColor = colorId;
+    } else if (phase == "arrow_move") {
+        if (m_drawingArrow) { m_arrowEnd = p; }
+    } else if (phase == "arrow_up") {
+        if (m_drawingArrow) {
+            int dx = m_arrowEnd.x() - m_arrowStart.x();
+            int dy = m_arrowEnd.y() - m_arrowStart.y();
+            double len = std::sqrt(static_cast<double>(dx*dx + dy*dy));
+            if (len > 0.0) {
+                double ux = dx / len;
+                double uy = dy / len;
+                double headLen = std::min(24.0, std::max(10.0, len * 0.25));
+                double angle = 28.0 * 3.14159265358979323846 / 180.0;
+                double cosA = std::cos(angle);
+                double sinA = std::sin(angle);
+                double lx = cosA * ux - sinA * uy;
+                double ly = sinA * ux + cosA * uy;
+                double rx = cosA * ux + sinA * uy;
+                double ry = -sinA * ux + cosA * uy;
+                QPoint left(m_arrowEnd.x() - static_cast<int>(lx * headLen), m_arrowEnd.y() - static_cast<int>(ly * headLen));
+                QPoint right(m_arrowEnd.x() - static_cast<int>(rx * headLen), m_arrowEnd.y() - static_cast<int>(ry * headLen));
+                Stroke shaft; shaft.colorId = m_currentShapeColor; shaft.thickness = 15; shaft.points << m_arrowStart << m_arrowEnd;
+                Stroke headL; headL.colorId = m_currentShapeColor; headL.thickness = 15; headL.points << m_arrowEnd << left;
+                Stroke headR; headR.colorId = m_currentShapeColor; headR.thickness = 15; headR.points << m_arrowEnd << right;
+                m_strokes.push_back(shaft);
+                m_strokes.push_back(headL);
+                m_strokes.push_back(headR);
+            }
+        }
+        m_drawingArrow = false;
     } else if (phase == "erase_down" || phase == "erase_move" || phase == "erase_up") {
         auto hitSegment = [](const QPoint &a, const QPoint &b, const QPoint &p, int r2) -> bool {
             int abx = b.x() - a.x();
@@ -267,7 +307,7 @@ void AnnotationOverlay::paintEvent(QPaintEvent *event)
     for (const auto &stroke : m_strokes) {
         if (stroke.points.size() < 2) continue;
         QPen pen(colorForId(stroke.colorId));
-        pen.setWidth(3);
+        pen.setWidth(qMax(1, stroke.thickness));
         painter.setPen(pen);
         for (int i = 1; i < stroke.points.size(); ++i) {
             painter.drawLine(stroke.points[i-1], stroke.points[i]);
@@ -295,6 +335,31 @@ void AnnotationOverlay::paintEvent(QPaintEvent *event)
         pen.setWidth(3);
         painter.setPen(pen);
         painter.drawEllipse(m_circleCenter, m_circleRadius, m_circleRadius);
+    }
+    if (m_drawingArrow) {
+        QPen pen(colorForId(m_currentShapeColor));
+        pen.setWidth(15);
+        painter.setPen(pen);
+        int dx = m_arrowEnd.x() - m_arrowStart.x();
+        int dy = m_arrowEnd.y() - m_arrowStart.y();
+        double len = std::sqrt(static_cast<double>(dx*dx + dy*dy));
+        painter.drawLine(m_arrowStart, m_arrowEnd);
+        if (len > 0.0) {
+            double ux = dx / len;
+            double uy = dy / len;
+            double headLen = std::min(24.0, std::max(10.0, len * 0.25));
+            double angle = 28.0 * 3.14159265358979323846 / 180.0;
+            double cosA = std::cos(angle);
+            double sinA = std::sin(angle);
+            double lx = cosA * ux - sinA * uy;
+            double ly = sinA * ux + cosA * uy;
+            double rx = cosA * ux + sinA * uy;
+            double ry = -sinA * ux + cosA * uy;
+            QPoint left(m_arrowEnd.x() - static_cast<int>(lx * headLen), m_arrowEnd.y() - static_cast<int>(ly * headLen));
+            QPoint right(m_arrowEnd.x() - static_cast<int>(rx * headLen), m_arrowEnd.y() - static_cast<int>(ry * headLen));
+            painter.drawLine(m_arrowEnd, left);
+            painter.drawLine(m_arrowEnd, right);
+        }
     }
     // 绘制文本项
     for (const auto &t : m_texts) {

@@ -2,6 +2,7 @@
 #include <QPainter>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QSignalBlocker>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QAbstractItemView>
@@ -381,6 +382,14 @@ void VideoWindow::setupCustomTitleBar()
     m_circleButton->setCheckable(true);
     m_circleButton->setChecked(false);
 
+    m_arrowButton = new QPushButton("", m_titleBar);
+    m_arrowButton->setIcon(QIcon(iconDir + "/arrow.png"));
+    m_arrowButton->setIconSize(QSize(16, 16));
+    m_arrowButton->setStyleSheet(micButtonStyle);
+    m_arrowButton->setToolTip(QStringLiteral("箭头"));
+    m_arrowButton->setCheckable(true);
+    m_arrowButton->setChecked(false);
+
     m_textButton = new QPushButton("", m_titleBar);
     m_textButton->setIcon(QIcon(iconDir + "/text.png"));
     m_textButton->setIconSize(QSize(16, 16));
@@ -422,6 +431,8 @@ void VideoWindow::setupCustomTitleBar()
     m_toolBarLayout->addWidget(m_rectButton);
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_circleButton);
+    m_toolBarLayout->addSpacing(2);
+    m_toolBarLayout->addWidget(m_arrowButton);
     m_toolBarLayout->addSpacing(2);
     m_toolBarLayout->addWidget(m_textButton);
     m_toolBarLayout->addSpacing(2);
@@ -467,10 +478,15 @@ void VideoWindow::setupCustomTitleBar()
         m_undoButton->setStyleSheet(micButtonStyle);
         m_cameraButton->setStyleSheet(micButtonStyle);
         m_likeButton->setStyleSheet(micButtonStyle);
+        m_arrowButton->setStyleSheet(m_arrowButton->isChecked() ? selectedToolStyle : micButtonStyle);
     };
 
     connect(m_penButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
         if (checked) {
+            QSignalBlocker b1(m_rectButton);
+            QSignalBlocker b2(m_circleButton);
+            QSignalBlocker b3(m_textButton);
+            QSignalBlocker b4(m_eraserButton);
             m_rectButton->setChecked(false);
             m_circleButton->setChecked(false);
             m_textButton->setChecked(false);
@@ -485,6 +501,10 @@ void VideoWindow::setupCustomTitleBar()
     });
     connect(m_rectButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
         if (checked) {
+            QSignalBlocker b1(m_penButton);
+            QSignalBlocker b2(m_circleButton);
+            QSignalBlocker b3(m_textButton);
+            QSignalBlocker b4(m_eraserButton);
             m_penButton->setChecked(false);
             m_circleButton->setChecked(false);
             m_textButton->setChecked(false);
@@ -499,8 +519,14 @@ void VideoWindow::setupCustomTitleBar()
     });
     connect(m_circleButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
         if (checked) {
+            QSignalBlocker b1(m_penButton);
+            QSignalBlocker b2(m_rectButton);
+            QSignalBlocker b3(m_arrowButton);
+            QSignalBlocker b4(m_textButton);
+            QSignalBlocker b5(m_eraserButton);
             m_penButton->setChecked(false);
             m_rectButton->setChecked(false);
+            m_arrowButton->setChecked(false);
             m_textButton->setChecked(false);
             m_eraserButton->setChecked(false);
             if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(3); m_videoDisplayWidget->setAnnotationEnabled(true); }
@@ -511,8 +537,32 @@ void VideoWindow::setupCustomTitleBar()
         if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
         updateToolStyles();
     });
+    connect(m_arrowButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
+        if (checked) {
+            QSignalBlocker b1(m_penButton);
+            QSignalBlocker b2(m_rectButton);
+            QSignalBlocker b3(m_circleButton);
+            QSignalBlocker b4(m_textButton);
+            QSignalBlocker b5(m_eraserButton);
+            m_penButton->setChecked(false);
+            m_rectButton->setChecked(false);
+            m_circleButton->setChecked(false);
+            m_textButton->setChecked(false);
+            m_eraserButton->setChecked(false);
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setToolMode(5); m_videoDisplayWidget->setAnnotationEnabled(true); }
+        } else {
+            if (m_videoDisplayWidget) { m_videoDisplayWidget->setAnnotationEnabled(false); m_videoDisplayWidget->setToolMode(0); }
+        }
+        if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
+        if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
+        updateToolStyles();
+    });
     connect(m_textButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
         if (checked) {
+            QSignalBlocker b1(m_penButton);
+            QSignalBlocker b2(m_rectButton);
+            QSignalBlocker b3(m_circleButton);
+            QSignalBlocker b4(m_eraserButton);
             m_penButton->setChecked(false);
             m_rectButton->setChecked(false);
             m_circleButton->setChecked(false);
@@ -527,6 +577,10 @@ void VideoWindow::setupCustomTitleBar()
     });
     connect(m_eraserButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {
         if (checked) {
+            QSignalBlocker b1(m_penButton);
+            QSignalBlocker b2(m_rectButton);
+            QSignalBlocker b3(m_circleButton);
+            QSignalBlocker b4(m_textButton);
             m_penButton->setChecked(false);
             m_rectButton->setChecked(false);
             m_circleButton->setChecked(false);

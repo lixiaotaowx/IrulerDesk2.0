@@ -196,6 +196,22 @@ set_target_properties(PlayerProcess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 
+# 在Windows/MSVC下，构建前确保旧的可执行未在运行，避免 LNK1104
+if(MSVC AND WIN32)
+    add_custom_command(TARGET CaptureProcess PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Ensuring CaptureProcess.exe is not running..."
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $p=Get-Process -Name 'CaptureProcess' -ErrorAction SilentlyContinue; if($p){ $p | Stop-Process -Force }; exit 0"
+    )
+    add_custom_command(TARGET PlayerProcess PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Ensuring PlayerProcess.exe is not running..."
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $p=Get-Process -Name 'PlayerProcess' -ErrorAction SilentlyContinue; if($p){ $p | Stop-Process -Force }; exit 0"
+    )
+    add_custom_command(TARGET ScreenStreamApp PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Ensuring ScreenStreamApp.exe is not running..."
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $p=Get-Process -Name 'ScreenStreamApp' -ErrorAction SilentlyContinue; if($p){ $p | Stop-Process -Force }; exit 0"
+    )
+endif()
+
 # 为 Release/RelWithDebInfo 生成 PDB 并拷贝到输出目录（仅 MSVC 有效）
 if(MSVC)
     # 确保为每个目标在 Release/RelWithDebInfo 生成 PDB

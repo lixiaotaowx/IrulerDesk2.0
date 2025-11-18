@@ -951,13 +951,6 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                         edit->setFocusPolicy(Qt::StrongFocus);
                         edit->setFocus();
                         edit->show();
-                        connect(edit, &QLineEdit::returnPressed, this, [this, edit]() {
-                            QString txt = edit->text();
-                            if (!txt.isEmpty() && m_receiver) {
-                                m_receiver->sendTextAnnotation(txt, m_lastTextSrcPoint.x(), m_lastTextSrcPoint.y(), m_currentColorId, m_textFontSize);
-                            }
-                            edit->deleteLater();
-                        });
                         connect(edit, &QLineEdit::editingFinished, this, [this, edit]() {
                             QString txt = edit->text();
                             if (!txt.isEmpty() && m_receiver) {

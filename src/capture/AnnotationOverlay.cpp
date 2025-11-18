@@ -29,6 +29,7 @@ void AnnotationOverlay::clear()
     m_currentStroke.points.clear();
     m_currentStroke.colorId = 0;
     m_strokes.clear();
+    m_ops.clear();
     m_drawingRect = false;
     m_rectStart = QPoint();
     m_rectEnd = QPoint();
@@ -59,40 +60,21 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
         if (!m_currentStroke.points.isEmpty()) {
             m_currentStroke.points.push_back(p);
             m_strokes.push_back(m_currentStroke);
+            OpEntry op; op.kind = 0; op.startIndex = m_strokes.size() - 1; op.count = 1; m_ops.push_back(op);
             m_currentStroke.points.clear();
         }
     } else if (phase == "undo") {
         if (!m_currentStroke.points.isEmpty()) {
             m_currentStroke.points.clear();
-        } else if (!m_strokes.isEmpty()) {
-            int n = m_strokes.size();
-            if (n >= 3) {
-                const auto &a = m_strokes[n - 1];
-                const auto &b = m_strokes[n - 2];
-                const auto &c = m_strokes[n - 3];
-                bool cond = (a.thickness == 15 && b.thickness == 15 && c.thickness == 15 &&
-                             a.colorId == b.colorId && b.colorId == c.colorId &&
-                             a.points.size() == 2 && b.points.size() == 2 && c.points.size() == 2);
-                if (cond) {
-                    QPoint e = a.points[0];
-                    auto share = [](const Stroke &s, const QPoint &p) -> bool { return (s.points[0] == p || s.points[1] == p); };
-                    bool shareAll = share(b, e) && share(c, e);
-                    if (!shareAll) {
-                        e = a.points[1];
-                        shareAll = share(b, e) && share(c, e);
-                    }
-                    if (shareAll) {
-                        m_strokes.removeLast();
-                        m_strokes.removeLast();
-                        m_strokes.removeLast();
-                    } else {
-                        m_strokes.removeLast();
-                    }
-                } else {
+        } else if (!m_ops.isEmpty()) {
+            OpEntry op = m_ops.last();
+            m_ops.removeLast();
+            if (op.kind == 0) {
+                for (int i = 0; i < op.count && !m_strokes.isEmpty(); ++i) {
                     m_strokes.removeLast();
                 }
             } else {
-                m_strokes.removeLast();
+                if (!m_texts.isEmpty()) m_texts.removeLast();
             }
         }
     } else if (phase == "clear") {
@@ -121,6 +103,7 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
             QPoint bl(tl.x(), br.y());
             s.points << tl << tr << br << bl << tl;
             m_strokes.push_back(s);
+            OpEntry op; op.kind = 0; op.startIndex = m_strokes.size() - 1; op.count = 1; m_ops.push_back(op);
         }
         m_drawingRect = false;
     } else if (phase == "circle_down") {
@@ -147,6 +130,7 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
                 s.points << QPoint(x, y);
             }
             m_strokes.push_back(s);
+            OpEntry op; op.kind = 0; op.startIndex = m_strokes.size() - 1; op.count = 1; m_ops.push_back(op);
         }
         m_drawingCircle = false;
     } else if (phase == "arrow_down") {
@@ -180,6 +164,7 @@ void AnnotationOverlay::onAnnotationEvent(const QString &phase, int x, int y, co
                 m_strokes.push_back(shaft);
                 m_strokes.push_back(headL);
                 m_strokes.push_back(headR);
+                OpEntry op; op.kind = 0; op.startIndex = m_strokes.size() - 3; op.count = 3; m_ops.push_back(op);
             }
         }
         m_drawingArrow = false;
@@ -404,5 +389,6 @@ void AnnotationOverlay::onTextAnnotation(const QString &text, int x, int y, cons
     if (text.isEmpty()) return;
     TextItem item; item.text = text; item.pos = QPoint(x, y); item.colorId = colorId; item.fontSize = fontSize;
     m_texts.push_back(item);
+    OpEntry op; op.kind = 1; op.startIndex = m_texts.size() - 1; op.count = 1; m_ops.push_back(op);
     update();
 }

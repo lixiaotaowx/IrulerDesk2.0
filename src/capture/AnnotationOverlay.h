@@ -29,9 +29,11 @@ protected:
 private:
     struct Stroke { QVector<QPoint> points; int colorId = 0; int thickness = 3; };
     struct TextItem { QString text; QPoint pos; int colorId = 0; int fontSize = 16; };
+    struct OpEntry { int kind = 0; int startIndex = 0; int count = 1; };
     Stroke m_currentStroke;
     QVector<Stroke> m_strokes;
     QVector<TextItem> m_texts;
+    QVector<OpEntry> m_ops;
     bool m_drawingRect = false;
     QPoint m_rectStart;
     QPoint m_rectEnd;

@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "VideoWindow.h"
 #include "ui/TransparentImageList.h"
+#include "video_components/VideoDisplayWidget.h"
 #include "ui/AvatarSettingsWindow.h"
 #include "ui/SystemSettingsWindow.h"
 #include <QApplication>
@@ -322,6 +323,14 @@ void MainWindow::setupUI()
     
     // 创建视频窗口（但不显示）
     m_videoWindow = new VideoWindow();
+    {
+        int initialColorId = loadOrGenerateColorId();
+        if (auto vd = m_videoWindow->getVideoDisplayWidget()) {
+            vd->setAnnotationColorId(initialColorId);
+            connect(vd, &VideoDisplayWidget::annotationColorChanged,
+                    this, &MainWindow::onAnnotationColorChanged);
+        }
+    }
     
     // 创建透明图片列表
     m_transparentImageList = new TransparentImageList();
@@ -723,7 +732,7 @@ int MainWindow::loadOrGenerateColorId()
         configFile.close();
     }
 
-    int defaultColorId = 3;
+    int defaultColorId = 2;
     saveColorIdToConfig(defaultColorId);
     return defaultColorId;
 }

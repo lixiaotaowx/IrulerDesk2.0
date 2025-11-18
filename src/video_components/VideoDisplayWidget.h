@@ -72,6 +72,7 @@ public:
     // 控制接口
     void startReceiving(const QString &serverUrl = "");
     void stopReceiving();
+    void pauseReceiving();
     bool isReceiving() const { return m_isReceiving; }
     
     // 发送观看请求
@@ -177,6 +178,7 @@ private:
     
     // 控制接口
     std::unique_ptr<DxvaVP9Decoder> m_decoder;
+    bool m_decoderInitialized = false;
     std::unique_ptr<WebSocketReceiver> m_receiver;
     
     // 状态

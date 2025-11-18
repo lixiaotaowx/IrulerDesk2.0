@@ -553,13 +553,22 @@ int main(int argc, char *argv[])
         }
         targetEncodeSize = staticEncoder->getFrameSize();
 
-        // 按质量调整码率
+        // 按质量调整码率与静态内容降码策略
         if (q == "low") {
             staticEncoder->setBitrate(200000); // 200 kbps
+            staticEncoder->setEnableStaticDetection(true);
+            staticEncoder->setStaticBitrateReduction(0.20); // 静态时保留20%
+            staticEncoder->setStaticThreshold(0.012);
         } else if (q == "medium") {
-            staticEncoder->setBitrate(300000); // 300 kbps
+            staticEncoder->setBitrate(600000); // 600 kbps（提升清晰）
+            staticEncoder->setEnableStaticDetection(true);
+            staticEncoder->setStaticBitrateReduction(0.45); // 静态保留45%
+            staticEncoder->setStaticThreshold(0.015);
         } else { // high
-            staticEncoder->setBitrate(1200000); // 1.2 Mbps
+            staticEncoder->setBitrate(3000000); // 3.0 Mbps（更高清晰度）
+            staticEncoder->setEnableStaticDetection(true);
+            staticEncoder->setStaticBitrateReduction(0.75); // 静态保留75%，减少模糊
+            staticEncoder->setStaticThreshold(0.018);
         }
 
         // 重置瓦片元数据发送标志（在启用检测的情况下会重新发送）

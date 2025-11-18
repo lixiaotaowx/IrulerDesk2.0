@@ -81,6 +81,8 @@ public:
     void sendAudioGain(int percent);
     void setTalkEnabled(bool enabled);
     void sendLikeEvent();
+    // 暂停推流但保留连接
+    void sendStopStreaming();
     
     // 断开连接
     void disconnectFromServer();

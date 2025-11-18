@@ -894,6 +894,17 @@ void WebSocketReceiver::sendSwitchScreenIndex(int index)
     m_webSocket->sendTextMessage(jsonString);
 }
 
+void WebSocketReceiver::sendStopStreaming()
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+    QJsonObject stopMsg;
+    stopMsg["type"] = "stop_streaming";
+    QJsonDocument stopDoc(stopMsg);
+    m_webSocket->sendTextMessage(stopDoc.toJson(QJsonDocument::Compact));
+}
+
 void WebSocketReceiver::sendSetQuality(const QString &quality)
 {
     if (!m_connected || !m_webSocket) {

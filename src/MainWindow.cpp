@@ -101,12 +101,9 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     // 使用VideoDisplayWidget开始接收视频流
     videoWidget->startReceiving(serverUrl);
 
-    // 为批注事件路由在接收器上记录viewer/target（不依赖登录通道）
-    // 轻微延迟，确保WebSocketReceiver已连接
+    // 记录viewer/target并在连接后即时重发watch请求
     QString viewerId = getDeviceId();
-    QTimer::singleShot(800, [videoWidget, viewerId, targetDeviceId]() {
-        videoWidget->sendWatchRequest(viewerId, targetDeviceId);
-    });
+    videoWidget->sendWatchRequest(viewerId, targetDeviceId);
 }
 
 void MainWindow::startPlayerProcess(const QString& targetDeviceId)

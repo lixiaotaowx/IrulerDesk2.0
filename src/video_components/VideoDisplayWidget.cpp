@@ -46,6 +46,9 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 创建解码器和接收器
     m_decoder = std::make_unique<DxvaVP9Decoder>();
     m_receiver = std::make_unique<WebSocketReceiver>();
+    if (!m_decoderInitialized) {
+        m_decoderInitialized = m_decoder->initialize();
+    }
     
     // 连接信号槽 - 修复：确保解码后的帧能正确显示
     connect(m_decoder.get(), &DxvaVP9Decoder::frameDecoded,
@@ -86,6 +89,11 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 连接鼠标位置信号
     connect(m_receiver.get(), &WebSocketReceiver::mousePositionReceived,
             this, &VideoDisplayWidget::onMousePositionReceived);
+    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
+        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+            m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+        }
+    });
     
     // 连接瓦片相关信号
     connect(m_receiver.get(), &WebSocketReceiver::tileCompleted,
@@ -154,6 +162,10 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
 VideoDisplayWidget::~VideoDisplayWidget()
 {
     stopReceiving();
+    if (m_decoder) {
+        m_decoder->cleanup();
+        m_decoderInitialized = false;
+    }
 }
 
 void VideoDisplayWidget::setupUI()
@@ -222,12 +234,11 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     
     m_serverUrl = serverUrl;
     
-    // 初始化VP9解码器
-    // qDebug() << "初始化VP9解码器...";
-    if (!m_decoder->initialize()) {
-        return;
+    // 解码器已在构造时预初始化；若未初始化则尝试一次
+    if (!m_decoderInitialized) {
+        m_decoderInitialized = m_decoder->initialize();
+        if (!m_decoderInitialized) { return; }
     }
-    // qDebug() << "VP9解码器初始化成功";
     
     // qDebug() << "开始连接到:" << m_serverUrl;
     m_receiver->connectToServer(m_serverUrl);
@@ -255,11 +266,9 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
 
     // 如果之前已经有viewer/target信息，连接后自动重发观看请求，以便恢复推流
     if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
-        QTimer::singleShot(800, this, [this]() {
-            if (m_receiver) {
-                m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-            }
-        });
+        if (m_receiver && m_receiver->isConnected()) {
+            m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+        }
     }
 }
 
@@ -272,10 +281,7 @@ void VideoDisplayWidget::stopReceiving()
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
-    if (m_decoder) {
-        // qDebug() << "清理解码器缓存...";
-        m_decoder->cleanup();
-    }
+    // 避免在停止时清理解码器，减少重开延迟；仅在析构时清理
 
     // 停止并清理音频输出，避免残留状态影响下一次播放
     if (m_audioSink) {
@@ -318,6 +324,7 @@ void VideoDisplayWidget::stopReceiving()
     if (m_promptDialog) {
         m_promptDialog->hide();
     }
+    recreateReceiver();
 }
 
 void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString &targetId)
@@ -1373,14 +1380,14 @@ void VideoDisplayWidget::recreateReceiver()
 
     connect(m_receiver.get(), &WebSocketReceiver::tileMetadataReceived,
             this, [this](const WebSocketReceiver::TileMetadata &metadata) {
-                if (m_tileComposition.frameSize.isEmpty()) {
-                    QSize frameSize(metadata.x + metadata.width, metadata.y + metadata.height);
-                    QSize tileSize(metadata.width, metadata.height);
-                    // 日志清理：移除瓦片配置打印
-                    setTileConfiguration(frameSize, tileSize);
-                    setTileMode(true);
-                }
-            });
+        if (m_tileComposition.frameSize.isEmpty()) {
+            QSize frameSize(metadata.x + metadata.width, metadata.y + metadata.height);
+            QSize tileSize(metadata.width, metadata.height);
+            // 日志清理：移除瓦片配置打印
+            setTileConfiguration(frameSize, tileSize);
+            setTileMode(true);
+        }
+    });
 
     connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
             this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 /*timestamp*/) {
@@ -1398,6 +1405,11 @@ void VideoDisplayWidget::recreateReceiver()
                     m_audioIO->write(pcmData);
                 }
             });
+    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
+        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+            m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+        }
+    });
 }
 void VideoDisplayWidget::setVolumePercent(int percent)
 {
@@ -1422,4 +1434,33 @@ void VideoDisplayWidget::setMicGainPercent(int percent)
 void VideoDisplayWidget::setTalkEnabled(bool enabled)
 {
     if (m_receiver) { m_receiver->setTalkEnabled(enabled); }
+}
+
+void VideoDisplayWidget::pauseReceiving()
+{
+    // 保留WebSocket连接，仅通知采集端停止推流，便于下次快速恢复
+    if (m_receiver && m_isReceiving) {
+        m_receiver->sendStopStreaming();
+        // 为确保服务器侧流量归零，同时断开订阅连接
+        m_receiver->disconnectFromServer();
+    }
+    // 停止音频播放
+    if (m_audioSink) {
+        if (m_audioSink->state() != QAudio::StoppedState) {
+            m_audioSink->stop();
+        }
+    }
+    m_audioIO = nullptr;
+    m_audioInitialized = false;
+    // 清理瓦片显示，但不更改连接状态
+    clearTiles();
+    setTileMode(false);
+    m_compositeFrame = QPixmap();
+    // 显示等待图并更新状态
+    m_videoLabel->clear();
+    showWaitingSplash();
+    m_stats.connectionStatus = "Disconnected";
+    emit connectionStatusChanged(m_stats.connectionStatus);
+    m_isReceiving = false;
+    updateButtonText();
 }

@@ -802,7 +802,7 @@ void VideoWindow::onCloseClicked()
 {
     // 关闭时停止接收，通知采集端停止推流
     if (m_videoDisplayWidget) {
-        m_videoDisplayWidget->stopReceiving();
+        m_videoDisplayWidget->pauseReceiving();
     }
     hide();
 }

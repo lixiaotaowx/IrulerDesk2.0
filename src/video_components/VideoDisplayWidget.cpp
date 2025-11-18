@@ -505,11 +505,8 @@ void VideoDisplayWidget::showWaitingSplash()
         m_waitingDotsTimer->setInterval(400);
         connect(m_waitingDotsTimer, &QTimer::timeout, this, &VideoDisplayWidget::updateWaitingSplashFrame);
     }
-    QString appDir = QCoreApplication::applicationDirPath();
-    int idx = QRandomGenerator::global()->bounded(0, 9);
-    QString baseFile = QString("%1/maps/assets/%2.jpg").arg(appDir).arg(idx);
-    m_waitBaseCached = QPixmap(baseFile);
-    m_waitWmCached = QPixmap(QString("%1/maps/assets/shuiyin.png").arg(appDir));
+    m_waitBaseCached = QPixmap();
+    m_waitWmCached = QPixmap();
     m_waitingDotsPhase = 0;
     updateWaitingSplashFrame();
     m_waitingDotsTimer->start();

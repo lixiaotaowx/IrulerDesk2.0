@@ -16,6 +16,8 @@
 #include <QCursor>
 #include <QLineEdit>
 #include <QFont>
+#include <QCoreApplication>
+#include <QRandomGenerator>
 #include <windows.h>
 #include <iostream>
 
@@ -238,6 +240,7 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     m_stats.connectionStatus = "Connecting...";
     
     emit connectionStatusChanged(m_stats.connectionStatus);
+    showWaitingSplash();
 
     // 启动“是否继续观看”周期提示定时器
     if (!m_continuePromptTimer) {
@@ -295,7 +298,7 @@ void VideoDisplayWidget::stopReceiving()
     
     // 清理显示缓存
     m_videoLabel->clear();
-    m_videoLabel->setText("视频显示区域");
+    showWaitingSplash();
     
     m_isReceiving = false;
     updateButtonText();
@@ -431,6 +434,7 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
         QTimer::singleShot(0, this, [this, scaledPixmap]() {
             m_videoLabel->setPixmap(scaledPixmap);
             m_videoLabel->setAlignment(Qt::AlignCenter);
+            stopWaitingSplash();
         });
         
         m_stats.framesDisplayed++;
@@ -451,11 +455,8 @@ void VideoDisplayWidget::updateConnectionStatus(const QString &status)
 {
     m_stats.connectionStatus = status;
     m_statusLabel->setText(QString("状态: %1").arg(status));
-    
-    if (status == "Connected") {
-        m_videoLabel->setText("");
-    } else if (status == "Disconnected" && m_isReceiving) {
-        m_videoLabel->setText("连接断开，尝试重连...");
+    if (status == "Connecting..." || (status == "Disconnected" && m_isReceiving)) {
+        showWaitingSplash();
     }
     
     emit connectionStatusChanged(status);
@@ -488,11 +489,102 @@ void VideoDisplayWidget::updateButtonText()
     m_startStopButton->setText(m_isReceiving ? "停止接收" : "开始接收");
 }
 
+void VideoDisplayWidget::showWaitingSplash()
+{
+    if (!m_videoLabel) return;
+    m_waitSplashActive = true;
+    if (!m_waitingDotsTimer) {
+        m_waitingDotsTimer = new QTimer(this);
+        m_waitingDotsTimer->setInterval(400);
+        connect(m_waitingDotsTimer, &QTimer::timeout, this, &VideoDisplayWidget::updateWaitingSplashFrame);
+    }
+    QString appDir = QCoreApplication::applicationDirPath();
+    int idx = QRandomGenerator::global()->bounded(0, 9);
+    QString baseFile = QString("%1/maps/assets/%2.jpg").arg(appDir).arg(idx);
+    m_waitBaseCached = QPixmap(baseFile);
+    m_waitWmCached = QPixmap(QString("%1/maps/assets/shuiyin.png").arg(appDir));
+    m_waitingDotsPhase = 0;
+    updateWaitingSplashFrame();
+    m_waitingDotsTimer->start();
+}
+
+void VideoDisplayWidget::stopWaitingSplash()
+{
+    m_waitSplashActive = false;
+    if (m_waitingDotsTimer) {
+        m_waitingDotsTimer->stop();
+    }
+}
+
+void VideoDisplayWidget::updateWaitingSplashFrame()
+{
+    if (!m_videoLabel) return;
+    QSize labelSize = m_videoLabel->size();
+    if (labelSize.width() <= 0 || labelSize.height() <= 0) {
+        return;
+    }
+    QPixmap canvas(labelSize);
+    canvas.fill(Qt::black);
+
+    QPainter painter(&canvas);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    if (!m_waitBaseCached.isNull()) {
+        QPixmap scaledBase = m_waitBaseCached.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        int offsetX = (labelSize.width() - scaledBase.width()) / 2;
+        int offsetY = (labelSize.height() - scaledBase.height()) / 2;
+        painter.drawPixmap(offsetX, offsetY, scaledBase);
+    }
+
+    if (!m_waitWmCached.isNull()) {
+        int maxW = qMax(24, labelSize.width() / 12);
+        int wmW = qMin(m_waitWmCached.width(), maxW);
+        int wmH = (wmW * m_waitWmCached.height()) / qMax(1, m_waitWmCached.width());
+        int margin = 12;
+        int x = labelSize.width() - wmW - margin;
+        int y = labelSize.height() - wmH - margin;
+        painter.setOpacity(0.85);
+        painter.drawPixmap(x, y, m_waitWmCached.scaled(wmW, wmH, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        painter.setOpacity(1.0);
+    }
+
+    QFont f = painter.font();
+    int textPx = qMax(14, labelSize.width() / 48);
+    f.setPixelSize(textPx);
+    painter.setFont(f);
+    painter.setPen(QColor(255,255,255,220));
+    QString text = QStringLiteral("画面等待中");
+    QFontMetrics fm(f);
+    int tw = fm.horizontalAdvance(text);
+    int th = fm.height();
+    int marginBottom = 20;
+    int baseY = labelSize.height() - th - marginBottom;
+    int baseX = (labelSize.width() - tw) / 2;
+    painter.drawText(QPoint(baseX, baseY), text);
+    int dotR = qMax(3, textPx / 4);
+    int spacing = dotR * 2;
+    int dotsStartX = baseX + tw + spacing;
+    int dotsY = baseY - th/2;
+    for (int i = 0; i < 3; ++i) {
+        int alpha = (i == m_waitingDotsPhase) ? 230 : 90;
+        painter.setBrush(QColor(255,255,255,alpha));
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(QPoint(dotsStartX + i * spacing, dotsY), dotR, dotR);
+    }
+
+    painter.end();
+    m_videoLabel->setPixmap(canvas);
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_waitingDotsPhase = (m_waitingDotsPhase + 1) % 3;
+}
+
+
 void VideoDisplayWidget::showSwitchingIndicator(const QString &message)
 {
-    // 在视频区域显示切换提示，同时更新状态栏文案
-    m_videoLabel->setText(message);
+    // 更新状态栏文案并显示等待图片
     m_statusLabel->setText(QString("状态: %1").arg(message));
+    showWaitingSplash();
 }
 
 void VideoDisplayWidget::sendSwitchScreenIndex(int index)
@@ -773,6 +865,7 @@ void VideoDisplayWidget::composeTiles()
             QPixmap scaledPixmap = m_compositeFrame.scaled(m_videoLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
             m_videoLabel->setPixmap(scaledPixmap);
             m_stats.framesDisplayed++;
+            stopWaitingSplash();
         }
     }, Qt::QueuedConnection);
     

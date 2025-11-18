@@ -162,6 +162,9 @@ private:
     void showContinuePrompt();
     void onContinueClicked();
     void onPromptCountdownTick();
+    void showWaitingSplash();
+    void stopWaitingSplash();
+    void updateWaitingSplashFrame();
     
     // UI组件
     QVBoxLayout *m_mainLayout;
@@ -232,6 +235,12 @@ private:
     int m_currentColorId = 0;
     int m_textFontSize = 16;
     QPoint m_lastTextSrcPoint;
+    // 等待开屏动画（随机底图 + 右下水印 + 三点闪烁）
+    QTimer *m_waitingDotsTimer = nullptr;
+    int m_waitingDotsPhase = 0;
+    bool m_waitSplashActive = false;
+    QPixmap m_waitBaseCached;
+    QPixmap m_waitWmCached;
 };
 
 #endif // VIDEODISPLAYWIDGET_H

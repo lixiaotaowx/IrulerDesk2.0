@@ -51,7 +51,6 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 自动开始流媒体传输
     QTimer::singleShot(1000, this, &MainWindow::startStreaming);
-    
 }
 
 void MainWindow::sendWatchRequest(const QString& targetDeviceId)
@@ -1094,6 +1093,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_isLoggedIn = true;
             m_listWidget->clear();
             m_listWidget->addItem("登录成功，等待用户列表...");
+            if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
         } else {
             m_listWidget->clear();
             m_listWidget->addItem("登录失败: " + responseMessage);
@@ -1125,6 +1125,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
         }
         updateUserList(users);
+        if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
     } else if (type == "start_streaming_request") {
         // 处理推流请求
         QString viewerId = obj["viewer_id"].toString();

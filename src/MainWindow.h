@@ -33,6 +33,10 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+signals:
+    void appInitialized();
+    void appReady();
+
 private slots:
     void startStreaming();
     void stopStreaming();
@@ -141,6 +145,7 @@ private:
     bool m_isLoggedIn;
     // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
     QString m_currentTargetId;
+    bool m_appReadyEmitted = false;
 };
 
 #endif // MAINWINDOW_H

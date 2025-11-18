@@ -1,6 +1,13 @@
 #include <QApplication>
 #include <QIcon>
 #include <QStyleFactory>
+#include <QSplashScreen>
+#include <QPixmap>
+#include <QPainter>
+#include <QFont>
+#include <QRandomGenerator>
+#include <QGuiApplication>
+#include <QScreen>
 #include <iostream>
 #ifdef _WIN32
 #include <windows.h>
@@ -56,8 +63,62 @@ int main(int argc, char *argv[])
         "}"
     );
     
+    QString dir = QCoreApplication::applicationDirPath();
+    int idx = QRandomGenerator::global()->bounded(0, 9);
+    QPixmap base(dir + "/maps/assets/" + QString::number(idx) + ".jpg");
+    int maxEdge = 640;
+    QSize ss;
+    if (!base.isNull()) {
+        if (base.width() >= base.height()) {
+            int h = static_cast<int>((static_cast<double>(base.height()) * maxEdge) / qMax(1, base.width()));
+            ss = QSize(maxEdge, qMax(1, h));
+        } else {
+            int w = static_cast<int>((static_cast<double>(base.width()) * maxEdge) / qMax(1, base.height()));
+            ss = QSize(qMax(1, w), maxEdge);
+        }
+    } else {
+        ss = QSize(maxEdge, (maxEdge * 9) / 16);
+    }
+    QPixmap canvas(ss);
+    QPainter p(&canvas);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    if (!base.isNull()) {
+        QPixmap scaled = base.scaled(ss, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        int ox = (ss.width() - scaled.width()) / 2;
+        int oy = (ss.height() - scaled.height()) / 2;
+        p.drawPixmap(ox, oy, scaled);
+    }
+    QPixmap wm(dir + "/maps/assets/shuiyin.png");
+    if (!wm.isNull()) {
+        int maxW = qMax(24, ss.width() / 12);
+        int w = qMin(wm.width(), maxW);
+        int h = (w * wm.height()) / qMax(1, wm.width());
+        int m = 12;
+        int x = ss.width() - w - m;
+        int y = ss.height() - h - m;
+        p.setOpacity(0.85);
+        p.drawPixmap(x, y, wm.scaled(w, h, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        p.setOpacity(1.0);
+    }
+    QFont f = p.font();
+    f.setPixelSize(20);
+    p.setFont(f);
+    p.setPen(QColor(255,255,255,220));
+    QString t = QStringLiteral("启动中...");
+    QFontMetrics fm(f);
+    int tw = fm.horizontalAdvance(t);
+    int th = fm.height();
+    int bx = (ss.width() - tw) / 2;
+    int by = ss.height() - th - 16;
+    p.drawText(QPoint(bx, by), t);
+    p.end();
+    QSplashScreen splash(canvas);
+    splash.show();
+    
     // 创建并显示主窗口
     MainWindow window;
+    QObject::connect(&window, &MainWindow::appReady, &splash, &QSplashScreen::close);
     // 简单的启动日志（使用 C++ 标准输出）
     // std::cout << "启动成功" << std::endl;
     

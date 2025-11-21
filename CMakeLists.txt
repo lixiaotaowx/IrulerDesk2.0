@@ -80,6 +80,8 @@ set(CAPTURE_SOURCES
     src/capture/PerformanceMonitor.h      # 性能监控声明
     src/capture/AnnotationOverlay.cpp     # 批注叠加层实现：在采集端绘制/组合批注图层
     src/capture/AnnotationOverlay.h       # 批注叠加层声明
+    src/capture/CursorOverlay.cpp         # 鼠标叠加层实现：独立绘制光标与昵称
+    src/capture/CursorOverlay.h           # 鼠标叠加层声明
 )
 
 # 解码播放进程源文件

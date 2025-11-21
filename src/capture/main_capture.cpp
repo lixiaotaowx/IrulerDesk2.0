@@ -31,6 +31,7 @@
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
 // 性能监控禁用：避免统计带来的额外开销
 #include "AnnotationOverlay.h"
+#include "CursorOverlay.h"
 
 
 // 新增：读取本地默认质量设置
@@ -331,6 +332,7 @@ int main(int argc, char *argv[])
     WebSocketSender *sender = new WebSocketSender(&app);
     // 创建透明批注覆盖层
     AnnotationOverlay *overlay = new AnnotationOverlay();
+    CursorOverlay *cursorOverlay = new CursorOverlay();
     
     // 连接到WebSocket服务器 - 使用推流URL格式
     // 从配置文件读取设备ID和服务器地址，如果没有则使用默认值
@@ -600,9 +602,10 @@ int main(int argc, char *argv[])
         targetScreen = QApplication::primaryScreen();
     }
     overlay->alignToScreen(targetScreen);
+    cursorOverlay->alignToScreen(targetScreen);
 
     // 连接推流控制信号
-    QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer, overlay]() {
+    QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer, overlay, cursorOverlay]() {
         if (!isCapturing) {
             isCapturing = true;
             tileMetadataSent = false; // 重置瓦片元数据发送标志
@@ -610,18 +613,22 @@ int main(int argc, char *argv[])
             staticMouseCapture->startCapture(); // 开始鼠标捕获
             overlay->show();
             overlay->raise();
+            cursorOverlay->show();
+            cursorOverlay->raise();
             // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
             // 注意：音频测试发送不再在推流开始时自动启动，改为由音频开关控制
         }
     });
     
-    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, overlay, audioTimer, audioSource, &audioInput]() {
+    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, overlay, cursorOverlay, audioTimer, audioSource, &audioInput]() {
         if (isCapturing) {
             isCapturing = false;
             captureTimer->stop();
             staticMouseCapture->stopCapture(); // 停止鼠标捕获
             overlay->hide();
             overlay->clear();
+            cursorOverlay->hide();
+            cursorOverlay->clear();
             // qDebug() << "[CaptureProcess] 停止屏幕捕获和鼠标捕获";
             audioTimer->stop();
             if (audioSource) {
@@ -635,10 +642,10 @@ int main(int argc, char *argv[])
 
     // 将系统全局鼠标坐标转换为当前捕获屏幕的局部坐标后发送到观看端
     QObject::connect(sender, &WebSocketSender::viewerNameChanged, overlay, [](const QString &){ });
-    QObject::connect(sender, &WebSocketSender::viewerCursorReceived, overlay,
-                     &AnnotationOverlay::onViewerCursor);
-    QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived, overlay,
-                     &AnnotationOverlay::onViewerNameUpdate);
+    QObject::connect(sender, &WebSocketSender::viewerCursorReceived, cursorOverlay,
+                     &CursorOverlay::onViewerCursor);
+    QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived, cursorOverlay,
+                     &CursorOverlay::onViewerNameUpdate);
 
     QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
                      [sender](const QPoint &globalPos) {
@@ -670,8 +677,8 @@ int main(int argc, char *argv[])
         sender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
     });
 
-    QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, overlay,
-                     [overlay](const QPoint &globalPos) {
+    QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, cursorOverlay,
+                     [cursorOverlay](const QPoint &globalPos) {
         const auto screens = QApplication::screens();
         if (screens.isEmpty()) {
             return;
@@ -686,11 +693,11 @@ int main(int argc, char *argv[])
         if (local.x() < 0 || local.y() < 0 || local.x() >= geom.width() || local.y() >= geom.height()) {
             return;
         }
-        overlay->onCursorMoved(local.x(), local.y());
+        cursorOverlay->onCursorMoved(local.x(), local.y());
     });
 
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕
-    QObject::connect(sender, &WebSocketSender::switchScreenRequested, [overlay](const QString &direction, int targetIndex) {
+    QObject::connect(sender, &WebSocketSender::switchScreenRequested, [overlay, cursorOverlay](const QString &direction, int targetIndex) {
         const auto screens = QApplication::screens();
         if (screens.isEmpty()) {
             return;
@@ -742,6 +749,10 @@ int main(int argc, char *argv[])
         overlay->show();
         overlay->raise();
         overlay->clear();
+        cursorOverlay->alignToScreen(target);
+        cursorOverlay->show();
+        cursorOverlay->raise();
+        cursorOverlay->clear();
         
         // 切换完成，恢复捕获循环发帧
         isSwitching = false;

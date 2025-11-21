@@ -5,6 +5,8 @@
 #include <QSignalBlocker>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QMenu>
+#include <QAction>
 #include <QAbstractItemView>
 #include <QFile>
 #include <QMovie>
@@ -687,6 +689,51 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                 m_volumeDragStartValue = m_volumeSlider->value();
                 m_volumeLongPressTimer->start(500);
                 return false;
+            } else if (me->button() == Qt::RightButton) {
+                QMenu menu;
+                QAction *follow = menu.addAction(QStringLiteral("跟随系统"));
+                follow->setCheckable(true);
+                if (obj == m_speakerButton) {
+                    bool fs = m_videoDisplayWidget ? m_videoDisplayWidget->isAudioOutputFollowSystem() : true;
+                    QString curr = m_videoDisplayWidget ? m_videoDisplayWidget->currentAudioOutputId() : QString();
+                    follow->setChecked(fs);
+                    const auto outs = QMediaDevices::audioOutputs();
+                    for (const auto &d : outs) {
+                        QAction *a = menu.addAction(d.description());
+                        a->setCheckable(true);
+                        if (!fs && !curr.isEmpty() && d.id() == curr) a->setChecked(true);
+                        a->setData(d.id());
+                    }
+                    QAction *chosen = menu.exec(me->globalPosition().toPoint());
+                    if (!chosen) return true;
+                    if (chosen == follow) {
+                        if (m_videoDisplayWidget) m_videoDisplayWidget->selectAudioOutputFollowSystem();
+                    } else {
+                        QString id = chosen->data().toString();
+                        if (m_videoDisplayWidget) m_videoDisplayWidget->selectAudioOutputById(id);
+                    }
+                    return true;
+                } else {
+                    bool fs = m_videoDisplayWidget ? m_videoDisplayWidget->isMicInputFollowSystem() : true;
+                    QString curr = m_videoDisplayWidget ? m_videoDisplayWidget->currentMicInputDeviceId() : QString();
+                    follow->setChecked(fs);
+                    const auto ins = QMediaDevices::audioInputs();
+                    for (const auto &d : ins) {
+                        QAction *a = menu.addAction(d.description());
+                        a->setCheckable(true);
+                        if (!fs && !curr.isEmpty() && d.id() == curr) a->setChecked(true);
+                        a->setData(d.id());
+                    }
+                    QAction *chosen = menu.exec(me->globalPosition().toPoint());
+                    if (!chosen) return true;
+                    if (chosen == follow) {
+                        if (m_videoDisplayWidget) m_videoDisplayWidget->selectMicInputFollowSystem();
+                    } else {
+                        QString id = chosen->data().toString();
+                        if (m_videoDisplayWidget) m_videoDisplayWidget->selectMicInputById(id);
+                    }
+                    return true;
+                }
             }
         } else if (event->type() == QEvent::MouseMove) {
             QMouseEvent *mm = static_cast<QMouseEvent*>(event);
@@ -1038,3 +1085,5 @@ void VideoWindow::detachToolbarToTitleBar()
     m_titleBarLayout->insertSpacing(indexMin, 2);
     m_titleBarLayout->insertWidget(indexMin, m_speakerButton);
 }
+#include <QtMultimedia/QMediaDevices>
+#include <QtMultimedia/QAudioDevice>

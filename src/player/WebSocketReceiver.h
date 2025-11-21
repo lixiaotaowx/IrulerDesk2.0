@@ -81,6 +81,12 @@ public:
     void sendAudioGain(int percent);
     void setTalkEnabled(bool enabled);
     void sendLikeEvent();
+    void setLocalInputDeviceFollowSystem();
+    void setLocalInputDeviceById(const QString &id);
+    bool isLocalInputFollowSystem() const { return m_followSystemInput; }
+    QString localInputDeviceId() const { return m_localInputDeviceId; }
+    void setViewerName(const QString &name);
+    void sendViewerCursor(int x, int y);
     // 暂停推流但保留连接
     void sendStopStreaming();
     
@@ -213,6 +219,7 @@ private:
     QString m_lastViewerId;
     QString m_lastTargetId;
     bool m_autoResendWatchRequest = true;
+    QString m_lastViewerName;
 
     // 音频：Opus 解码器状态
     OpusDecoder *m_opusDecoder = nullptr;
@@ -237,6 +244,8 @@ private:
     int m_localOpusSampleRate = 16000;
     int m_localOpusFrameSize = 16000 / 50;
     int m_localMicGainPercent = 100;
+    bool m_followSystemInput = true;
+    QString m_localInputDeviceId;
 
     // 文本瓦片消息兼容开关（默认关闭，通过环境变量 IRULER_TEXT_TILE=1 开启）
     bool m_textTileEnabled = false;

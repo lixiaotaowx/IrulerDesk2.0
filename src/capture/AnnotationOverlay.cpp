@@ -7,6 +7,9 @@
 #include <QMovie>
 #include <QFile>
 #include <QTimer>
+#include <QDateTime>
+#include <QTextStream>
+#include <QRandomGenerator>
 
 AnnotationOverlay::AnnotationOverlay(QWidget *parent)
     : QWidget(parent)
@@ -16,6 +19,28 @@ AnnotationOverlay::AnnotationOverlay(QWidget *parent)
     setAttribute(Qt::WA_TransparentForMouseEvents);
     setAutoFillBackground(false);
     hide();
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString iconDir = appDir + "/maps/logo";
+    QString file = iconDir + "/cursor.png";
+    if (QFile::exists(file)) {
+        m_cursorPixmap.load(file);
+        int w = qMax(8, int(m_cursorPixmap.width() * 0.5));
+        int h = qMax(8, int(m_cursorPixmap.height() * 0.5));
+        m_cursorSmall = m_cursorPixmap.scaled(QSize(w, h), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    QString cfg = appDir + "/config/app_config.txt";
+    QFile f(cfg);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("user_name=")) {
+                m_selfName = line.mid(10).trimmed();
+                break;
+            }
+        }
+        f.close();
+    }
 }
 
 void AnnotationOverlay::alignToScreen(QScreen *screen)
@@ -40,6 +65,7 @@ void AnnotationOverlay::clear()
     m_arrowStart = QPoint();
     m_arrowEnd = QPoint();
     m_texts.clear();
+    m_cursors.clear();
     update();
 }
 
@@ -299,6 +325,42 @@ void AnnotationOverlay::onLikeRequested(const QString &viewerId)
     }
 }
 
+void AnnotationOverlay::onCursorMoved(int x, int y)
+{
+    // 刷新本机用户名（系统设置可能已变更）
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString cfg = appDir + "/config/app_config.txt";
+    QFile f(cfg);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("user_name=")) {
+                m_selfName = line.mid(10).trimmed();
+                break;
+            }
+        }
+        f.close();
+    }
+
+    CursorItem item;
+    item.pos = QPoint(x, y);
+    item.name = m_selfName;
+    item.lastMs = QDateTime::currentMSecsSinceEpoch();
+    m_cursors.insert(QStringLiteral("_self"), item);
+    update();
+}
+
+void AnnotationOverlay::onViewerCursor(const QString &viewerId, int x, int y, const QString &viewerName)
+{
+    CursorItem item;
+    item.pos = QPoint(x, y);
+    item.name = viewerName;
+    item.lastMs = QDateTime::currentMSecsSinceEpoch();
+    m_cursors.insert(viewerId, item);
+    update();
+}
+
 void AnnotationOverlay::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event);
@@ -382,6 +444,42 @@ void AnnotationOverlay::paintEvent(QPaintEvent *event)
         painter.setFont(font);
         painter.drawText(t.pos, t.text);
     }
+
+    if (!m_cursors.isEmpty()) {
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        for (auto it = m_cursors.constBegin(); it != m_cursors.constEnd(); ++it) {
+            const QString viewerId = it.key();
+            const CursorItem &ci = it.value();
+            const QPixmap &pmBase = m_cursorSmall.isNull() ? m_cursorPixmap : m_cursorSmall;
+            if (!pmBase.isNull()) {
+                if (!m_cursorColors.contains(viewerId)) {
+                    int r = QRandomGenerator::global()->bounded(40, 216);
+                    int g = QRandomGenerator::global()->bounded(40, 216);
+                    int b = QRandomGenerator::global()->bounded(40, 216);
+                    m_cursorColors.insert(viewerId, QColor(r, g, b));
+                }
+                QColor col = m_cursorColors.value(viewerId);
+                QPixmap tint(pmBase.size());
+                tint.fill(col);
+                QPainter tp(&tint);
+                tp.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                tp.drawPixmap(0, 0, pmBase);
+                tp.end();
+                painter.drawPixmap(ci.pos, tint);
+            }
+            if (!ci.name.isEmpty()) {
+                QColor col = m_cursorColors.value(viewerId, QColor(200, 80, 200));
+                QFont f = painter.font();
+                const QPixmap &pm2 = m_cursorSmall.isNull() ? m_cursorPixmap : m_cursorSmall;
+                int baseSize = qMax(12, pm2.height() / 2);
+                f.setPixelSize(baseSize);
+                painter.setFont(f);
+                QPoint textPos(ci.pos.x() + pm2.width() + 6, ci.pos.y() + pm2.height() - 4);
+                painter.setPen(QPen(col));
+                painter.drawText(textPos, ci.name);
+            }
+        }
+    }
 }
 void AnnotationOverlay::onTextAnnotation(const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize)
 {
@@ -391,4 +489,20 @@ void AnnotationOverlay::onTextAnnotation(const QString &text, int x, int y, cons
     m_texts.push_back(item);
     OpEntry op; op.kind = 1; op.startIndex = m_texts.size() - 1; op.count = 1; m_ops.push_back(op);
     update();
+}
+void AnnotationOverlay::onViewerNameUpdate(const QString &viewerId, const QString &viewerName)
+{
+    auto it = m_cursors.find(viewerId);
+    if (it != m_cursors.end()) {
+        it->name = viewerName;
+        it->lastMs = QDateTime::currentMSecsSinceEpoch();
+        update();
+    } else {
+        CursorItem item;
+        item.pos = QPoint(0, 0);
+        item.name = viewerName;
+        item.lastMs = QDateTime::currentMSecsSinceEpoch();
+        m_cursors.insert(viewerId, item);
+        update();
+    }
 }

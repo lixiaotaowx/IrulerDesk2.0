@@ -719,6 +719,9 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     message["type"] = "watch_request";
     message["viewer_id"] = viewerId;
     message["target_id"] = targetId;
+    if (!m_lastViewerName.isEmpty()) {
+        message["viewer_name"] = m_lastViewerName;
+    }
     
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
@@ -735,6 +738,55 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     // 日志清理：移除开始推流提示
     
     m_webSocket->sendTextMessage(startStreamingJsonString);
+}
+
+void WebSocketReceiver::setViewerName(const QString &name)
+{
+    QMutexLocker locker(&m_mutex);
+    m_lastViewerName = name;
+    if (m_connected && m_webSocket) {
+        QString viewerId = m_lastViewerId;
+        QString targetId = m_lastTargetId;
+        if (!viewerId.isEmpty() && !targetId.isEmpty()) {
+            QJsonObject message;
+            message["type"] = "viewer_name_update";
+            message["viewer_id"] = viewerId;
+            message["target_id"] = targetId;
+            message["viewer_name"] = m_lastViewerName;
+            message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            QJsonDocument doc(message);
+            m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+        }
+    }
+}
+
+void WebSocketReceiver::sendViewerCursor(int x, int y)
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        return;
+    }
+    QJsonObject message;
+    message["type"] = "viewer_cursor";
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["x"] = x;
+    message["y"] = y;
+    if (!m_lastViewerName.isEmpty()) {
+        message["viewer_name"] = m_lastViewerName;
+    }
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    QJsonDocument doc(message);
+    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, int colorId)
@@ -1010,6 +1062,10 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
     if (enabled) {
         if (!m_localAudioSource) {
             QAudioDevice inDev = QMediaDevices::defaultAudioInput();
+            if (!m_followSystemInput && !m_localInputDeviceId.isEmpty()) {
+                const auto devs = QMediaDevices::audioInputs();
+                for (const auto &d : devs) { if (d.id() == m_localInputDeviceId) { inDev = d; break; } }
+            }
             QAudioFormat fmt;
             fmt.setSampleRate(m_localOpusSampleRate);
             fmt.setChannelCount(1);
@@ -1068,6 +1124,32 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
         if (m_localAudioSource) m_localAudioSource->stop();
         m_localAudioInput = nullptr;
         if (m_localOpusEnc) { opus_encoder_destroy(m_localOpusEnc); m_localOpusEnc = nullptr; }
+    }
+}
+
+void WebSocketReceiver::setLocalInputDeviceFollowSystem()
+{
+    m_followSystemInput = true;
+    m_localInputDeviceId.clear();
+    if (m_localAudioSource) {
+        bool active = m_localAudioSource->state() == QAudio::ActiveState;
+        m_localAudioSource->stop();
+        delete m_localAudioSource;
+        m_localAudioSource = nullptr;
+        if (active) { setTalkEnabled(true); }
+    }
+}
+
+void WebSocketReceiver::setLocalInputDeviceById(const QString &id)
+{
+    m_followSystemInput = false;
+    m_localInputDeviceId = id;
+    if (m_localAudioSource) {
+        bool active = m_localAudioSource->state() == QAudio::ActiveState;
+        m_localAudioSource->stop();
+        delete m_localAudioSource;
+        m_localAudioSource = nullptr;
+        if (active) { setTalkEnabled(true); }
     }
 }
 

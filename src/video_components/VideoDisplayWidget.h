@@ -77,6 +77,7 @@ public:
     
     // 发送观看请求
     void sendWatchRequest(const QString &viewerId, const QString &targetId);
+    void setViewerName(const QString &name);
     
     // 获取统计信息
     VideoStats getStats() const { return m_stats; }
@@ -106,6 +107,14 @@ public:
     void setMicGainPercent(int percent);
     int micGainPercent() const { return m_micGainPercent; }
     void setTalkEnabled(bool enabled);
+    void selectAudioOutputFollowSystem();
+    void selectAudioOutputById(const QString &id);
+    bool isAudioOutputFollowSystem() const { return m_followSystemOutput; }
+    QString currentAudioOutputId() const { return m_outputDeviceId; }
+    void selectMicInputFollowSystem();
+    void selectMicInputById(const QString &id);
+    bool isMicInputFollowSystem() const;
+    QString currentMicInputDeviceId() const;
     
     // 瓦片渲染方法
     void renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp);
@@ -122,6 +131,8 @@ signals:
     void fullscreenToggleRequested();
     // 批注颜色变化（用于持久化与UI同步）
     void annotationColorChanged(int colorId);
+    void audioOutputSelectionChanged(bool followSystem, const QString &deviceId);
+    void micInputSelectionChanged(bool followSystem, const QString &deviceId);
     
 public slots:
     void renderFrame(const QByteArray &frameData, const QSize &frameSize);
@@ -144,7 +155,8 @@ private:
     void recreateReceiver();
     void setupUI();
     void updateButtonText();
-    void drawMouseCursor(QPixmap &pixmap, const QPoint &position); // 新增：绘制鼠标光标
+    void drawMouseCursor(QPixmap &pixmap, const QPoint &position); // 保留旧接口（不再使用远端叠加）
+    void updateLocalCursorComposite();
     // 捕获鼠标并映射到源坐标
     bool eventFilter(QObject *obj, QEvent *event) override;
     QPoint mapLabelToSource(const QPoint &labelPoint) const;
@@ -196,6 +208,8 @@ private:
     void initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample);
     int m_volumePercent = 100;
     int m_micGainPercent = 100;
+    bool m_followSystemOutput = true;
+    QString m_outputDeviceId;
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;
@@ -206,10 +220,16 @@ private:
     QPoint m_mousePosition; // 当前鼠标位置
     qint64 m_mouseTimestamp = 0; // 鼠标位置时间戳
     bool m_hasMousePosition = false; // 是否有有效的鼠标位置数据
+    QLabel *m_localCursorOverlay = nullptr; // 本地即时光标叠加
+    QPixmap m_cursorBase;
+    QPixmap m_cursorSmall;
+    QPixmap m_cursorComposite;
+    QColor m_localCursorColor;
 
     // 最近一次观看者与目标ID（用于重发watch_request以恢复推流）
     QString m_lastViewerId;
     QString m_lastTargetId;
+    QString m_viewerName;
     bool m_annotationEnabled = false;
     int m_toolMode = 0;
     bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）

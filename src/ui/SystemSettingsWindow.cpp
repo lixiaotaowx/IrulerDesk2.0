@@ -1,4 +1,4 @@
-﻿#include "SystemSettingsWindow.h"
+#include "SystemSettingsWindow.h"
 #include <QGuiApplication>
 #include <QApplication>
 #include <QScreen>
@@ -13,6 +13,17 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     resize(380, 420);
 
     QVBoxLayout* layout = new QVBoxLayout(this);
+    setupUserNameControls();
+    if (m_userNameLabel && m_userNameEdit) {
+        QHBoxLayout* userRow = new QHBoxLayout();
+        userRow->addWidget(m_userNameLabel);
+        userRow->addWidget(m_userNameEdit, 1);
+        if (m_userNameConfirmBtn) userRow->addWidget(m_userNameConfirmBtn);
+        layout->addLayout(userRow);
+    } else {
+        if (m_userNameLabel) layout->addWidget(m_userNameLabel);
+        if (m_userNameEdit) layout->addWidget(m_userNameEdit);
+    }
     QLabel* tip = new QLabel("选择一个屏幕作为推流源", this);
     layout->addWidget(tip);
     layout->addWidget(m_list);
@@ -81,6 +92,37 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
 
         // 触发屏幕切换，等待首帧到达后由外部调用notifySwitchSucceeded
         emit screenSelected(idx);
+    });
+}
+
+void SystemSettingsWindow::setupUserNameControls()
+{
+    m_userNameLabel = new QLabel("用户名：", this);
+    m_userNameEdit = new QLineEdit(this);
+    m_userNameConfirmBtn = new QPushButton(QStringLiteral("确定"), this);
+    QString appDir = QApplication::applicationDirPath();
+    QString configPath = appDir + "/config/app_config.txt";
+    QFile f(configPath);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("user_name=")) {
+                QString v = line.mid(QString("user_name=").length()).trimmed();
+                m_userNameEdit->setText(v);
+                break;
+            }
+        }
+        f.close();
+    }
+    connect(m_userNameEdit, &QLineEdit::editingFinished, this, [this]() {
+        emit userNameChanged(m_userNameEdit->text().trimmed());
+    });
+    connect(m_userNameEdit, &QLineEdit::returnPressed, this, [this]() {
+        emit userNameChanged(m_userNameEdit->text().trimmed());
+    });
+    connect(m_userNameConfirmBtn, &QPushButton::clicked, this, [this]() {
+        emit userNameChanged(m_userNameEdit->text().trimmed());
     });
 }
 

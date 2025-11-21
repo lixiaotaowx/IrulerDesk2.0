@@ -40,6 +40,7 @@ public:
     // 状态查询
     bool isConnected() const { return m_connected; }
     QString getServerUrl() const { return m_serverUrl; }
+    QString viewerName() const { return m_viewerName; }
     
     // 统计信息
     qint64 getTotalBytesSent() const { return m_totalBytesSent; }
@@ -102,6 +103,9 @@ signals:
     void audioToggleRequested(bool enabled);
     void audioGainRequested(int percent);
     void viewerAudioOpusReceived(const QByteArray &opusData, int sampleRate, int channels, int frameSamples, qint64 timestamp);
+    void viewerNameChanged(const QString &name);
+    void viewerCursorReceived(const QString &viewerId, int x, int y, const QString &viewerName);
+    void viewerNameUpdateReceived(const QString &viewerId, const QString &viewerName);
 
 private slots:
     void onConnected();
@@ -149,6 +153,7 @@ private:
     
     // 线程安全
     mutable QMutex m_mutex;
+    QString m_viewerName;
 };
 
 #endif // WEBSOCKETSENDER_H

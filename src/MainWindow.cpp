@@ -66,7 +66,8 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
     watchRequest["type"] = "watch_request";
     watchRequest["viewer_id"] = getDeviceId();
     watchRequest["target_id"] = targetDeviceId;
-    watchRequest["viewer_icon_id"] = loadOrGenerateIconId();  // 添加观看者的icon ID
+    watchRequest["viewer_name"] = m_userName;
+    watchRequest["viewer_icon_id"] = loadOrGenerateIconId();
     
     QJsonDocument doc(watchRequest);
     QString message = doc.toJson(QJsonDocument::Compact);
@@ -97,6 +98,8 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     int initialColorId = loadOrGenerateColorId();
     videoWidget->setAnnotationColorId(initialColorId);
 
+    // 传入用户名
+    videoWidget->setViewerName(m_userName);
     // 使用VideoDisplayWidget开始接收视频流
     videoWidget->startReceiving(serverUrl);
 
@@ -325,6 +328,18 @@ void MainWindow::setupUI()
             vd->setAnnotationColorId(initialColorId);
             connect(vd, &VideoDisplayWidget::annotationColorChanged,
                     this, &MainWindow::onAnnotationColorChanged);
+            connect(vd, &VideoDisplayWidget::audioOutputSelectionChanged,
+                    this, &MainWindow::onAudioOutputSelectionChanged);
+            connect(vd, &VideoDisplayWidget::micInputSelectionChanged,
+                    this, &MainWindow::onMicInputSelectionChanged);
+            bool outFollow = loadAudioOutputFollowSystemFromConfig();
+            QString outId = loadAudioOutputDeviceIdFromConfig();
+            if (outFollow || outId.isEmpty()) { vd->selectAudioOutputFollowSystem(); }
+            else { vd->selectAudioOutputById(outId); }
+            bool micFollow = loadMicInputFollowSystemFromConfig();
+            QString micId = loadMicInputDeviceIdFromConfig();
+            if (micFollow || micId.isEmpty()) { vd->selectMicInputFollowSystem(); }
+            else { vd->selectMicInputById(micId); }
         }
     }
     
@@ -956,7 +971,14 @@ void MainWindow::initializeLoginSystem()
 {
     // 获取用户ID和名称
     m_userId = getDeviceId();
-    m_userName = QString("用户%1").arg(m_userId);
+    {
+        QString name = loadUserNameFromConfig();
+        if (name.isEmpty()) {
+            name = QString("用户%1").arg(m_userId);
+            saveUserNameToConfig(name);
+        }
+        m_userName = name;
+    }
     
     // 创建WebSocket连接
     m_loginWebSocket = new QWebSocket();
@@ -1349,6 +1371,8 @@ void MainWindow::onSystemSettingsRequested()
                 this, &MainWindow::onScreenSelected);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::localQualitySelected,
                 this, &MainWindow::onLocalQualitySelected);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::userNameChanged,
+                this, &MainWindow::onUserNameChanged);
     }
     m_systemSettingsWindow->show();
 }
@@ -1453,6 +1477,18 @@ void MainWindow::onLocalQualitySelected(const QString& quality)
     }
 }
 
+void MainWindow::onAudioOutputSelectionChanged(bool followSystem, const QString &deviceId)
+{
+    saveAudioOutputFollowSystemToConfig(followSystem);
+    saveAudioOutputDeviceIdToConfig(deviceId);
+}
+
+void MainWindow::onMicInputSelectionChanged(bool followSystem, const QString &deviceId)
+{
+    saveMicInputFollowSystemToConfig(followSystem);
+    saveMicInputDeviceIdToConfig(deviceId);
+}
+
 void MainWindow::saveLocalQualityToConfig(const QString& quality)
 {
     QString configFilePath = getConfigFilePath();
@@ -1488,5 +1524,243 @@ void MainWindow::saveLocalQualityToConfig(const QString& quality)
         }
         configFile.close();
     } else {
+    }
+}
+
+bool MainWindow::loadAudioOutputFollowSystemFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("audio_output_follow_system=")) {
+                QString v = line.mid(27).trimmed();
+                configFile.close();
+                return v.compare("true", Qt::CaseInsensitive) == 0;
+            }
+        }
+        configFile.close();
+    }
+    return true;
+}
+
+QString MainWindow::loadAudioOutputDeviceIdFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("audio_output_device_id=")) {
+                QString v = line.mid(23).trimmed();
+                configFile.close();
+                return v;
+            }
+        }
+        configFile.close();
+    }
+    return QString();
+}
+
+void MainWindow::saveAudioOutputFollowSystemToConfig(bool followSystem)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("audio_output_follow_system=")) {
+            configLines[i] = QString("audio_output_follow_system=%1").arg(followSystem ? "true" : "false");
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("audio_output_follow_system=%1").arg(followSystem ? "true" : "false");
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+void MainWindow::saveAudioOutputDeviceIdToConfig(const QString &deviceId)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("audio_output_device_id=")) {
+            configLines[i] = QString("audio_output_device_id=%1").arg(deviceId);
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("audio_output_device_id=%1").arg(deviceId);
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+bool MainWindow::loadMicInputFollowSystemFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("mic_input_follow_system=")) {
+                QString v = line.mid(24).trimmed();
+                configFile.close();
+                return v.compare("true", Qt::CaseInsensitive) == 0;
+            }
+        }
+        configFile.close();
+    }
+    return true;
+}
+
+QString MainWindow::loadMicInputDeviceIdFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("mic_input_device_id=")) {
+                QString v = line.mid(20).trimmed();
+                configFile.close();
+                return v;
+            }
+        }
+        configFile.close();
+    }
+    return QString();
+}
+
+void MainWindow::saveMicInputFollowSystemToConfig(bool followSystem)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("mic_input_follow_system=")) {
+            configLines[i] = QString("mic_input_follow_system=%1").arg(followSystem ? "true" : "false");
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("mic_input_follow_system=%1").arg(followSystem ? "true" : "false");
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+void MainWindow::saveMicInputDeviceIdToConfig(const QString &deviceId)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("mic_input_device_id=")) {
+            configLines[i] = QString("mic_input_device_id=%1").arg(deviceId);
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("mic_input_device_id=%1").arg(deviceId);
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+void MainWindow::onUserNameChanged(const QString &name)
+{
+    QString n = name.trimmed();
+    if (n.isEmpty()) return;
+    if (n == m_userName) return;
+    m_userName = n;
+    saveUserNameToConfig(n);
+    if (m_isLoggedIn) {
+        sendLoginRequest();
+    }
+    if (m_videoWindow) {
+        VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
+        if (videoWidget) {
+            videoWidget->setViewerName(m_userName);
+        }
+    }
+}
+
+QString MainWindow::loadUserNameFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("user_name=")) {
+                QString v = line.mid(QString("user_name=").length()).trimmed();
+                configFile.close();
+                return v;
+            }
+        }
+        configFile.close();
+    }
+    return QString();
+}
+
+void MainWindow::saveUserNameToConfig(const QString &name)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("user_name=")) {
+            configLines[i] = QString("user_name=%1").arg(name);
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("user_name=%1").arg(name);
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
     }
 }

@@ -9,6 +9,7 @@
 #include <QProgressDialog>
 #include <QButtonGroup>
 #include <QRadioButton>
+#include <QLineEdit>
 
 class SystemSettingsWindow : public QDialog {
     Q_OBJECT
@@ -18,6 +19,7 @@ public:
 signals:
     void screenSelected(int index);
     void localQualitySelected(const QString& quality);
+    void userNameChanged(const QString& name);
 
 public slots:
     void notifySwitchSucceeded();
@@ -25,6 +27,7 @@ public slots:
 private:
     void populateScreens();
     void setupQualityControls();
+    void setupUserNameControls();
     QListWidget* m_list;
     QProgressDialog* m_progress = nullptr;
     // 质量选择控件
@@ -33,6 +36,9 @@ private:
     QRadioButton* m_lowBtn = nullptr;
     QRadioButton* m_mediumBtn = nullptr;
     QRadioButton* m_highBtn = nullptr;
+    QLabel* m_userNameLabel = nullptr;
+    QLineEdit* m_userNameEdit = nullptr;
+    QPushButton* m_userNameConfirmBtn = nullptr;
 };
 
 #endif // SYSTEMSETTINGSWINDOW_H

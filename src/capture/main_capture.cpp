@@ -634,6 +634,12 @@ int main(int argc, char *argv[])
     });
 
     // 将系统全局鼠标坐标转换为当前捕获屏幕的局部坐标后发送到观看端
+    QObject::connect(sender, &WebSocketSender::viewerNameChanged, overlay, [](const QString &){ });
+    QObject::connect(sender, &WebSocketSender::viewerCursorReceived, overlay,
+                     &AnnotationOverlay::onViewerCursor);
+    QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived, overlay,
+                     &AnnotationOverlay::onViewerNameUpdate);
+
     QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
                      [sender](const QPoint &globalPos) {
         const auto screens = QApplication::screens();
@@ -662,6 +668,25 @@ int main(int argc, char *argv[])
         messageObj["timestamp"] = static_cast<qint64>(timestamp);
         QJsonDocument doc(messageObj);
         sender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    });
+
+    QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, overlay,
+                     [overlay](const QPoint &globalPos) {
+        const auto screens = QApplication::screens();
+        if (screens.isEmpty()) {
+            return;
+        }
+        int idx = currentScreenIndex;
+        if (idx < 0 || idx >= screens.size()) {
+            idx = 0;
+        }
+        QScreen *screen = screens[idx];
+        QRect geom = screen->geometry();
+        QPoint local(globalPos.x() - geom.x(), globalPos.y() - geom.y());
+        if (local.x() < 0 || local.y() < 0 || local.x() >= geom.width() || local.y() >= geom.height()) {
+            return;
+        }
+        overlay->onCursorMoved(local.x(), local.y());
     });
 
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕

@@ -17,6 +17,9 @@
 #include <QLineEdit>
 #include <QFont>
 #include <QCoreApplication>
+#include <QFile>
+#include <QFontMetrics>
+#include <QRandomGenerator>
 #include <QRandomGenerator>
 #include <windows.h>
 #include <iostream>
@@ -181,6 +184,11 @@ void VideoDisplayWidget::setupUI()
     m_videoLabel->setMinimumSize(320, 240); // 减小最小尺寸
     m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // 允许扩展
     m_videoLabel->setScaledContents(false); // 禁用自动缩放，保持原始比例
+    m_videoLabel->setCursor(Qt::BlankCursor);
+    m_localCursorOverlay = new QLabel(m_videoLabel);
+    m_localCursorOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_localCursorOverlay->setStyleSheet("QLabel { background: transparent; }");
+    m_localCursorOverlay->hide();
     // 启用鼠标跟踪并安装事件过滤器，用于批注坐标采集
     m_videoLabel->setMouseTracking(true);
     m_videoLabel->setFocusPolicy(Qt::StrongFocus); // 允许接收键盘事件（用于Ctrl+Z撤销）
@@ -333,9 +341,18 @@ void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString
     m_lastViewerId = viewerId;
     m_lastTargetId = targetId;
     if (m_receiver) {
+        if (!m_viewerName.isEmpty()) {
+            m_receiver->setViewerName(m_viewerName);
+        }
         m_receiver->sendWatchRequest(viewerId, targetId);
     } else {
     }
+}
+
+void VideoDisplayWidget::setViewerName(const QString &name)
+{
+    m_viewerName = name;
+    updateLocalCursorComposite();
 }
 
 void VideoDisplayWidget::setShowControls(bool show)
@@ -429,10 +446,7 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
         
         QPixmap pixmap = QPixmap::fromImage(frontBuffer);
         
-        // 如果有鼠标位置数据，在图像上绘制鼠标光标
-        if (m_hasMousePosition) {
-            drawMouseCursor(pixmap, m_mousePosition);
-        }
+        
         
         // 始终保持宽高比并居中显示
         QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -658,11 +672,65 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
 
     // 创建音频输出
     QAudioDevice outDev = QMediaDevices::defaultAudioOutput();
+    if (!m_followSystemOutput && !m_outputDeviceId.isEmpty()) {
+        const auto devs = QMediaDevices::audioOutputs();
+        for (const auto &d : devs) {
+            if (d.id() == m_outputDeviceId) { outDev = d; break; }
+        }
+    }
     m_audioSink = new QAudioSink(outDev, m_audioFormat, this);
     m_audioSink->setBufferSize(4096);
     m_audioIO = m_audioSink->start();
     if (m_audioSink) { m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0)); }
     m_audioInitialized = true;
+}
+
+void VideoDisplayWidget::selectAudioOutputFollowSystem()
+{
+    m_followSystemOutput = true;
+    m_outputDeviceId.clear();
+    if (m_audioInitialized) {
+        initAudioSinkIfNeeded(m_audioFormat.sampleRate(), m_audioFormat.channelCount(), 16);
+    }
+    emit audioOutputSelectionChanged(true, QString());
+}
+
+void VideoDisplayWidget::selectAudioOutputById(const QString &id)
+{
+    m_followSystemOutput = false;
+    m_outputDeviceId = id;
+    if (m_audioInitialized) {
+        initAudioSinkIfNeeded(m_audioFormat.sampleRate(), m_audioFormat.channelCount(), 16);
+    }
+    emit audioOutputSelectionChanged(false, id);
+}
+
+void VideoDisplayWidget::selectMicInputFollowSystem()
+{
+    if (m_receiver) {
+        m_receiver->setLocalInputDeviceFollowSystem();
+    }
+    emit micInputSelectionChanged(true, QString());
+}
+
+void VideoDisplayWidget::selectMicInputById(const QString &id)
+{
+    if (m_receiver) {
+        m_receiver->setLocalInputDeviceById(id);
+    }
+    emit micInputSelectionChanged(false, id);
+}
+
+bool VideoDisplayWidget::isMicInputFollowSystem() const
+{
+    if (!m_receiver) return true;
+    return m_receiver->isLocalInputFollowSystem();
+}
+
+QString VideoDisplayWidget::currentMicInputDeviceId() const
+{
+    if (!m_receiver) return QString();
+    return m_receiver->localInputDeviceId();
 }
 
 void VideoDisplayWidget::renderFrameWithTimestamp(const QByteArray &frameData, const QSize &frameSize, qint64 captureTimestamp)
@@ -693,32 +761,22 @@ void VideoDisplayWidget::onMousePositionReceived(const QPoint &position, qint64 
 
 void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position)
 {
-    // 在pixmap上绘制鼠标光标
+    static QPixmap cursorPixmap;
+    static bool loaded = false;
+    if (!loaded) {
+        QString appDir = QCoreApplication::applicationDirPath();
+        QString iconDir = appDir + "/maps/logo";
+        QString file = iconDir + "/cursor.png";
+        if (QFile::exists(file)) {
+            cursorPixmap.load(file);
+        }
+        loaded = true;
+    }
     QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    
-    // 设置光标样式 - 使用经典的箭头光标
-    QPen pen(Qt::white, 2);
-    painter.setPen(pen);
-    painter.setBrush(Qt::black);
-    
-    // 绘制箭头光标（简化版本）
-    QPolygon arrow;
-    arrow << QPoint(position.x(), position.y())           // 箭头顶点
-          << QPoint(position.x() + 3, position.y() + 8)   // 左下
-          << QPoint(position.x() + 6, position.y() + 6)   // 中间
-          << QPoint(position.x() + 10, position.y() + 10) // 右下
-          << QPoint(position.x() + 8, position.y() + 12)  // 右下角
-          << QPoint(position.x(), position.y());          // 回到顶点
-    
-    painter.drawPolygon(arrow);
-    
-    // 添加白色边框以提高可见性
-    pen.setColor(Qt::white);
-    pen.setWidth(1);
-    painter.setPen(pen);
-    painter.setBrush(Qt::NoBrush);
-    painter.drawPolygon(arrow);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    if (!cursorPixmap.isNull()) {
+        painter.drawPixmap(position, cursorPixmap);
+    }
 }
 
 // ==================== 瓦片渲染相关方法实现 ====================
@@ -858,10 +916,7 @@ void VideoDisplayWidget::composeTiles()
     m_stats.activeTiles = activeCount;
     m_stats.dirtyTiles = dirtyCount;
     
-    // 如果有鼠标位置，绘制鼠标光标
-    if (m_hasMousePosition) {
-        drawMouseCursor(m_compositeFrame, m_mousePosition);
-    }
+    // 远端叠加层已绘制所有鼠标，无需在观看端再叠加
     
     // 更新显示
     QMetaObject::invokeMethod(this, [this]() {
@@ -1084,6 +1139,22 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 }
                 return true;
             }
+            {
+                QPoint src = mapLabelToSource(me->pos());
+                if (src.x() >= 0 && m_receiver) {
+                    m_receiver->sendViewerCursor(src.x(), src.y());
+                }
+                if (!m_cursorComposite.isNull() && m_localCursorOverlay) {
+                    m_localCursorOverlay->setPixmap(m_cursorComposite);
+                    m_localCursorOverlay->move(me->pos());
+                    m_localCursorOverlay->show();
+                    m_localCursorOverlay->raise();
+                }
+            }
+            break;
+        }
+        case QEvent::Leave: {
+            if (m_localCursorOverlay) m_localCursorOverlay->hide();
             break;
         }
         case QEvent::MouseButtonRelease: {
@@ -1460,4 +1531,52 @@ void VideoDisplayWidget::pauseReceiving()
     emit connectionStatusChanged(m_stats.connectionStatus);
     m_isReceiving = false;
     updateButtonText();
+}
+
+void VideoDisplayWidget::updateLocalCursorComposite()
+{
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString iconDir = appDir + "/maps/logo";
+    QString file = iconDir + "/cursor.png";
+    if (m_cursorBase.isNull()) {
+        if (QFile::exists(file)) {
+            m_cursorBase.load(file);
+        }
+    }
+    if (!m_cursorBase.isNull()) {
+        int w = qMax(8, int(m_cursorBase.width() * 0.5));
+        int h = qMax(8, int(m_cursorBase.height() * 0.5));
+        m_cursorSmall = m_cursorBase.scaled(QSize(w, h), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QPixmap base = m_cursorSmall.isNull() ? m_cursorBase : m_cursorSmall;
+        if (m_localCursorColor.alpha() == 0) {
+            quint32 seed = qHash(m_viewerName);
+            QRandomGenerator gen(seed);
+            int r = gen.bounded(40, 216);
+            int g = gen.bounded(40, 216);
+            int b = gen.bounded(40, 216);
+            m_localCursorColor = QColor(r, g, b);
+        }
+        QPixmap tint(base.size());
+        tint.fill(m_localCursorColor);
+        QPainter tp(&tint);
+        tp.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        tp.drawPixmap(0, 0, base);
+        tp.end();
+        QFont f; f.setPixelSize(qMax(12, base.height() / 2));
+        QFontMetrics fm(f);
+        int tw = fm.horizontalAdvance(m_viewerName);
+        int th = fm.height();
+        int cw = base.width() + 6 + tw;
+        int ch = qMax(base.height(), th + 4);
+        QPixmap comp(cw, ch);
+        comp.fill(Qt::transparent);
+        QPainter cp(&comp);
+        cp.setRenderHint(QPainter::Antialiasing, true);
+        cp.drawPixmap(0, 0, tint);
+        cp.setFont(f);
+        cp.setPen(QPen(m_localCursorColor));
+        cp.drawText(QPoint(base.width() + 6, base.height() - 4), m_viewerName);
+        cp.end();
+        m_cursorComposite = comp;
+    }
 }

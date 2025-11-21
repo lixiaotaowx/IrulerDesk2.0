@@ -68,6 +68,7 @@ private slots:
     void onClearMarksRequested(); // 新增：清理标记槽函数
     void onExitRequested();       // 新增：退出槽函数
     void onAnnotationColorChanged(int colorId); // 新增：批注颜色变化持久化
+    void onUserNameChanged(const QString &name);
 
 private:
     void setupUI();
@@ -79,6 +80,8 @@ private:
     QString getConfigFilePath() const;
 public slots:
     void onLocalQualitySelected(const QString& quality);
+    void onAudioOutputSelectionChanged(bool followSystem, const QString &deviceId);
+    void onMicInputSelectionChanged(bool followSystem, const QString &deviceId);
 private:
     void saveLocalQualityToConfig(const QString& quality);
     int loadOrGenerateRandomId();
@@ -93,6 +96,16 @@ private:
     QString getServerAddress() const;  // 获取服务器地址
     void saveServerAddressToConfig(const QString& serverAddress);  // 保存服务器地址到配置文件
     void saveScreenIndexToConfig(int screenIndex); // 新增：保存屏幕索引到配置
+    QString loadUserNameFromConfig() const;
+    void saveUserNameToConfig(const QString &name);
+    bool loadAudioOutputFollowSystemFromConfig() const;
+    QString loadAudioOutputDeviceIdFromConfig() const;
+    void saveAudioOutputFollowSystemToConfig(bool followSystem);
+    void saveAudioOutputDeviceIdToConfig(const QString &deviceId);
+    bool loadMicInputFollowSystemFromConfig() const;
+    QString loadMicInputDeviceIdFromConfig() const;
+    void saveMicInputFollowSystemToConfig(bool followSystem);
+    void saveMicInputDeviceIdToConfig(const QString &deviceId);
     
     // 登录系统相关方法
     void initializeLoginSystem();

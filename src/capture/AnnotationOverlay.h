@@ -6,6 +6,8 @@
 #include <QPoint>
 #include <QString>
 #include <QScreen>
+#include <QPixmap>
+#include <QHash>
 
 class QLabel;
 class QMovie;
@@ -22,6 +24,9 @@ public slots:
     void onTextAnnotation(const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize);
     void hideOverlay();
     void onLikeRequested(const QString &viewerId);
+    void onCursorMoved(int x, int y);
+    void onViewerCursor(const QString &viewerId, int x, int y, const QString &viewerName);
+    void onViewerNameUpdate(const QString &viewerId, const QString &viewerName);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -48,6 +53,12 @@ private:
     QMovie *m_likeMovie = nullptr;
     QTimer *m_idleTimer = nullptr;
     qint64 m_lastEventMs = 0;
+    QPixmap m_cursorPixmap;
+    QPixmap m_cursorSmall;
+    struct CursorItem { QPoint pos; QString name; qint64 lastMs; };
+    QHash<QString, CursorItem> m_cursors;
+    QHash<QString, QColor> m_cursorColors;
+    QString m_selfName;
 };
 
 #endif // ANNOTATIONOVERLAY_H

@@ -187,8 +187,13 @@ void VideoDisplayWidget::setupUI()
     m_videoLabel->setCursor(Qt::BlankCursor);
     m_localCursorOverlay = new QLabel(m_videoLabel);
     m_localCursorOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_localCursorOverlay->setAttribute(Qt::WA_TranslucentBackground);
     m_localCursorOverlay->setStyleSheet("QLabel { background: transparent; }");
     m_localCursorOverlay->hide();
+    updateLocalCursorComposite();
+    if (!m_cursorComposite.isNull()) {
+        m_localCursorOverlay->setPixmap(m_cursorComposite);
+    }
     // 启用鼠标跟踪并安装事件过滤器，用于批注坐标采集
     m_videoLabel->setMouseTracking(true);
     m_videoLabel->setFocusPolicy(Qt::StrongFocus); // 允许接收键盘事件（用于Ctrl+Z撤销）
@@ -1548,7 +1553,7 @@ void VideoDisplayWidget::updateLocalCursorComposite()
         int h = qMax(8, int(m_cursorBase.height() * 0.5));
         m_cursorSmall = m_cursorBase.scaled(QSize(w, h), Qt::KeepAspectRatio, Qt::SmoothTransformation);
         QPixmap base = m_cursorSmall.isNull() ? m_cursorBase : m_cursorSmall;
-        if (m_localCursorColor.alpha() == 0) {
+        if (!m_localCursorColor.isValid()) {
             quint32 seed = qHash(m_viewerName);
             QRandomGenerator gen(seed);
             int r = gen.bounded(40, 216);
@@ -1556,11 +1561,10 @@ void VideoDisplayWidget::updateLocalCursorComposite()
             int b = gen.bounded(40, 216);
             m_localCursorColor = QColor(r, g, b);
         }
-        QPixmap tint(base.size());
-        tint.fill(m_localCursorColor);
+        QPixmap tint = base.copy();
         QPainter tp(&tint);
-        tp.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-        tp.drawPixmap(0, 0, base);
+        tp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        tp.fillRect(tint.rect(), m_localCursorColor);
         tp.end();
         QFont f; f.setPixelSize(qMax(12, base.height() / 2));
         QFontMetrics fm(f);

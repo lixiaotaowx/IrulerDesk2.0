@@ -184,6 +184,46 @@ int getScreenIndexFromConfig()
     return 0; // 默认主屏索引0
 }
 
+// 新增：保存屏幕索引到配置
+static void saveScreenIndexToConfig(int screenIndex)
+{
+    QString configFilePath = QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+    QDir dir(QFileInfo(configFilePath).path());
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+
+    QStringList lines;
+    QFile f(configFilePath);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            lines << in.readLine();
+        }
+        f.close();
+    }
+
+    bool replaced = false;
+    for (int i = 0; i < lines.size(); ++i) {
+        if (lines[i].startsWith("screen_index=")) {
+            lines[i] = QString("screen_index=%1").arg(screenIndex);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        lines << QString("screen_index=%1").arg(screenIndex);
+    }
+
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&f);
+        for (const QString &line : lines) {
+            out << line << "\n";
+        }
+        f.close();
+    }
+}
+
 int main(int argc, char *argv[])
 {
     // 安装崩溃守护与控制台日志重定向
@@ -693,6 +733,7 @@ int main(int argc, char *argv[])
             // 默认滚动到下一屏幕
             currentScreenIndex = (currentScreenIndex + 1) % screens.size();
         }
+        saveScreenIndexToConfig(currentScreenIndex);
         
         
         // 标记正在切换以避免捕获循环继续抓帧（不断流，仅暂时不发帧）

@@ -114,6 +114,8 @@ set(VIDEO_COMPONENTS_SOURCES
     src/player/DxvaVP9Decoder.h                 # DXVA VP9 解码器声明
     src/player/WebSocketReceiver.cpp            # WebSocket 接收端实现：接收瓦片与批注事件
     src/player/WebSocketReceiver.h              # WebSocket 接收端声明
+    src/ui/TransparentImageList.cpp             # 透明头像列表（用于动画目标识别）
+    src/ui/TransparentImageList.h               # 透明头像列表声明
 )
 
 # 创建主程序可执行文件
@@ -164,6 +166,7 @@ target_link_libraries(PlayerProcess PRIVATE
     Qt6::Widgets
     Qt6::WebSockets
     Qt6::Gui
+    Qt6::Svg
     Qt6::Multimedia
     Opus::opus
     unofficial::libvpx::libvpx

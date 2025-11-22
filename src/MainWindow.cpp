@@ -53,6 +53,11 @@ MainWindow::MainWindow(QWidget *parent)
     QTimer::singleShot(1000, this, &MainWindow::startStreaming);
 }
 
+TransparentImageList* MainWindow::transparentImageList() const
+{
+    return m_transparentImageList;
+}
+
 void MainWindow::sendWatchRequest(const QString& targetDeviceId)
 {
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {

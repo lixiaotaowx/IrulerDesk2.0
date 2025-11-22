@@ -1,6 +1,7 @@
 #include "VideoDisplayWidget.h"
 #include "../player/DxvaVP9Decoder.h"
 #include "../player/WebSocketReceiver.h"
+#include <QApplication>
 #include <QPixmap>
 #include <QThread>
 #include <QDateTime>
@@ -597,10 +598,12 @@ void VideoDisplayWidget::updateWaitingSplashFrame()
     }
 
     painter.end();
+    m_lastWaitCanvas = canvas;
     m_videoLabel->setPixmap(canvas);
     m_videoLabel->setAlignment(Qt::AlignCenter);
     m_waitingDotsPhase = (m_waitingDotsPhase + 1) % 3;
 }
+
 
 
 void VideoDisplayWidget::showSwitchingIndicator(const QString &message)

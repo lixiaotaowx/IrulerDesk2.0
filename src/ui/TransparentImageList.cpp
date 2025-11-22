@@ -6,6 +6,9 @@
 #include <QBitmap>
 #include <QMouseEvent>
 #include <QTimer>
+#include <QFileInfo>
+#include <QTextStream>
+#include <QDir>
 
 TransparentImageList::TransparentImageList(QWidget *parent)
     : QWidget(parent)
@@ -14,6 +17,7 @@ TransparentImageList::TransparentImageList(QWidget *parent)
     , m_defaultAvatarPath(":/images/default_avatar.png")
 {
     setupUI();
+    readPositionFromConfig();
     positionOnScreen();
 }
 
@@ -53,16 +57,20 @@ void TransparentImageList::setupUI()
 
 void TransparentImageList::positionOnScreen()
 {
-    // 获取主屏幕
-    QScreen *screen = QApplication::primaryScreen();
-    if (!screen) return;
-    
-    QRect screenGeometry = screen->availableGeometry();
-    
-    // 计算窗口位置：屏幕左侧边缘，垂直居中
-    int x = screenGeometry.x(); // 使用屏幕几何的x坐标，确保真正贴边
-    int y = screenGeometry.y() + (screenGeometry.height() - height()) / 2;
-    
+    const auto screens = QApplication::screens();
+    if (screens.isEmpty()) return;
+    int idx = m_screenIndex;
+    if (idx < 0 || idx >= screens.size()) {
+        // 默认：最后一块屏幕
+        idx = screens.size() - 1;
+        m_screenIndex = idx;
+    }
+    QScreen *screen = screens[idx];
+    QRect g = screen->availableGeometry();
+    int x = g.left();
+    int y = (m_offsetY >= 0) ? (g.top() + m_offsetY) : (g.top() + (g.height() - height()) / 2);
+    if (y < g.top()) y = g.top();
+    if (y > g.bottom() - height() + 1) y = g.bottom() - height() + 1;
     move(x, y);
 }
 
@@ -503,10 +511,11 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
         if (label) {
             QString userId = label->property("userId").toString();
             if (!userId.isEmpty()) {
-                // 左键：触发视频播放；右键：弹出上下文菜单
                 if (mouseEvent->button() == Qt::LeftButton) {
-                    onImageClicked(userId);
-                    return true; // 消耗左键事件
+                    m_dragCandidate = true;
+                    m_dragStartGlobal = mouseEvent->globalPosition().toPoint();
+                    // 先不触发点击，等待是否发生拖动
+                    return true;
                 } else if (mouseEvent->button() == Qt::RightButton) {
                     QMenu contextMenu(this);
                     QAction *showMainWindowAction = contextMenu.addAction("显示主窗口");
@@ -528,6 +537,41 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
             } else {
             }
         } else {
+        }
+    } else if (event->type() == QEvent::MouseMove) {
+        QMouseEvent *mm = static_cast<QMouseEvent*>(event);
+        if (m_dragCandidate && (mm->buttons() & Qt::LeftButton)) {
+            QPoint gp = mm->globalPosition().toPoint();
+            if ((gp - m_dragStartGlobal).manhattanLength() > m_dragThreshold) {
+                m_draggingList = true;
+                grabMouse(Qt::ClosedHandCursor);
+                setCursor(Qt::ClosedHandCursor);
+                updateDragPosition(gp);
+                return true;
+            }
+        }
+    } else if (event->type() == QEvent::MouseButtonRelease) {
+        QMouseEvent *mr = static_cast<QMouseEvent*>(event);
+        QLabel *label = qobject_cast<QLabel*>(obj);
+        if (label) {
+            QString userId = label->property("userId").toString();
+            if (!userId.isEmpty()) {
+                if (m_draggingList) {
+                    // 结束拖动并持久化位置
+                    m_dragCandidate = false;
+                    m_draggingList = false;
+                    writePositionToConfig();
+                    alignToScreenIndex(m_screenIndex);
+                    releaseMouse();
+                    unsetCursor();
+                    return true;
+                } else {
+                    // 作为点击处理
+                    onImageClicked(userId);
+                    m_dragCandidate = false;
+                    return true;
+                }
+            }
         }
     }
     return QWidget::eventFilter(obj, event);
@@ -552,6 +596,133 @@ void TransparentImageList::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     positionOnScreen();
+}
+
+void TransparentImageList::alignToScreenIndex(int index)
+{
+    const auto screens = QApplication::screens();
+    if (screens.isEmpty()) return;
+    if (index < 0 || index >= screens.size()) return;
+    m_screenIndex = index;
+    QScreen *screen = screens[index];
+    QRect g = screen->availableGeometry();
+    int x = g.left();
+    int y = (m_offsetY >= 0) ? (g.top() + m_offsetY) : (g.top() + (g.height() - height()) / 2);
+    if (y < g.top()) y = g.top();
+    if (y > g.bottom() - height() + 1) y = g.bottom() - height() + 1;
+    move(x, y);
+}
+
+void TransparentImageList::readPositionFromConfig()
+{
+    QString cfg = QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+    QFile f(cfg);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("avatar_screen_index=")) {
+                bool ok=false; int v = line.mid(QString("avatar_screen_index=").length()).toInt(&ok);
+                if (ok) m_screenIndex = v;
+            } else if (line.startsWith("avatar_side=")) {
+                QString side = line.mid(QString("avatar_side=").length()).trimmed();
+                m_anchorRight = (side == "right");
+            } else if (line.startsWith("avatar_offset_y=")) {
+                bool ok=false; int v = line.mid(QString("avatar_offset_y=").length()).toInt(&ok);
+                if (ok && v >= 0) m_offsetY = v;
+            }
+        }
+        f.close();
+    }
+}
+
+void TransparentImageList::writePositionToConfig()
+{
+    QString cfg = QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+    QDir dir(QFileInfo(cfg).path());
+    if (!dir.exists()) dir.mkpath(".");
+    QStringList lines;
+    QFile f(cfg);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) lines << in.readLine();
+        f.close();
+    }
+    // 根据当前坐标计算并更新偏移
+    const auto screens = QApplication::screens();
+    if (!screens.isEmpty() && m_screenIndex >= 0 && m_screenIndex < screens.size()) {
+        QRect g = screens[m_screenIndex]->availableGeometry();
+        m_offsetY = pos().y() - g.top();
+        if (m_offsetY < 0) m_offsetY = 0;
+        int maxY = g.height() - height();
+        if (m_offsetY > maxY) m_offsetY = maxY;
+    }
+    bool repIdx=false, repSide=false;
+    bool repOff=false;
+    for (int i = 0; i < lines.size(); ++i) {
+        if (lines[i].startsWith("avatar_screen_index=")) { lines[i] = QString("avatar_screen_index=%1").arg(m_screenIndex); repIdx=true; }
+        if (lines[i].startsWith("avatar_side=")) { lines[i] = QString("avatar_side=left"); repSide=true; }
+        if (lines[i].startsWith("avatar_offset_y=")) { lines[i] = QString("avatar_offset_y=%1").arg(m_offsetY); repOff=true; }
+    }
+    if (!repIdx) lines << QString("avatar_screen_index=%1").arg(m_screenIndex);
+    if (!repSide) lines << QString("avatar_side=left");
+    if (!repOff) lines << QString("avatar_offset_y=%1").arg(m_offsetY >= 0 ? m_offsetY : 0);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&f);
+        for (const QString &line : lines) out << line << "\n";
+        f.close();
+    }
+}
+
+void TransparentImageList::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_dragCandidate = true; m_dragStartGlobal = event->globalPosition().toPoint();
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void TransparentImageList::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_dragCandidate && (event->buttons() & Qt::LeftButton)) {
+        QPoint gp = event->globalPosition().toPoint();
+        if ((gp - m_dragStartGlobal).manhattanLength() > m_dragThreshold) {
+            m_draggingList = true;
+            grabMouse(Qt::ClosedHandCursor);
+            setCursor(Qt::ClosedHandCursor);
+            updateDragPosition(gp);
+        }
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void TransparentImageList::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_draggingList) { writePositionToConfig(); alignToScreenIndex(m_screenIndex); releaseMouse(); unsetCursor(); }
+    m_dragCandidate = false;
+    m_draggingList = false;
+    QWidget::mouseReleaseEvent(event);
+}
+
+void TransparentImageList::updateDragPosition(const QPoint &globalPos)
+{
+    const auto screens = QApplication::screens();
+    for (int i = 0; i < screens.size(); ++i) {
+        QRect g = screens[i]->geometry();
+        if (g.contains(globalPos)) {
+            m_screenIndex = i;
+            m_anchorRight = false;
+            int x = globalPos.x() - width() / 2;
+            if (x < g.left()) x = g.left();
+            if (x > g.right() - width() + 1) x = g.right() - width() + 1;
+            int y = globalPos.y() - height() / 2;
+            if (y < g.top()) y = g.top();
+            if (y > g.bottom() - height() + 1) y = g.bottom() - height() + 1;
+            move(x, y);
+            m_offsetY = y - g.top();
+            break;
+        }
+    }
 }
 
 void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)

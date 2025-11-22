@@ -32,6 +32,7 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+    class TransparentImageList* transparentImageList() const;
 
 signals:
     void appInitialized();

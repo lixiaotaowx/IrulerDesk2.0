@@ -108,6 +108,22 @@ private:
     static const int IMAGE_SIZE = 80;
     static const int IMAGE_SPACING = 10;
     static const int MARGIN_FROM_EDGE = 5; // 减少边距，让图片更靠近边缘
+    // 位置与拖动状态
+    int m_screenIndex = -1;
+    bool m_anchorRight = false;
+    bool m_dragCandidate = false;
+    bool m_draggingList = false;
+    QPoint m_dragStartGlobal;
+    int m_dragThreshold = 8;
+    int m_offsetY = -1;
+    void alignToScreenIndex(int index);
+    void readPositionFromConfig();
+    void writePositionToConfig();
+    void updateDragPosition(const QPoint &globalPos);
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 };
 
 #endif // TRANSPARENTIMAGELIST_H

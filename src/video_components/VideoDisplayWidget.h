@@ -14,6 +14,9 @@
 #include <QReadWriteLock>
 #include <QHash>
 #include <QRect>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QParallelAnimationGroup>
 #include <memory>
 #include <atomic>
 // 音频播放（Qt6）
@@ -181,6 +184,7 @@ private:
     void showWaitingSplash();
     void stopWaitingSplash();
     void updateWaitingSplashFrame();
+    void animateWaitingSplashFlyOut();
     
     // UI组件
     QVBoxLayout *m_mainLayout;
@@ -258,16 +262,22 @@ private:
     QPushButton *m_continueButton = nullptr; // 继续观看按钮
     QTimer *m_promptCountdownTimer = nullptr;// 倒计时定时器（10秒）
     int m_remainingSeconds = 0;              // 剩余倒计时秒数
+    // 等待遮罩动画
+    bool m_waitSplashActive = false;
+    QTimer *m_waitingDotsTimer = nullptr;
+    QPixmap m_waitBaseCached;
+    QPixmap m_waitWmCached;
+    QPixmap m_lastWaitCanvas;
+    int m_waitingDotsPhase = 0;
+    QLabel *m_waitFlyLabel = nullptr;
+    QGraphicsOpacityEffect *m_waitFlyOpacity = nullptr;
+    QPropertyAnimation *m_waitFlyGeomAnim = nullptr;
+    QPropertyAnimation *m_waitFlyOpacityAnim = nullptr;
+    QParallelAnimationGroup *m_waitFlyGroup = nullptr;
     // 批注颜色ID（0:红,1:绿,2:蓝,3:黄）
     int m_currentColorId = 0;
     int m_textFontSize = 16;
     QPoint m_lastTextSrcPoint;
-    // 等待开屏动画（随机底图 + 右下水印 + 三点闪烁）
-    QTimer *m_waitingDotsTimer = nullptr;
-    int m_waitingDotsPhase = 0;
-    bool m_waitSplashActive = false;
-    QPixmap m_waitBaseCached;
-    QPixmap m_waitWmCached;
 };
 
 #endif // VIDEODISPLAYWIDGET_H

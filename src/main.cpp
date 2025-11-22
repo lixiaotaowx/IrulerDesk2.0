@@ -8,6 +8,10 @@
 #include <QRandomGenerator>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QLabel>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QParallelAnimationGroup>
 #include <iostream>
 #ifdef _WIN32
 #include <windows.h>
@@ -15,6 +19,7 @@
 #include "common/ConsoleLogger.h"
 #include "common/CrashGuard.h"
 #include "MainWindow.h"
+#include "ui/TransparentImageList.h"
 
 int main(int argc, char *argv[])
 {
@@ -118,7 +123,49 @@ int main(int argc, char *argv[])
     
     // 创建并显示主窗口
     MainWindow window;
-    QObject::connect(&window, &MainWindow::appReady, &splash, &QSplashScreen::close);
+    QObject::connect(&window, &MainWindow::appReady, &splash, [&splash, &window, canvas]() {
+        QRect startRect = splash.geometry();
+        TransparentImageList *target = window.transparentImageList();
+        QPoint destCenter;
+        if (target) {
+            QRect tGlobal(target->pos(), target->size());
+            destCenter = tGlobal.center();
+        } else {
+            destCenter = QPoint(startRect.left() + startRect.width() - 20, startRect.top() + startRect.height() - 20);
+        }
+        int ew = qMax(8, startRect.width() / 10);
+        int eh = qMax(8, startRect.height() / 10);
+        QRect endRect(destCenter.x() - ew / 2, destCenter.y() - eh / 2, ew, eh);
+        QLabel *fly = new QLabel(nullptr);
+        fly->setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint);
+        fly->setAttribute(Qt::WA_TranslucentBackground, true);
+        fly->setScaledContents(true);
+        fly->setPixmap(canvas);
+        fly->setGeometry(startRect);
+        fly->show();
+        splash.close();
+        auto opacity = new QGraphicsOpacityEffect(fly);
+        opacity->setOpacity(1.0);
+        fly->setGraphicsEffect(opacity);
+        auto geomAnim = new QPropertyAnimation(fly, "geometry");
+        geomAnim->setDuration(500);
+        geomAnim->setStartValue(startRect);
+        geomAnim->setEndValue(endRect);
+        auto opAnim = new QPropertyAnimation(opacity, "opacity");
+        opAnim->setDuration(500);
+        opAnim->setStartValue(1.0);
+        opAnim->setEndValue(0.0);
+        auto group = new QParallelAnimationGroup(fly);
+        group->addAnimation(geomAnim);
+        group->addAnimation(opAnim);
+        QObject::connect(group, &QParallelAnimationGroup::finished, [fly, opacity, group]() {
+            fly->hide();
+            fly->deleteLater();
+            opacity->deleteLater();
+            group->deleteLater();
+        });
+        group->start(QAbstractAnimation::DeleteWhenStopped);
+    });
     // 简单的启动日志（使用 C++ 标准输出）
     // std::cout << "启动成功" << std::endl;
     

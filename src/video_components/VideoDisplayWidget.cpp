@@ -1152,8 +1152,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 if (!m_cursorComposite.isNull() && m_localCursorOverlay) {
                     m_localCursorOverlay->setPixmap(m_cursorComposite);
                     m_localCursorOverlay->move(me->pos());
-                    m_localCursorOverlay->show();
-                    m_localCursorOverlay->raise();
+                    if (!m_annotationEnabled) { m_localCursorOverlay->show(); m_localCursorOverlay->raise(); } else { m_localCursorOverlay->hide(); }
                 }
             }
             break;
@@ -1350,6 +1349,8 @@ void VideoDisplayWidget::onContinueClicked()
 void VideoDisplayWidget::setAnnotationEnabled(bool enabled)
 {
     m_annotationEnabled = enabled;
+    if (m_localCursorOverlay) m_localCursorOverlay->setVisible(!enabled);
+    applyCursor();
 }
 
 void VideoDisplayWidget::setToolMode(int mode)
@@ -1358,29 +1359,35 @@ void VideoDisplayWidget::setToolMode(int mode)
     if (m < 0) m = 0;
     if (m > 5) m = 5;
     m_toolMode = m;
-    if (m_videoLabel) {
-        if (m_toolMode == 1) {
-            int r = 20;
-            QPixmap pix(2*r + 2, 2*r + 2);
-            pix.fill(Qt::transparent);
-            QPainter p(&pix);
-            p.setRenderHint(QPainter::Antialiasing, true);
-            QPen pen(QColor(255, 255, 255, 230));
-            pen.setWidth(2);
-            p.setPen(pen);
-            p.setBrush(Qt::NoBrush);
-            p.drawEllipse(QPoint(r + 1, r + 1), r, r);
-            QCursor cur(pix, r + 1, r + 1);
-            m_videoLabel->setCursor(cur);
-        } else if (m_toolMode == 2 || m_toolMode == 3) {
-            m_videoLabel->setCursor(Qt::CrossCursor);
-        } else if (m_toolMode == 4) {
-            m_videoLabel->setCursor(Qt::IBeamCursor);
-        } else if (m_toolMode == 5) {
-            m_videoLabel->setCursor(Qt::CrossCursor);
-        } else {
-            m_videoLabel->setCursor(Qt::ArrowCursor);
-        }
+    applyCursor();
+}
+
+void VideoDisplayWidget::applyCursor()
+{
+    if (!m_videoLabel) return;
+    if (!m_annotationEnabled) {
+        m_videoLabel->setCursor(Qt::BlankCursor);
+        return;
+    }
+    if (m_toolMode == 1) {
+        int r = 20;
+        QPixmap pix(2*r + 2, 2*r + 2);
+        pix.fill(Qt::transparent);
+        QPainter p(&pix);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        QPen pen(QColor(255, 255, 255, 230));
+        pen.setWidth(2);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        p.drawEllipse(QPoint(r + 1, r + 1), r, r);
+        QCursor cur(pix, r + 1, r + 1);
+        m_videoLabel->setCursor(cur);
+    } else if (m_toolMode == 2 || m_toolMode == 3 || m_toolMode == 5) {
+        m_videoLabel->setCursor(Qt::CrossCursor);
+    } else if (m_toolMode == 4) {
+        m_videoLabel->setCursor(Qt::IBeamCursor);
+    } else {
+        m_videoLabel->setCursor(Qt::ArrowCursor);
     }
 }
 

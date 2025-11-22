@@ -1150,7 +1150,12 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                     m_receiver->sendViewerCursor(src.x(), src.y());
                 }
                 if (!m_cursorComposite.isNull() && m_localCursorOverlay) {
-                    m_localCursorOverlay->setPixmap(m_cursorComposite);
+                    double s = currentScale();
+                    if (s > 1.0) s = 1.0;
+                    if (m_lastCursorScale != s || m_cursorScaledComposite.isNull()) {
+                        updateScaledCursorComposite(s);
+                    }
+                    m_localCursorOverlay->setPixmap(m_cursorScaledComposite);
                     m_localCursorOverlay->move(me->pos());
                     if (!m_annotationEnabled) { m_localCursorOverlay->show(); m_localCursorOverlay->raise(); } else { m_localCursorOverlay->hide(); }
                 }
@@ -1391,6 +1396,25 @@ void VideoDisplayWidget::applyCursor()
     }
 }
 
+double VideoDisplayWidget::currentScale() const
+{
+    QSize labelSize = m_videoLabel ? m_videoLabel->size() : QSize();
+    QSize frameSize;
+    if (m_tileMode && !m_tileComposition.frameSize.isEmpty()) {
+        frameSize = m_tileComposition.frameSize;
+    } else {
+        frameSize = m_stats.frameSize;
+    }
+    if (labelSize.isEmpty() || frameSize.isEmpty()) {
+        return 1.0;
+    }
+    double sx = double(labelSize.width()) / double(frameSize.width());
+    double sy = double(labelSize.height()) / double(frameSize.height());
+    double s = (sx < sy) ? sx : sy;
+    if (s <= 0.0) s = 1.0;
+    return s;
+}
+
 void VideoDisplayWidget::setTextFontSize(int size)
 {
     int s = size;
@@ -1590,4 +1614,12 @@ void VideoDisplayWidget::updateLocalCursorComposite()
         cp.end();
         m_cursorComposite = comp;
     }
+}
+void VideoDisplayWidget::updateScaledCursorComposite(double scale)
+{
+    if (scale <= 0.0) scale = 1.0;
+    int w = qMax(8, int(m_cursorComposite.width() * scale));
+    int h = qMax(8, int(m_cursorComposite.height() * scale));
+    m_cursorScaledComposite = m_cursorComposite.scaled(QSize(w, h), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    m_lastCursorScale = scale;
 }

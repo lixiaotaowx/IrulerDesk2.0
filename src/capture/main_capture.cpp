@@ -677,24 +677,7 @@ int main(int argc, char *argv[])
         sender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
     });
 
-    QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, cursorOverlay,
-                     [cursorOverlay](const QPoint &globalPos) {
-        const auto screens = QApplication::screens();
-        if (screens.isEmpty()) {
-            return;
-        }
-        int idx = currentScreenIndex;
-        if (idx < 0 || idx >= screens.size()) {
-            idx = 0;
-        }
-        QScreen *screen = screens[idx];
-        QRect geom = screen->geometry();
-        QPoint local(globalPos.x() - geom.x(), globalPos.y() - geom.y());
-        if (local.x() < 0 || local.y() < 0 || local.x() >= geom.width() || local.y() >= geom.height()) {
-            return;
-        }
-        cursorOverlay->onCursorMoved(local.x(), local.y());
-    });
+    
 
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕
     QObject::connect(sender, &WebSocketSender::switchScreenRequested, [overlay, cursorOverlay](const QString &direction, int targetIndex) {

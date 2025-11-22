@@ -162,6 +162,8 @@ private:
     QPoint mapLabelToSource(const QPoint &labelPoint) const;
     void closeEvent(QCloseEvent *event) override;
     void applyCursor();
+    double currentScale() const;
+    void updateScaledCursorComposite(double scale);
     
     // 瓦片渲染私有方法
     void updateTileMapping();
@@ -225,6 +227,8 @@ private:
     QPixmap m_cursorBase;
     QPixmap m_cursorSmall;
     QPixmap m_cursorComposite;
+    QPixmap m_cursorScaledComposite;
+    double m_lastCursorScale = -1.0;
     QColor m_localCursorColor;
 
     // 最近一次观看者与目标ID（用于重发watch_request以恢复推流）

@@ -148,11 +148,11 @@ int main(int argc, char *argv[])
         opacity->setOpacity(1.0);
         fly->setGraphicsEffect(opacity);
         auto geomAnim = new QPropertyAnimation(fly, "geometry");
-        geomAnim->setDuration(500);
+        geomAnim->setDuration(300);
         geomAnim->setStartValue(startRect);
         geomAnim->setEndValue(endRect);
         auto opAnim = new QPropertyAnimation(opacity, "opacity");
-        opAnim->setDuration(500);
+        opAnim->setDuration(300);
         opAnim->setStartValue(1.0);
         opAnim->setEndValue(0.0);
         auto group = new QParallelAnimationGroup(fly);

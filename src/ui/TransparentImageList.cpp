@@ -527,6 +527,8 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     // 新增右键菜单项
                     QAction *clearMarksAction = contextMenu.addAction("清理标记");
                     connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
+                    QAction *hideAction = contextMenu.addAction("隐藏");
+                    connect(hideAction, &QAction::triggered, this, &TransparentImageList::hideRequested);
                     QAction *exitAction = contextMenu.addAction("退出");
                     connect(exitAction, &QAction::triggered, this, &TransparentImageList::exitRequested);
                     contextMenu.exec(label->mapToGlobal(mouseEvent->pos()));
@@ -741,6 +743,8 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
     // 新增右键菜单项（窗口泛用菜单）
     QAction *clearMarksAction = contextMenu.addAction("清理标记");
     connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
+    QAction *hideAction = contextMenu.addAction("隐藏");
+    connect(hideAction, &QAction::triggered, this, &TransparentImageList::hideRequested);
     QAction *exitAction = contextMenu.addAction("退出");
     connect(exitAction, &QAction::triggered, this, &TransparentImageList::exitRequested);
     

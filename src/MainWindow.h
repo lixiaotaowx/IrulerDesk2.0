@@ -68,6 +68,7 @@ private slots:
     void onAvatarSelected(int iconId);  // 新增：头像选择完成槽函数
     void onClearMarksRequested(); // 新增：清理标记槽函数
     void onExitRequested();       // 新增：退出槽函数
+    void onHideRequested();
     void onAnnotationColorChanged(int colorId); // 新增：批注颜色变化持久化
     void onUserNameChanged(const QString &name);
 
@@ -160,6 +161,8 @@ private:
     // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
     QString m_currentTargetId;
     bool m_appReadyEmitted = false;
+    class QSystemTrayIcon *m_trayIcon = nullptr;
+    QMenu *m_trayMenu = nullptr;
 };
 
 #endif // MAINWINDOW_H

@@ -66,6 +66,7 @@ signals:
     void systemSettingsRequested(); // 新增：系统设置请求信号
     void clearMarksRequested(); // 新增：清理标记请求
     void exitRequested();       // 新增：退出请求
+    void hideRequested();
 
 private:
     struct UserImageItem {

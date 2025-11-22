@@ -5,6 +5,9 @@
 #include "ui/AvatarSettingsWindow.h"
 #include "ui/SystemSettingsWindow.h"
 #include <QApplication>
+#include <QSystemTrayIcon>
+#include <QMenu>
+#include <QIcon>
 #include <QMessageBox>
 #include <QDir>
 #include <QStandardPaths>
@@ -45,6 +48,25 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     
     setupStatusBar();
+
+    if (!m_trayIcon) {
+        QString appDir = QCoreApplication::applicationDirPath();
+        m_trayIcon = new QSystemTrayIcon(QIcon(QString("%1/maps/logo/logo.png").arg(appDir)), this);
+        m_trayMenu = new QMenu();
+        QAction *showAction = m_trayMenu->addAction(QStringLiteral("显示主窗口"));
+        QAction *exitAction = m_trayMenu->addAction(QStringLiteral("退出"));
+        connect(showAction, &QAction::triggered, this, [this]() {
+            if (m_transparentImageList) { m_transparentImageList->show(); m_transparentImageList->raise(); }
+        });
+        connect(exitAction, &QAction::triggered, this, &MainWindow::onExitRequested);
+        m_trayIcon->setContextMenu(m_trayMenu);
+        connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason r) {
+            if (r == QSystemTrayIcon::DoubleClick) {
+                if (m_transparentImageList) { m_transparentImageList->show(); m_transparentImageList->raise(); }
+            }
+        });
+        m_trayIcon->show();
+    }
 
     // 初始化登录系统
     initializeLoginSystem();
@@ -375,6 +397,8 @@ void MainWindow::setupUI()
             this, &MainWindow::onClearMarksRequested);
     connect(m_transparentImageList, &TransparentImageList::exitRequested,
             this, &MainWindow::onExitRequested);
+    connect(m_transparentImageList, &TransparentImageList::hideRequested,
+            this, &MainWindow::onHideRequested);
     
 }
 
@@ -1305,10 +1329,10 @@ void MainWindow::onUserImageClicked(const QString &userId, const QString &userNa
 
 void MainWindow::showMainList()
 {
-    // 显示整个主窗口
-    this->show();
-    this->raise();
-    this->activateWindow();
+    if (m_transparentImageList) {
+        m_transparentImageList->show();
+        m_transparentImageList->raise();
+    }
 }
 
 void MainWindow::onSetAvatarRequested()
@@ -1399,6 +1423,14 @@ void MainWindow::onExitRequested()
         m_videoWindow->hide();
     }
     QCoreApplication::quit();
+}
+
+void MainWindow::onHideRequested()
+{
+    if (m_videoWindow) m_videoWindow->hide();
+    if (m_transparentImageList) m_transparentImageList->hide();
+    if (m_avatarSettingsWindow) m_avatarSettingsWindow->hide();
+    if (m_systemSettingsWindow) m_systemSettingsWindow->hide();
 }
 
 void MainWindow::onScreenSelected(int index)

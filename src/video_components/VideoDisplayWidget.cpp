@@ -688,8 +688,12 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
     }
     m_audioSink = new QAudioSink(outDev, m_audioFormat, this);
     m_audioSink->setBufferSize(4096);
-    m_audioIO = m_audioSink->start();
-    if (m_audioSink) { m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0)); }
+    if (m_speakerEnabled) {
+        m_audioIO = m_audioSink->start();
+        m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
+    } else {
+        m_audioIO = nullptr;
+    }
     m_audioInitialized = true;
 }
 

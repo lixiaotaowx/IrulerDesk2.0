@@ -108,6 +108,10 @@ private:
     QString loadMicInputDeviceIdFromConfig() const;
     void saveMicInputFollowSystemToConfig(bool followSystem);
     void saveMicInputDeviceIdToConfig(const QString &deviceId);
+    bool loadSpeakerEnabledFromConfig() const;
+    bool loadMicEnabledFromConfig() const;
+    void saveSpeakerEnabledToConfig(bool enabled);
+    void saveMicEnabledToConfig(bool enabled);
     
     // 登录系统相关方法
     void initializeLoginSystem();

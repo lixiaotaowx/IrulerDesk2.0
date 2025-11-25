@@ -25,6 +25,10 @@ public:
     
     // 获取视频显示组件
     VideoDisplayWidget* getVideoDisplayWidget() const;
+    void setMicChecked(bool checked);
+    void setSpeakerChecked(bool checked);
+    bool isMicChecked() const;
+    bool isSpeakerChecked() const;
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;

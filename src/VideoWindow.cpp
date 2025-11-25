@@ -92,6 +92,22 @@ VideoDisplayWidget* VideoWindow::getVideoDisplayWidget() const
 {
     return m_videoDisplayWidget;
 }
+void VideoWindow::setMicChecked(bool checked)
+{
+    if (m_micButton) m_micButton->setChecked(checked);
+}
+bool VideoWindow::isMicChecked() const
+{
+    return m_micButton ? m_micButton->isChecked() : false;
+}
+void VideoWindow::setSpeakerChecked(bool checked)
+{
+    if (m_speakerButton) m_speakerButton->setChecked(checked);
+}
+bool VideoWindow::isSpeakerChecked() const
+{
+    return m_speakerButton ? m_speakerButton->isChecked() : false;
+}
 
 void VideoWindow::setupUI()
 {
@@ -862,6 +878,14 @@ void VideoWindow::onMicToggled(bool checked)
         m_videoDisplayWidget->sendAudioToggle(checked);
         m_videoDisplayWidget->setTalkEnabled(checked);
     }
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString path = appDir + "/config/app_config.txt";
+    QFile f(path);
+    QStringList lines;
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) { QTextStream in(&f); while (!in.atEnd()) lines << in.readLine(); f.close(); }
+    bool rep = false; for (int i = 0; i < lines.size(); ++i) { if (lines[i].startsWith("mic_enabled=")) { lines[i] = QString("mic_enabled=%1").arg(checked ? "true" : "false"); rep = true; break; } }
+    if (!rep) lines << QString("mic_enabled=%1").arg(checked ? "true" : "false");
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) { QTextStream out(&f); for (const QString &ln : lines) out << ln << "\n"; f.close(); }
 }
 
 void VideoWindow::onSpeakerToggled(bool checked)
@@ -872,6 +896,14 @@ void VideoWindow::onSpeakerToggled(bool checked)
     if (m_videoDisplayWidget) {
         m_videoDisplayWidget->setSpeakerEnabled(checked);
     }
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString path = appDir + "/config/app_config.txt";
+    QFile f(path);
+    QStringList lines;
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) { QTextStream in(&f); while (!in.atEnd()) lines << in.readLine(); f.close(); }
+    bool rep = false; for (int i = 0; i < lines.size(); ++i) { if (lines[i].startsWith("speaker_enabled=")) { lines[i] = QString("speaker_enabled=%1").arg(checked ? "true" : "false"); rep = true; break; } }
+    if (!rep) lines << QString("speaker_enabled=%1").arg(checked ? "true" : "false");
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) { QTextStream out(&f); for (const QString &ln : lines) out << ln << "\n"; f.close(); }
 }
 
 void VideoWindow::onColorClicked()

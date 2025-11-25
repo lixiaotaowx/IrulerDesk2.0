@@ -128,7 +128,13 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     // 传入用户名
     videoWidget->setViewerName(m_userName);
     // 使用VideoDisplayWidget开始接收视频流
-    videoWidget->startReceiving(serverUrl);
+    videoWidget->startReceiving(serverUrl);    bool spkEnabled = loadSpeakerEnabledFromConfig();
+    bool micEnabled = loadMicEnabledFromConfig();
+    m_videoWindow->setSpeakerChecked(spkEnabled);
+    m_videoWindow->setMicChecked(micEnabled);
+    videoWidget->setSpeakerEnabled(spkEnabled);
+    videoWidget->setTalkEnabled(micEnabled);
+    videoWidget->sendAudioToggle(micEnabled);
 
     // 记录viewer/target并在连接后即时重发watch请求
     QString viewerId = getDeviceId();
@@ -367,6 +373,13 @@ void MainWindow::setupUI()
             QString micId = loadMicInputDeviceIdFromConfig();
             if (micFollow || micId.isEmpty()) { vd->selectMicInputFollowSystem(); }
             else { vd->selectMicInputById(micId); }
+            bool spkEnabled = loadSpeakerEnabledFromConfig();
+            bool micEnabled = loadMicEnabledFromConfig();
+            m_videoWindow->setSpeakerChecked(spkEnabled);
+            m_videoWindow->setMicChecked(micEnabled);
+            vd->setSpeakerEnabled(spkEnabled);
+            vd->setTalkEnabled(micEnabled);
+            vd->sendAudioToggle(micEnabled);
         }
     }
     
@@ -1581,6 +1594,94 @@ bool MainWindow::loadAudioOutputFollowSystemFromConfig() const
         configFile.close();
     }
     return true;
+}
+
+bool MainWindow::loadSpeakerEnabledFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("speaker_enabled=")) {
+                QString v = line.mid(QString("speaker_enabled=").length()).trimmed();
+                configFile.close();
+                return v.compare("true", Qt::CaseInsensitive) == 0;
+            }
+        }
+        configFile.close();
+    }
+    return true;
+}
+
+bool MainWindow::loadMicEnabledFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("mic_enabled=")) {
+                QString v = line.mid(QString("mic_enabled=").length()).trimmed();
+                configFile.close();
+                return v.compare("true", Qt::CaseInsensitive) == 0;
+            }
+        }
+        configFile.close();
+    }
+    return false;
+}
+
+void MainWindow::saveSpeakerEnabledToConfig(bool enabled)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("speaker_enabled=")) {
+            configLines[i] = QString("speaker_enabled=%1").arg(enabled ? "true" : "false");
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("speaker_enabled=%1").arg(enabled ? "true" : "false");
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+void MainWindow::saveMicEnabledToConfig(bool enabled)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("mic_enabled=")) {
+            configLines[i] = QString("mic_enabled=%1").arg(enabled ? "true" : "false");
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("mic_enabled=%1").arg(enabled ? "true" : "false");
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
 }
 
 QString MainWindow::loadAudioOutputDeviceIdFromConfig() const

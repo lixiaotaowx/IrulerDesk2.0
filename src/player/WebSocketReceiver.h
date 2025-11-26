@@ -80,6 +80,7 @@ public:
     void sendAudioToggle(bool enabled);
     void sendAudioGain(int percent);
     void setTalkEnabled(bool enabled);
+    void sendViewerListenMute(bool mute);
     void sendLikeEvent();
     void setLocalInputDeviceFollowSystem();
     void setLocalInputDeviceById(const QString &id);

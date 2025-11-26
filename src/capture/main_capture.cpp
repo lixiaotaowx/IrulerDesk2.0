@@ -794,6 +794,7 @@ int main(int argc, char *argv[])
     OpusDecoder *remoteOpusDec = nullptr;
     int remoteSampleRate = 16000;
     int remoteChannels = 1;
+    bool remoteListenEnabled = true;
     QObject::connect(sender, &WebSocketSender::audioToggleRequested, [&, audioTimer, sender, audioSource](bool enabled) {
         if (enabled) {
             // std::cout << "[Sender] audio_toggle enabled" << std::endl;
@@ -943,6 +944,7 @@ int main(int argc, char *argv[])
     });
 
     QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
+        if (!remoteListenEnabled) return;
         if (!remoteOpusDec || remoteSampleRate != sr || remoteChannels != ch) {
             if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
             remoteSampleRate = sr; remoteChannels = ch;
@@ -972,6 +974,14 @@ int main(int argc, char *argv[])
         if (remoteSink->state() == QAudio::StoppedState) { remoteOutIO = remoteSink->start(); }
         if (remoteSink->state() == QAudio::SuspendedState) { remoteSink->resume(); }
         if (remoteOutIO) remoteOutIO->write(pcm);
+    });
+
+    QObject::connect(sender, &WebSocketSender::viewerListenMuteRequested, [&](bool mute) {
+        remoteListenEnabled = !mute;
+        if (mute) {
+            if (remoteSink) { remoteSink->stop(); delete remoteSink; remoteSink = nullptr; remoteOutIO = nullptr; }
+            if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
+        }
     });
     
     QObject::connect(captureTimer, &QTimer::timeout, []() {

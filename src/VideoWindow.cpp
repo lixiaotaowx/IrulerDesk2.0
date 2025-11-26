@@ -717,16 +717,22 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                     for (const auto &d : outs) {
                         QAction *a = menu.addAction(d.description());
                         a->setCheckable(true);
-                        if (!fs && !curr.isEmpty() && d.id() == curr) a->setChecked(true);
+                        if (!fs && !curr.isEmpty() && d.id() == curr.toUtf8()) a->setChecked(true);
                         a->setData(d.id());
                     }
                     QAction *chosen = menu.exec(me->globalPosition().toPoint());
                     if (!chosen) return true;
                     if (chosen == follow) {
-                        if (m_videoDisplayWidget) m_videoDisplayWidget->selectAudioOutputFollowSystem();
+                        if (m_videoDisplayWidget) {
+                            qInfo() << "menu.select.follow_system";
+                            m_videoDisplayWidget->selectAudioOutputFollowSystem();
+                        }
                     } else {
-                        QString id = chosen->data().toString();
-                        if (m_videoDisplayWidget) m_videoDisplayWidget->selectAudioOutputById(id);
+                        QByteArray id = chosen->data().toByteArray();
+                        if (m_videoDisplayWidget) {
+                            qInfo() << "menu.select.device" << QString::fromUtf8(id);
+                            m_videoDisplayWidget->selectAudioOutputByRawId(id);
+                        }
                     }
                     return true;
                 } else {

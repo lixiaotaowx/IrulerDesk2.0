@@ -128,7 +128,10 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     // 传入用户名
     videoWidget->setViewerName(m_userName);
     // 使用VideoDisplayWidget开始接收视频流
-    videoWidget->startReceiving(serverUrl);    bool spkEnabled = loadSpeakerEnabledFromConfig();
+    qInfo() << "app.start_receiving" << serverUrl;
+    videoWidget->startReceiving(serverUrl);
+    bool spkEnabled = loadSpeakerEnabledFromConfig();
+    qInfo() << "config.load.speaker_enabled" << spkEnabled;
     bool micEnabled = loadMicEnabledFromConfig();
     m_videoWindow->setSpeakerChecked(spkEnabled);
     m_videoWindow->setMicChecked(micEnabled);
@@ -367,6 +370,7 @@ void MainWindow::setupUI()
                     this, &MainWindow::onMicInputSelectionChanged);
             bool outFollow = loadAudioOutputFollowSystemFromConfig();
             QString outId = loadAudioOutputDeviceIdFromConfig();
+            qInfo() << "config.load.audio_output" << outFollow << outId;
             if (outFollow || outId.isEmpty()) { vd->selectAudioOutputFollowSystem(); }
             else { vd->selectAudioOutputById(outId); }
             bool micFollow = loadMicInputFollowSystemFromConfig();
@@ -1529,6 +1533,7 @@ void MainWindow::onLocalQualitySelected(const QString& quality)
 
 void MainWindow::onAudioOutputSelectionChanged(bool followSystem, const QString &deviceId)
 {
+    qInfo() << "config.save.audio_output" << followSystem << deviceId;
     saveAudioOutputFollowSystemToConfig(followSystem);
     saveAudioOutputDeviceIdToConfig(deviceId);
 }

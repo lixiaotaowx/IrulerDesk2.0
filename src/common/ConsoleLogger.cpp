@@ -27,7 +27,7 @@
             case QtFatalMsg: level = "FATAL"; break;
         }
         QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
-        QByteArray text = msg.toLocal8Bit();
+        QByteArray text = msg.toUtf8();
         const char *file = ctx.file ? ctx.file : "";
         const char *func = ctx.function ? ctx.function : "";
         int line = ctx.line;

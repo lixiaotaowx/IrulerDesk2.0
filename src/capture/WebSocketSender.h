@@ -106,6 +106,7 @@ signals:
     void viewerNameChanged(const QString &name);
     void viewerCursorReceived(const QString &viewerId, int x, int y, const QString &viewerName);
     void viewerNameUpdateReceived(const QString &viewerId, const QString &viewerName);
+    void viewerListenMuteRequested(bool mute);
 
 private slots:
     void onConnected();

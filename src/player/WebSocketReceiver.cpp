@@ -1023,6 +1023,36 @@ void WebSocketReceiver::sendAudioToggle(bool enabled)
     m_webSocket->sendTextMessage(jsonString);
 }
 
+void WebSocketReceiver::sendViewerListenMute(bool mute)
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        return;
+    }
+
+    QJsonObject message;
+    message["type"] = "viewer_listen_mute";
+    message["mute"] = mute;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    QString jsonString = doc.toJson(QJsonDocument::Compact);
+    m_webSocket->sendTextMessage(jsonString);
+}
+
 void WebSocketReceiver::sendAudioGain(int percent)
 {
     if (!m_connected || !m_webSocket) {

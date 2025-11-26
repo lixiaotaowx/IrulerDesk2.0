@@ -112,8 +112,9 @@ public:
     void setTalkEnabled(bool enabled);
     void selectAudioOutputFollowSystem();
     void selectAudioOutputById(const QString &id);
+    void selectAudioOutputByRawId(const QByteArray &id);
     bool isAudioOutputFollowSystem() const { return m_followSystemOutput; }
-    QString currentAudioOutputId() const { return m_outputDeviceId; }
+    QString currentAudioOutputId() const { return QString::fromUtf8(m_currentOutputDeviceId); }
     void selectMicInputFollowSystem();
     void selectMicInputById(const QString &id);
     bool isMicInputFollowSystem() const;
@@ -216,7 +217,11 @@ private:
     int m_volumePercent = 100;
     int m_micGainPercent = 100;
     bool m_followSystemOutput = true;
-    QString m_outputDeviceId;
+    QByteArray m_outputDeviceId;
+    QByteArray m_currentOutputDeviceId;
+    QMetaObject::Connection m_audioConn;
+    class QMediaDevices *m_mediaDevices = nullptr;
+    QTimer *m_defaultOutPollTimer = nullptr;
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;

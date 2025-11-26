@@ -22,6 +22,8 @@
 #include <QFontMetrics>
 #include <QRandomGenerator>
 #include <QRandomGenerator>
+#include <QMediaDevices>
+#include <QDebug>
 #include <windows.h>
 #include <iostream>
 
@@ -134,19 +136,19 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
             });
 
     // 音频帧接收（本地扬声器开关控制是否处理）
-    connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
-            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 /*timestamp*/) {
-                if (!m_isReceiving) { return; }
-                if (!m_speakerEnabled) { return; }
+    m_audioConn = connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
+            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
+                if (!m_isReceiving) return;
+                if (!m_speakerEnabled) return;
                 initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
-                if (!m_audioSink) { return; }
+                if (!m_audioSink) return;
                 if (m_audioSink->state() == QAudio::StoppedState) {
                     m_audioIO = m_audioSink->start();
                 }
                 if (m_audioSink->state() == QAudio::SuspendedState) {
                     m_audioSink->resume();
                 }
-                if (m_audioIO) { m_audioIO->write(pcmData); }
+                if (m_audioIO) m_audioIO->write(pcmData);
             });
     
     // 统计定时器
@@ -161,6 +163,27 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     
     // 继续观看提示定时器初始化（默认30分钟，可通过环境变量覆盖）
     setupContinuePrompt();
+
+    m_mediaDevices = new QMediaDevices(this);
+    connect(m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
+        int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
+        int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
+        if (m_followSystemOutput) {
+            initAudioSinkIfNeeded(sr, ch, 16);
+        }
+    });
+    m_defaultOutPollTimer = new QTimer(this);
+    m_defaultOutPollTimer->setInterval(500);
+    connect(m_defaultOutPollTimer, &QTimer::timeout, this, [this]() {
+        if (!m_followSystemOutput) return;
+        QAudioDevice def = QMediaDevices::defaultAudioOutput();
+        if (m_currentOutputDeviceId != def.id()) {
+            int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
+            int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
+            initAudioSinkIfNeeded(sr, ch, 16);
+        }
+    });
+    m_defaultOutPollTimer->start();
 }
 
 VideoDisplayWidget::~VideoDisplayWidget()
@@ -632,12 +655,41 @@ void VideoDisplayWidget::sendAudioToggle(bool enabled)
 void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
 {
     m_speakerEnabled = enabled;
-    if (!m_audioSink) return;
-    if (!m_speakerEnabled) {
-        m_audioSink->stop();
+    {
+        QString desc;
+        QByteArray id;
+        if (m_followSystemOutput) {
+            QAudioDevice d = QMediaDevices::defaultAudioOutput();
+            desc = d.description();
+            id = d.id();
+        } else {
+            const auto devs = QMediaDevices::audioOutputs();
+            for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { desc = d.description(); id = d.id(); break; } }
+            if (desc.isEmpty()) {
+                QAudioDevice d = QMediaDevices::defaultAudioOutput();
+                desc = d.description();
+                id = d.id();
+            }
+        }
+        qInfo() << "audio.state" << "speaker=" << enabled << "follow=" << m_followSystemOutput << desc << id;
+    }
+    if (!enabled) {
+        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
+            if (m_receiver) m_receiver->sendViewerListenMute(true);
+        }
+        if (m_audioConn) { QObject::disconnect(m_audioConn); }
+        if (m_audioSink) { m_audioSink->stop(); }
         m_audioIO = nullptr;
+        if (m_audioSink) { m_audioSink->setVolume(0.0); }
+        if (m_audioSink) { delete m_audioSink; m_audioSink = nullptr; }
+        m_audioInitialized = false;
     } else {
-        m_audioIO = m_audioSink->start();
+        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
+            if (m_receiver) m_receiver->sendViewerListenMute(false);
+        }
+        int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
+        int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
+        initAudioSinkIfNeeded(sr, ch, 16);
     }
 }
 
@@ -654,7 +706,16 @@ void VideoDisplayWidget::setAnnotationColorId(int colorId)
 
 void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample)
 {
-    bool needsReinit = (!m_audioInitialized) ||
+    QAudioDevice desiredOut = QMediaDevices::defaultAudioOutput();
+    if (!m_followSystemOutput && !m_outputDeviceId.isEmpty()) {
+        const auto devs = QMediaDevices::audioOutputs();
+        for (const auto &d : devs) {
+            if (d.id() == m_outputDeviceId) { desiredOut = d; break; }
+        }
+    }
+
+    bool deviceChanged = (m_currentOutputDeviceId != desiredOut.id());
+    bool needsReinit = deviceChanged || (!m_audioInitialized) ||
                        (m_audioFormat.sampleRate() != sampleRate) ||
                        (m_audioFormat.channelCount() != channels) ||
                        (m_audioFormat.sampleFormat() != QAudioFormat::Int16);
@@ -679,18 +740,15 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
     m_audioFormat.setSampleFormat(QAudioFormat::Int16);
 
     // 创建音频输出
-    QAudioDevice outDev = QMediaDevices::defaultAudioOutput();
-    if (!m_followSystemOutput && !m_outputDeviceId.isEmpty()) {
-        const auto devs = QMediaDevices::audioOutputs();
-        for (const auto &d : devs) {
-            if (d.id() == m_outputDeviceId) { outDev = d; break; }
-        }
-    }
-    m_audioSink = new QAudioSink(outDev, m_audioFormat, this);
+    m_audioSink = new QAudioSink(desiredOut, m_audioFormat, this);
     m_audioSink->setBufferSize(4096);
+    m_currentOutputDeviceId = desiredOut.id();
+    qInfo() << "audio.sink.recreate" << desiredOut.description() << desiredOut.id()
+            << "sr" << sampleRate << "ch" << channels;
     if (m_speakerEnabled) {
         m_audioIO = m_audioSink->start();
         m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
+        qInfo() << "audio.sink.started" << m_currentOutputDeviceId << "vol" << m_volumePercent;
     } else {
         m_audioIO = nullptr;
     }
@@ -701,20 +759,37 @@ void VideoDisplayWidget::selectAudioOutputFollowSystem()
 {
     m_followSystemOutput = true;
     m_outputDeviceId.clear();
-    if (m_audioInitialized) {
-        initAudioSinkIfNeeded(m_audioFormat.sampleRate(), m_audioFormat.channelCount(), 16);
-    }
+    qInfo() << "audio.select.follow_system" << true;
+    int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
+    int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
+    initAudioSinkIfNeeded(sr, ch, 16);
     emit audioOutputSelectionChanged(true, QString());
 }
 
 void VideoDisplayWidget::selectAudioOutputById(const QString &id)
 {
     m_followSystemOutput = false;
-    m_outputDeviceId = id;
-    if (m_audioInitialized) {
-        initAudioSinkIfNeeded(m_audioFormat.sampleRate(), m_audioFormat.channelCount(), 16);
-    }
+    m_outputDeviceId = id.toUtf8();
+    m_currentOutputDeviceId.clear();
+    m_audioInitialized = false;
+    qInfo() << "audio.select.by_id" << id;
+    int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
+    int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
+    initAudioSinkIfNeeded(sr, ch, 16);
     emit audioOutputSelectionChanged(false, id);
+}
+
+void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
+{
+    m_followSystemOutput = false;
+    m_outputDeviceId = id;
+    m_currentOutputDeviceId.clear();
+    m_audioInitialized = false;
+    qInfo() << "audio.select.by_raw_id" << QString::fromUtf8(id);
+    int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
+    int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
+    initAudioSinkIfNeeded(sr, ch, 16);
+    emit audioOutputSelectionChanged(false, QString::fromUtf8(id));
 }
 
 void VideoDisplayWidget::selectMicInputFollowSystem()
@@ -1500,27 +1575,29 @@ void VideoDisplayWidget::recreateReceiver()
         }
     });
 
-    connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
-            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 /*timestamp*/) {
-                if (!m_isReceiving) { return; }
-                if (!m_speakerEnabled) { return; }
+    
+    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
+        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+            m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+        }
+    });
+    if (m_audioConn) QObject::disconnect(m_audioConn);
+    if (m_speakerEnabled) {
+        m_audioConn = connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
+            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
+                if (!m_isReceiving) return;
+                if (!m_speakerEnabled) return;
                 initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
-                if (!m_audioSink) { return; }
+                if (!m_audioSink) return;
                 if (m_audioSink->state() == QAudio::StoppedState) {
                     m_audioIO = m_audioSink->start();
                 }
                 if (m_audioSink->state() == QAudio::SuspendedState) {
                     m_audioSink->resume();
                 }
-                if (m_audioIO) {
-                    m_audioIO->write(pcmData);
-                }
+                if (m_audioIO) m_audioIO->write(pcmData);
             });
-    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
-        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
-            m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-        }
-    });
+    }
 }
 void VideoDisplayWidget::setVolumePercent(int percent)
 {

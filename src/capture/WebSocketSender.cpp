@@ -325,6 +325,9 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         QByteArray b64 = obj.value("data_base64").toString().toUtf8();
         QByteArray opusData = QByteArray::fromBase64(b64);
         emit viewerAudioOpusReceived(opusData, sr, ch, frameSamples, ts);
+    } else if (type == "viewer_listen_mute") {
+        bool mute = obj.value("mute").toBool(false);
+        emit viewerListenMuteRequested(mute);
     } else if (type == "viewer_cursor") {
         QString vid = obj.value("viewer_id").toString();
         QString vname = obj.value("viewer_name").toString();

@@ -218,6 +218,9 @@ private:
     QByteArray convertForSink(const QByteArray &srcPcm, int srcSr, int srcCh) const;
     void softRestartSpeakerIfEnabled();
     void forceRecreateSink();
+    void reconnectAudioSignal();
+    void scheduleAutoRecovery();
+    void hardSwitchOnSystemChange();
     int m_volumePercent = 100;
     int m_micGainPercent = 100;
     bool m_followSystemOutput = true;
@@ -232,6 +235,7 @@ private:
     int m_lastFrameSampleRate = 16000;
     int m_lastFrameChannels = 1;
     int m_lastFrameBitsPerSample = 16;
+    qint64 m_lastAudioWriteMs = 0;
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;

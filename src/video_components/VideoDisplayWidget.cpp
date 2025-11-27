@@ -172,10 +172,8 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
 
     m_mediaDevices = new QMediaDevices(this);
     connect(m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
-        int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
-        int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
         if (m_followSystemOutput) {
-            forceRecreateSink();
+            hardSwitchOnSystemChange();
         }
     });
     m_defaultOutPollTimer = new QTimer(this);
@@ -184,7 +182,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
         if (!m_followSystemOutput) return;
         QAudioDevice def = QMediaDevices::defaultAudioOutput();
         if (m_currentOutputDeviceId != def.id()) {
-            forceRecreateSink();
+            hardSwitchOnSystemChange();
         }
     });
     m_defaultOutPollTimer->start();
@@ -763,10 +761,7 @@ void VideoDisplayWidget::selectAudioOutputFollowSystem()
 {
     m_followSystemOutput = true;
     m_outputDeviceId.clear();
-    
-    int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
-    int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
-    initAudioSinkIfNeeded(sr, ch, 16);
+    forceRecreateSink();
     emit audioOutputSelectionChanged(true, QString());
 }
 
@@ -1763,4 +1758,54 @@ void VideoDisplayWidget::forceRecreateSink()
     if (m_audioSink) { m_audioSink->stop(); delete m_audioSink; m_audioSink = nullptr; m_audioIO = nullptr; }
     initAudioSinkIfNeeded(m_lastFrameSampleRate, m_lastFrameChannels, m_lastFrameBitsPerSample);
     softRestartSpeakerIfEnabled();
+    reconnectAudioSignal();
+    scheduleAutoRecovery();
+}
+
+void VideoDisplayWidget::reconnectAudioSignal()
+{
+    if (m_audioConn) QObject::disconnect(m_audioConn);
+    m_audioConn = connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
+            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
+                if (!m_isReceiving) return;
+                if (!m_speakerEnabled) return;
+                m_lastFrameSampleRate = sampleRate;
+                m_lastFrameChannels = channels;
+                m_lastFrameBitsPerSample = bitsPerSample;
+                initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
+                if (!m_audioSink) return;
+                if (m_audioSink->state() == QAudio::StoppedState) {
+                    m_audioIO = m_audioSink->start();
+                }
+                if (m_audioSink->state() == QAudio::SuspendedState) {
+                    m_audioSink->resume();
+                }
+                if (m_audioIO) {
+                    QByteArray out = m_needResample ? convertForSink(pcmData, sampleRate, channels) : pcmData;
+                    m_audioIO->write(out);
+                    m_lastAudioWriteMs = QDateTime::currentMSecsSinceEpoch();
+                }
+            });
+}
+
+void VideoDisplayWidget::scheduleAutoRecovery()
+{
+    if (!m_speakerEnabled) return;
+    qint64 checkpoint = QDateTime::currentMSecsSinceEpoch();
+    QTimer::singleShot(800, this, [this, checkpoint]() {
+        if (!m_speakerEnabled) return;
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (m_lastAudioWriteMs < checkpoint || (now - m_lastAudioWriteMs) > 800) {
+            setSpeakerEnabled(false);
+            QTimer::singleShot(150, this, [this]() { setSpeakerEnabled(true); });
+        }
+    });
+}
+void VideoDisplayWidget::hardSwitchOnSystemChange()
+{
+    if (!m_speakerEnabled) return;
+    setSpeakerEnabled(false);
+    QTimer::singleShot(200, this, [this]() {
+        setSpeakerEnabled(true);
+    });
 }

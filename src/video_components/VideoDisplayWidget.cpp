@@ -1571,6 +1571,11 @@ void VideoDisplayWidget::recreateReceiver()
         }
     });
 
+    connect(m_receiver.get(), &WebSocketReceiver::avatarUpdateReceived,
+            this, [this](const QString &userId, int iconId) {
+        emit avatarUpdateReceived(userId, iconId);
+    });
+
     
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {

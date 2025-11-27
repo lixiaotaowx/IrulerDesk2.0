@@ -368,6 +368,12 @@ void MainWindow::setupUI()
                     this, &MainWindow::onAudioOutputSelectionChanged);
             connect(vd, &VideoDisplayWidget::micInputSelectionChanged,
                     this, &MainWindow::onMicInputSelectionChanged);
+            connect(vd, &VideoDisplayWidget::avatarUpdateReceived,
+                    this, [this](const QString &userId, int iconId) {
+                if (m_transparentImageList) {
+                    m_transparentImageList->updateUserAvatar(userId, iconId);
+                }
+            });
             bool outFollow = loadAudioOutputFollowSystemFromConfig();
             QString outId = loadAudioOutputDeviceIdFromConfig();
             
@@ -1232,6 +1238,25 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         } else {
             // 非当前用户的观看请求，忽略
         }
+    } else if (type == "avatar_update" || type == "avatar_updated" || type == "user_icon_update") {
+        QString userId;
+        if (obj.contains("device_id")) userId = obj.value("device_id").toString();
+        else if (obj.contains("id")) userId = obj.value("id").toString();
+        else if (obj.contains("user_id")) userId = obj.value("user_id").toString();
+        int iconId = -1;
+        if (obj.contains("icon_id")) {
+            QJsonValue v = obj.value("icon_id");
+            iconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
+        } else if (obj.contains("viewer_icon_id")) {
+            QJsonValue v = obj.value("viewer_icon_id");
+            iconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
+        } else if (obj.contains("icon")) {
+            QJsonValue v = obj.value("icon");
+            iconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
+        }
+        if (!userId.isEmpty() && iconId >= 0 && m_transparentImageList) {
+            m_transparentImageList->updateUserAvatar(userId, iconId);
+        }
     } else {
         // 未知消息类型，忽略
     }
@@ -1401,6 +1426,24 @@ void MainWindow::onAvatarSelected(int iconId)
         QString jsonString = doc.toJson(QJsonDocument::Compact);
         
         m_loginWebSocket->sendTextMessage(jsonString);
+    }
+
+    {
+        QString serverUrl = QString("ws://%1/subscribe/%2").arg(getServerAddress(), getDeviceId());
+        QWebSocket *ws = new QWebSocket();
+        connect(ws, &QWebSocket::connected, this, [this, ws, iconId]() {
+            QJsonObject msg;
+            msg["type"] = "avatar_update";
+            msg["device_id"] = getDeviceId();
+            msg["icon_id"] = iconId;
+            ws->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+            QTimer::singleShot(200, ws, [ws]() { ws->close(); });
+            QTimer::singleShot(400, ws, [ws]() { ws->deleteLater(); });
+        });
+        connect(ws, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, [ws](QAbstractSocket::SocketError) {
+            ws->deleteLater();
+        });
+        ws->open(QUrl(serverUrl));
     }
     
     // 注释：保持头像设置窗口打开，方便用户多次选择

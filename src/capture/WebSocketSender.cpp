@@ -338,6 +338,8 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         QString vid = obj.value("viewer_id").toString();
         QString vname = obj.value("viewer_name").toString();
         emit viewerNameUpdateReceived(vid, vname);
+    } else if (type == "avatar_update") {
+        sendTextMessage(message);
     }
 }
 

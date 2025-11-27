@@ -151,6 +151,7 @@ signals:
     // 新增：音频帧信号（PCM）
     void audioFrameReceived(const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 timestamp);
     void audioGainChanged(int percent);
+    void avatarUpdateReceived(const QString &userId, int iconId);
 
 private slots:
     void onConnected();

@@ -137,6 +137,7 @@ signals:
     void annotationColorChanged(int colorId);
     void audioOutputSelectionChanged(bool followSystem, const QString &deviceId);
     void micInputSelectionChanged(bool followSystem, const QString &deviceId);
+    void avatarUpdateReceived(const QString &userId, int iconId);
     
 public slots:
     void renderFrame(const QByteArray &frameData, const QSize &frameSize);

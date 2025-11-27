@@ -170,9 +170,8 @@ void AvatarSettingsWindow::setupAvatarGrid()
 
 void AvatarSettingsWindow::loadAvatarImages()
 {
-    QString mapsDir = "g:/c/2025/lunzi/IrulerDeskpro/src/maps/icon";
-    
-    // 加载3-21号PNG图片
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString mapsDir = QString("%1/maps/icon").arg(appDir);
     for (int i = 3; i <= 21; ++i) {
         QString imagePath = QString("%1/%2.png").arg(mapsDir, QString::number(i));
         

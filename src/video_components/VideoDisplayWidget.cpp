@@ -376,6 +376,9 @@ void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString
 void VideoDisplayWidget::setViewerName(const QString &name)
 {
     m_viewerName = name;
+    if (m_receiver) {
+        m_receiver->setViewerName(m_viewerName);
+    }
     updateLocalCursorComposite();
 }
 

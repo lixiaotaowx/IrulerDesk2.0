@@ -214,6 +214,9 @@ private:
     QIODevice *m_audioIO = nullptr;
     bool m_audioInitialized = false;
     void initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample);
+    QByteArray convertForSink(const QByteArray &srcPcm, int srcSr, int srcCh) const;
+    void softRestartSpeakerIfEnabled();
+    void forceRecreateSink();
     int m_volumePercent = 100;
     int m_micGainPercent = 100;
     bool m_followSystemOutput = true;
@@ -222,6 +225,12 @@ private:
     QMetaObject::Connection m_audioConn;
     class QMediaDevices *m_mediaDevices = nullptr;
     QTimer *m_defaultOutPollTimer = nullptr;
+    int m_sinkSampleRate = 16000;
+    int m_sinkChannels = 1;
+    bool m_needResample = false;
+    int m_lastFrameSampleRate = 16000;
+    int m_lastFrameChannels = 1;
+    int m_lastFrameBitsPerSample = 16;
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;

@@ -128,7 +128,7 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     // 传入用户名
     videoWidget->setViewerName(m_userName);
     // 使用VideoDisplayWidget开始接收视频流
-    qInfo() << "app.start_receiving" << serverUrl;
+    
     videoWidget->startReceiving(serverUrl);
     bool spkEnabled = loadSpeakerEnabledFromConfig();
     qInfo() << "config.load.speaker_enabled" << spkEnabled;
@@ -370,7 +370,7 @@ void MainWindow::setupUI()
                     this, &MainWindow::onMicInputSelectionChanged);
             bool outFollow = loadAudioOutputFollowSystemFromConfig();
             QString outId = loadAudioOutputDeviceIdFromConfig();
-            qInfo() << "config.load.audio_output" << outFollow << outId;
+            
             if (outFollow || outId.isEmpty()) { vd->selectAudioOutputFollowSystem(); }
             else { vd->selectAudioOutputById(outId); }
             bool micFollow = loadMicInputFollowSystemFromConfig();
@@ -1425,11 +1425,35 @@ void MainWindow::onSystemSettingsRequested()
 
 void MainWindow::onClearMarksRequested()
 {
-    if (m_videoWindow && m_videoWindow->getVideoDisplayWidget()) {
-        // 改回仅清理标记，保持画板可继续绘制
-        m_videoWindow->getVideoDisplayWidget()->sendClear();
-    } else {
-    }
+    QString serverUrl = QString("ws://%1/subscribe/%2").arg(getServerAddress(), getDeviceId());
+    QWebSocket *ws = new QWebSocket();
+    connect(ws, &QWebSocket::connected, this, [this, ws]() {
+        QJsonObject watch;
+        watch["type"] = "watch_request";
+        watch["viewer_id"] = getDeviceId();
+        watch["target_id"] = getDeviceId();
+        watch["viewer_name"] = m_userName;
+        ws->sendTextMessage(QJsonDocument(watch).toJson(QJsonDocument::Compact));
+        QJsonObject start;
+        start["type"] = "start_streaming";
+        ws->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+        QJsonObject msg;
+        msg["type"] = "annotation_event";
+        msg["phase"] = "clear";
+        msg["x"] = 0;
+        msg["y"] = 0;
+        msg["viewer_id"] = getDeviceId();
+        msg["target_id"] = getDeviceId();
+        msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+        msg["color_id"] = 0;
+        ws->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+        QTimer::singleShot(200, ws, [ws]() { ws->close(); });
+        QTimer::singleShot(400, ws, [ws]() { ws->deleteLater(); });
+    });
+    connect(ws, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, [ws](QAbstractSocket::SocketError) {
+        ws->deleteLater();
+    });
+    ws->open(QUrl(serverUrl));
 }
 
 void MainWindow::onExitRequested()
@@ -1533,7 +1557,7 @@ void MainWindow::onLocalQualitySelected(const QString& quality)
 
 void MainWindow::onAudioOutputSelectionChanged(bool followSystem, const QString &deviceId)
 {
-    qInfo() << "config.save.audio_output" << followSystem << deviceId;
+    
     saveAudioOutputFollowSystemToConfig(followSystem);
     saveAudioOutputDeviceIdToConfig(deviceId);
 }

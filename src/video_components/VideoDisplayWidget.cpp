@@ -140,6 +140,9 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
             this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
                 if (!m_isReceiving) return;
                 if (!m_speakerEnabled) return;
+                m_lastFrameSampleRate = sampleRate;
+                m_lastFrameChannels = channels;
+                m_lastFrameBitsPerSample = bitsPerSample;
                 initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
                 if (!m_audioSink) return;
                 if (m_audioSink->state() == QAudio::StoppedState) {
@@ -148,7 +151,10 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
                 if (m_audioSink->state() == QAudio::SuspendedState) {
                     m_audioSink->resume();
                 }
-                if (m_audioIO) m_audioIO->write(pcmData);
+                if (m_audioIO) {
+                    QByteArray out = m_needResample ? convertForSink(pcmData, sampleRate, channels) : pcmData;
+                    m_audioIO->write(out);
+                }
             });
     
     // 统计定时器
@@ -169,7 +175,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
         int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
         int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
         if (m_followSystemOutput) {
-            initAudioSinkIfNeeded(sr, ch, 16);
+            forceRecreateSink();
         }
     });
     m_defaultOutPollTimer = new QTimer(this);
@@ -178,9 +184,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
         if (!m_followSystemOutput) return;
         QAudioDevice def = QMediaDevices::defaultAudioOutput();
         if (m_currentOutputDeviceId != def.id()) {
-            int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
-            int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
-            initAudioSinkIfNeeded(sr, ch, 16);
+            forceRecreateSink();
         }
     });
     m_defaultOutPollTimer->start();
@@ -208,16 +212,7 @@ void VideoDisplayWidget::setupUI()
     m_videoLabel->setMinimumSize(320, 240); // 减小最小尺寸
     m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // 允许扩展
     m_videoLabel->setScaledContents(false); // 禁用自动缩放，保持原始比例
-    m_videoLabel->setCursor(Qt::BlankCursor);
-    m_localCursorOverlay = new QLabel(m_videoLabel);
-    m_localCursorOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_localCursorOverlay->setAttribute(Qt::WA_TranslucentBackground);
-    m_localCursorOverlay->setStyleSheet("QLabel { background: transparent; }");
-    m_localCursorOverlay->hide();
-    updateLocalCursorComposite();
-    if (!m_cursorComposite.isNull()) {
-        m_localCursorOverlay->setPixmap(m_cursorComposite);
-    }
+    m_videoLabel->setCursor(Qt::ArrowCursor);
     // 启用鼠标跟踪并安装事件过滤器，用于批注坐标采集
     m_videoLabel->setMouseTracking(true);
     m_videoLabel->setFocusPolicy(Qt::StrongFocus); // 允许接收键盘事件（用于Ctrl+Z撤销）
@@ -671,7 +666,7 @@ void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
                 id = d.id();
             }
         }
-        qInfo() << "audio.state" << "speaker=" << enabled << "follow=" << m_followSystemOutput << desc << id;
+        
     }
     if (!enabled) {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
@@ -738,17 +733,23 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
     m_audioFormat.setChannelCount(channels);
     Q_UNUSED(bitsPerSample);
     m_audioFormat.setSampleFormat(QAudioFormat::Int16);
+    if (!desiredOut.isFormatSupported(m_audioFormat)) {
+        QAudioFormat pf = desiredOut.preferredFormat();
+        m_audioFormat = pf;
+    }
+    m_sinkSampleRate = m_audioFormat.sampleRate();
+    m_sinkChannels = m_audioFormat.channelCount();
+    m_needResample = (m_sinkSampleRate != sampleRate) || (m_sinkChannels != channels);
 
     // 创建音频输出
     m_audioSink = new QAudioSink(desiredOut, m_audioFormat, this);
     m_audioSink->setBufferSize(4096);
     m_currentOutputDeviceId = desiredOut.id();
-    qInfo() << "audio.sink.recreate" << desiredOut.description() << desiredOut.id()
-            << "sr" << sampleRate << "ch" << channels;
+    
     if (m_speakerEnabled) {
         m_audioIO = m_audioSink->start();
         m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
-        qInfo() << "audio.sink.started" << m_currentOutputDeviceId << "vol" << m_volumePercent;
+        
     } else {
         m_audioIO = nullptr;
     }
@@ -759,7 +760,7 @@ void VideoDisplayWidget::selectAudioOutputFollowSystem()
 {
     m_followSystemOutput = true;
     m_outputDeviceId.clear();
-    qInfo() << "audio.select.follow_system" << true;
+    
     int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
     int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
     initAudioSinkIfNeeded(sr, ch, 16);
@@ -772,10 +773,11 @@ void VideoDisplayWidget::selectAudioOutputById(const QString &id)
     m_outputDeviceId = id.toUtf8();
     m_currentOutputDeviceId.clear();
     m_audioInitialized = false;
-    qInfo() << "audio.select.by_id" << id;
+    
     int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
     int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
     initAudioSinkIfNeeded(sr, ch, 16);
+    softRestartSpeakerIfEnabled();
     emit audioOutputSelectionChanged(false, id);
 }
 
@@ -785,10 +787,11 @@ void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
     m_outputDeviceId = id;
     m_currentOutputDeviceId.clear();
     m_audioInitialized = false;
-    qInfo() << "audio.select.by_raw_id" << QString::fromUtf8(id);
+    
     int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
     int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
     initAudioSinkIfNeeded(sr, ch, 16);
+    softRestartSpeakerIfEnabled();
     emit audioOutputSelectionChanged(false, QString::fromUtf8(id));
 }
 
@@ -1231,16 +1234,6 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 if (src.x() >= 0 && m_receiver) {
                     m_receiver->sendViewerCursor(src.x(), src.y());
                 }
-                if (!m_cursorComposite.isNull() && m_localCursorOverlay) {
-                    double s = currentScale();
-                    if (s > 1.0) s = 1.0;
-                    if (m_lastCursorScale != s || m_cursorScaledComposite.isNull()) {
-                        updateScaledCursorComposite(s);
-                    }
-                    m_localCursorOverlay->setPixmap(m_cursorScaledComposite);
-                    m_localCursorOverlay->move(me->pos());
-                    if (!m_annotationEnabled) { m_localCursorOverlay->show(); m_localCursorOverlay->raise(); } else { m_localCursorOverlay->hide(); }
-                }
             }
             break;
         }
@@ -1453,7 +1446,7 @@ void VideoDisplayWidget::applyCursor()
 {
     if (!m_videoLabel) return;
     if (!m_annotationEnabled) {
-        m_videoLabel->setCursor(Qt::BlankCursor);
+        m_videoLabel->setCursor(Qt::ArrowCursor);
         return;
     }
     if (m_toolMode == 1) {
@@ -1706,4 +1699,60 @@ void VideoDisplayWidget::updateScaledCursorComposite(double scale)
     int h = qMax(8, int(m_cursorComposite.height() * scale));
     m_cursorScaledComposite = m_cursorComposite.scaled(QSize(w, h), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     m_lastCursorScale = scale;
+}
+QByteArray VideoDisplayWidget::convertForSink(const QByteArray &srcPcm, int srcSr, int srcCh) const
+{
+    if (srcPcm.isEmpty()) return srcPcm;
+    const int16_t *in = reinterpret_cast<const int16_t*>(srcPcm.constData());
+    int totalSamples = srcPcm.size() / 2;
+    int srcFrames = srcCh > 0 ? totalSamples / srcCh : 0;
+    if (srcFrames <= 0) return srcPcm;
+    int dstFrames = int(std::llround(double(srcFrames) * double(m_sinkSampleRate) / double(srcSr)));
+    if (dstFrames <= 0) return QByteArray();
+    int dstCh = m_sinkChannels;
+    QByteArray out;
+    out.resize(dstFrames * dstCh * 2);
+    int16_t *outp = reinterpret_cast<int16_t*>(out.data());
+    for (int f = 0; f < dstFrames; ++f) {
+        double pos = double(f) * double(srcSr) / double(m_sinkSampleRate);
+        int i = int(pos);
+        if (i >= srcFrames) i = srcFrames - 1;
+        double frac = pos - double(i);
+        auto sampleAt = [&](int chIndex)->int {
+            int i0 = i * srcCh + chIndex;
+            int i1 = (i + 1 < srcFrames ? (i + 1) : i) * srcCh + chIndex;
+            int s0 = in[i0];
+            int s1 = in[i1];
+            int s = int(std::llround(double(s0) + (double(s1 - s0) * frac)));
+            if (s > 32767) s = 32767; if (s < -32768) s = -32768;
+            return s;
+        };
+        int l = (srcCh == 1) ? sampleAt(0) : sampleAt(0);
+        int r = (srcCh == 1) ? l : sampleAt(1);
+        if (dstCh == 1) {
+            int m = (srcCh == 2) ? ((l + r) / 2) : l;
+            outp[f] = int16_t(m);
+        } else {
+            outp[f * 2] = int16_t(l);
+            outp[f * 2 + 1] = int16_t(r);
+        }
+    }
+    return out;
+}
+void VideoDisplayWidget::softRestartSpeakerIfEnabled()
+{
+    if (!m_speakerEnabled) return;
+    if (!m_audioSink) return;
+    m_audioSink->stop();
+    m_audioIO = m_audioSink->start();
+    m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
+}
+void VideoDisplayWidget::forceRecreateSink()
+{
+    if (!m_speakerEnabled) return;
+    m_audioInitialized = false;
+    m_currentOutputDeviceId.clear();
+    if (m_audioSink) { m_audioSink->stop(); delete m_audioSink; m_audioSink = nullptr; m_audioIO = nullptr; }
+    initAudioSinkIfNeeded(m_lastFrameSampleRate, m_lastFrameChannels, m_lastFrameBitsPerSample);
+    softRestartSpeakerIfEnabled();
 }

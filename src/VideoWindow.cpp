@@ -724,13 +724,11 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                     if (!chosen) return true;
                     if (chosen == follow) {
                         if (m_videoDisplayWidget) {
-                            qInfo() << "menu.select.follow_system";
                             m_videoDisplayWidget->selectAudioOutputFollowSystem();
                         }
                     } else {
                         QByteArray id = chosen->data().toByteArray();
                         if (m_videoDisplayWidget) {
-                            qInfo() << "menu.select.device" << QString::fromUtf8(id);
                             m_videoDisplayWidget->selectAudioOutputByRawId(id);
                         }
                     }

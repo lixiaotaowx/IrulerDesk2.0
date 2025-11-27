@@ -1,5 +1,6 @@
 #include <QtWidgets/QApplication>
 #include <QTimer>
+#include <QVector>
 #include <QFile>
 #include <QTextStream>
 #include <QStandardPaths>
@@ -370,9 +371,26 @@ int main(int argc, char *argv[])
     // 在编码器准备好后再启动WebSocket发送器
     // qDebug() << "[CaptureProcess] 启动WebSocket发送器...";
     WebSocketSender *sender = new WebSocketSender(&app);
-    // 创建透明批注覆盖层
-    AnnotationOverlay *overlay = new AnnotationOverlay();
-    CursorOverlay *cursorOverlay = new CursorOverlay();
+    
+    static QVector<AnnotationOverlay*> s_overlays;
+    static QVector<CursorOverlay*> s_cursorOverlays;
+    s_overlays.clear();
+    s_cursorOverlays.clear();
+    {
+        const auto screensInit = QApplication::screens();
+        for (int i = 0; i < screensInit.size(); ++i) {
+            AnnotationOverlay *ov = new AnnotationOverlay();
+            ov->alignToScreen(screensInit[i]);
+            ov->show();
+            ov->raise();
+            s_overlays.append(ov);
+            CursorOverlay *cv = new CursorOverlay();
+            cv->alignToScreen(screensInit[i]);
+            cv->show();
+            cv->raise();
+            s_cursorOverlays.append(cv);
+        }
+    }
     
     // 连接到WebSocket服务器 - 使用推流URL格式
     // 从配置文件读取设备ID和服务器地址，如果没有则使用默认值
@@ -624,15 +642,30 @@ int main(int argc, char *argv[])
     // 启动时应用默认质量（来自配置）
     applyQualitySetting(currentQuality);
     
-    // 连接批注事件到叠加层
+    
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
-                     overlay, &AnnotationOverlay::onAnnotationEvent);
+                     [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
+        int idx = currentScreenIndex;
+        if (idx >= 0 && idx < s_overlays.size()) {
+            s_overlays[idx]->onAnnotationEvent(phase, x, y, viewerId, colorId);
+        }
+    });
     QObject::connect(sender, &WebSocketSender::textAnnotationReceived,
-                     overlay, &AnnotationOverlay::onTextAnnotation);
+                     [&](const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize) {
+        int idx = currentScreenIndex;
+        if (idx >= 0 && idx < s_overlays.size()) {
+            s_overlays[idx]->onTextAnnotation(text, x, y, viewerId, colorId, fontSize);
+        }
+    });
     QObject::connect(sender, &WebSocketSender::likeRequested,
-                     overlay, &AnnotationOverlay::onLikeRequested);
+                     [&](const QString &viewerId) {
+        int idx = currentScreenIndex;
+        if (idx >= 0 && idx < s_overlays.size()) {
+            s_overlays[idx]->onLikeRequested(viewerId);
+        }
+    });
 
-    // 对齐叠加层到目标屏幕
+    
     const auto screens = QApplication::screens();
     int screenIndex = getScreenIndexFromConfig();
     QScreen *targetScreen = nullptr;
@@ -641,34 +674,28 @@ int main(int argc, char *argv[])
     } else {
         targetScreen = QApplication::primaryScreen();
     }
-    overlay->alignToScreen(targetScreen);
-    cursorOverlay->alignToScreen(targetScreen);
 
     // 连接推流控制信号
-    QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer, overlay, cursorOverlay]() {
+    QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer]() {
         if (!isCapturing) {
             isCapturing = true;
             tileMetadataSent = false; // 重置瓦片元数据发送标志
             captureTimer->start(33); // 30fps
             staticMouseCapture->startCapture(); // 开始鼠标捕获
-            overlay->show();
-            overlay->raise();
-            cursorOverlay->show();
-            cursorOverlay->raise();
+            if (currentScreenIndex >= 0 && currentScreenIndex < s_overlays.size()) {
+                s_overlays[currentScreenIndex]->raise();
+                s_cursorOverlays[currentScreenIndex]->raise();
+            }
             // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
             // 注意：音频测试发送不再在推流开始时自动启动，改为由音频开关控制
         }
     });
     
-    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, overlay, cursorOverlay, audioTimer, audioSource, &audioInput]() {
+    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, audioTimer, audioSource, &audioInput]() {
         if (isCapturing) {
             isCapturing = false;
             captureTimer->stop();
             staticMouseCapture->stopCapture(); // 停止鼠标捕获
-            overlay->hide();
-            overlay->clear();
-            cursorOverlay->hide();
-            cursorOverlay->clear();
             // qDebug() << "[CaptureProcess] 停止屏幕捕获和鼠标捕获";
             audioTimer->stop();
             if (audioSource) {
@@ -681,11 +708,21 @@ int main(int argc, char *argv[])
     });
 
     // 将系统全局鼠标坐标转换为当前捕获屏幕的局部坐标后发送到观看端
-    QObject::connect(sender, &WebSocketSender::viewerNameChanged, overlay, [](const QString &){ });
-    QObject::connect(sender, &WebSocketSender::viewerCursorReceived, cursorOverlay,
-                     &CursorOverlay::onViewerCursor);
-    QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived, cursorOverlay,
-                     &CursorOverlay::onViewerNameUpdate);
+    QObject::connect(sender, &WebSocketSender::viewerNameChanged, [&](const QString &){ });
+    QObject::connect(sender, &WebSocketSender::viewerCursorReceived,
+                     [&](const QString &viewerId, int x, int y, const QString &viewerName) {
+        int idx = currentScreenIndex;
+        if (idx >= 0 && idx < s_cursorOverlays.size()) {
+            s_cursorOverlays[idx]->onViewerCursor(viewerId, x, y, viewerName);
+        }
+    });
+    QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived,
+                     [&](const QString &viewerId, const QString &viewerName) {
+        int idx = currentScreenIndex;
+        if (idx >= 0 && idx < s_cursorOverlays.size()) {
+            s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
+        }
+    });
 
     QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
                      [sender](const QPoint &globalPos) {
@@ -720,7 +757,7 @@ int main(int argc, char *argv[])
     
 
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕
-    QObject::connect(sender, &WebSocketSender::switchScreenRequested, [overlay, cursorOverlay](const QString &direction, int targetIndex) {
+    QObject::connect(sender, &WebSocketSender::switchScreenRequested, [](const QString &direction, int targetIndex) {
         const auto screens = QApplication::screens();
         if (screens.isEmpty()) {
             return;
@@ -765,19 +802,14 @@ int main(int argc, char *argv[])
         }
         staticEncoder->forceKeyFrame();
 
-        // 对齐批注覆盖层到新屏幕
-        QScreen *target = (currentScreenIndex >= 0 && currentScreenIndex < screens.size())
-                            ? screens[currentScreenIndex]
-                            : QApplication::primaryScreen();
-        overlay->alignToScreen(target);
-        overlay->show();
-        overlay->raise();
-        overlay->clear();
-        cursorOverlay->alignToScreen(target);
-        cursorOverlay->show();
-        cursorOverlay->raise();
-        cursorOverlay->clear();
         
+        if (currentScreenIndex >= 0 && currentScreenIndex < s_overlays.size()) {
+            s_overlays[currentScreenIndex]->raise();
+        }
+        if (currentScreenIndex >= 0 && currentScreenIndex < s_cursorOverlays.size()) {
+            s_cursorOverlays[currentScreenIndex]->raise();
+        }
+
         // 切换完成，恢复捕获循环发帧
         isSwitching = false;
     });

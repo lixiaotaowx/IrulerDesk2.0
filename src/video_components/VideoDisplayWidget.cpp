@@ -686,6 +686,8 @@ void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
         int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
         int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
         initAudioSinkIfNeeded(sr, ch, 16);
+        reconnectAudioSignal();
+        scheduleAutoRecovery();
     }
 }
 
@@ -702,60 +704,96 @@ void VideoDisplayWidget::setAnnotationColorId(int colorId)
 
 void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample)
 {
-    QAudioDevice desiredOut = QMediaDevices::defaultAudioOutput();
-    if (!m_followSystemOutput && !m_outputDeviceId.isEmpty()) {
-        const auto devs = QMediaDevices::audioOutputs();
-        for (const auto &d : devs) {
-            if (d.id() == m_outputDeviceId) { desiredOut = d; break; }
+    if (m_lastFrameSampleRate != sampleRate || m_lastFrameChannels != channels) {
+        m_lastFrameSampleRate = sampleRate;
+        m_lastFrameChannels = channels;
+        applyAudioOutputSelectionRuntime();
+    } else if (!m_audioInitialized) {
+        applyAudioOutputSelectionRuntime();
+    }
+}
+
+void VideoDisplayWidget::selectAudioOutputFollowSystem()
+{
+    m_followSystemOutput = true;
+    m_outputDeviceId.clear();
+    m_outputDeviceDesc.clear();
+    m_selectedOutputDevice = QMediaDevices::defaultAudioOutput();
+    applyAudioOutputSelectionRuntime();
+    emit audioOutputSelectionChanged(true, QString());
+}
+
+void VideoDisplayWidget::selectAudioOutputById(const QString &id)
+{
+    m_followSystemOutput = false;
+    m_outputDeviceId = id.toUtf8();
+    m_outputDeviceDesc.clear();
+    const auto devs = QMediaDevices::audioOutputs();
+    for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { m_outputDeviceDesc = d.description(); m_selectedOutputDevice = d; break; } }
+    m_currentOutputDeviceId.clear();
+    applyAudioOutputSelectionRuntime();
+    if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
+        if (m_receiver) m_receiver->sendViewerListenMute(true);
+    }
+    emit audioOutputSelectionChanged(false, id);
+}
+
+void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
+{
+    m_followSystemOutput = false;
+    m_outputDeviceId = id;
+    m_outputDeviceDesc.clear();
+    const auto devs = QMediaDevices::audioOutputs();
+    for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { m_outputDeviceDesc = d.description(); m_selectedOutputDevice = d; break; } }
+    m_currentOutputDeviceId.clear();
+    applyAudioOutputSelectionRuntime();
+    if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
+        if (m_receiver) m_receiver->sendViewerListenMute(true);
+    }
+    emit audioOutputSelectionChanged(false, QString::fromUtf8(id));
+}
+
+void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
+{
+    if (m_audioSink) { m_audioSink->stop(); delete m_audioSink; m_audioSink = nullptr; m_audioIO = nullptr; }
+    QAudioDevice dev = m_followSystemOutput ? QMediaDevices::defaultAudioOutput() : QAudioDevice();
+    if (!m_followSystemOutput) {
+        if (!m_selectedOutputDevice.isNull()) {
+            dev = m_selectedOutputDevice;
+        } else if (!m_outputDeviceId.isEmpty()) {
+            const auto devs = QMediaDevices::audioOutputs();
+            for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { dev = d; m_selectedOutputDevice = d; break; } }
+            if (dev.isNull() && !m_outputDeviceDesc.isEmpty()) {
+                const auto devs2 = QMediaDevices::audioOutputs();
+                for (const auto &d : devs2) { if (d.description() == m_outputDeviceDesc) { dev = d; m_selectedOutputDevice = d; break; } }
+            }
         }
     }
-
-    bool deviceChanged = (m_currentOutputDeviceId != desiredOut.id());
-    bool needsReinit = deviceChanged || (!m_audioInitialized) ||
-                       (m_audioFormat.sampleRate() != sampleRate) ||
-                       (m_audioFormat.channelCount() != channels) ||
-                       (m_audioFormat.sampleFormat() != QAudioFormat::Int16);
-
-    if (!needsReinit && m_audioSink) {
-        return;
+    if (dev.isNull()) dev = QMediaDevices::defaultAudioOutput();
+    QAudioFormat fmt;
+    if (m_lastFrameSampleRate > 0 && m_lastFrameChannels > 0) {
+        fmt.setSampleRate(m_lastFrameSampleRate);
+        fmt.setChannelCount(m_lastFrameChannels);
+        fmt.setSampleFormat(QAudioFormat::Int16);
+        if (!dev.isFormatSupported(fmt)) {
+            fmt = dev.preferredFormat();
+        }
+    } else {
+        fmt = dev.preferredFormat();
     }
-
-    // 停止并释放旧的输出
-    if (m_audioSink) {
-        m_audioSink->stop();
-        delete m_audioSink;
-        m_audioSink = nullptr;
-        m_audioIO = nullptr;
-    }
-
-    // 配置音频格式
-    m_audioFormat = QAudioFormat();
-    m_audioFormat.setSampleRate(sampleRate);
-    m_audioFormat.setChannelCount(channels);
-    Q_UNUSED(bitsPerSample);
-    m_audioFormat.setSampleFormat(QAudioFormat::Int16);
-    if (!desiredOut.isFormatSupported(m_audioFormat)) {
-        QAudioFormat pf = desiredOut.preferredFormat();
-        m_audioFormat = pf;
-    }
+    m_audioFormat = fmt;
     m_sinkSampleRate = m_audioFormat.sampleRate();
     m_sinkChannels = m_audioFormat.channelCount();
-    m_needResample = (m_sinkSampleRate != sampleRate) || (m_sinkChannels != channels);
-
-    // 创建音频输出
-    m_audioSink = new QAudioSink(desiredOut, m_audioFormat, this);
+    m_needResample = (m_sinkSampleRate != m_lastFrameSampleRate) || (m_sinkChannels != m_lastFrameChannels);
+    m_audioSink = new QAudioSink(dev, m_audioFormat, this);
     m_audioSink->setBufferSize(4096);
     QObject::connect(m_audioSink, &QAudioSink::stateChanged, this, [this](QAudio::State st) {
         if (!m_speakerEnabled) return;
         if (!m_audioSink) return;
-        if (st == QAudio::StoppedState && m_audioSink->error() != QAudio::NoError) {
-            softRestartSpeakerIfEnabled();
-        } else if (st == QAudio::IdleState) {
-            scheduleAutoRecovery();
-        }
+        if (st == QAudio::StoppedState && m_audioSink->error() != QAudio::NoError) { softRestartSpeakerIfEnabled(); }
+        else if (st == QAudio::IdleState) { scheduleAutoRecovery(); }
     });
-    m_currentOutputDeviceId = desiredOut.id();
-    
+    m_currentOutputDeviceId = dev.id();
     if (m_speakerEnabled) {
         m_audioIO = m_audioSink->start();
         m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
@@ -768,37 +806,11 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
             zero.fill(char(0));
             m_audioIO->write(zero);
         }
-        
     } else {
         m_audioIO = nullptr;
     }
     m_audioInitialized = true;
-}
-
-void VideoDisplayWidget::selectAudioOutputFollowSystem()
-{
-    m_followSystemOutput = true;
-    m_outputDeviceId.clear();
-    forceRecreateSink();
-    emit audioOutputSelectionChanged(true, QString());
-}
-
-void VideoDisplayWidget::selectAudioOutputById(const QString &id)
-{
-    m_followSystemOutput = false;
-    m_outputDeviceId = id.toUtf8();
-    m_currentOutputDeviceId.clear();
-    forceRecreateSink();
-    emit audioOutputSelectionChanged(false, id);
-}
-
-void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
-{
-    m_followSystemOutput = false;
-    m_outputDeviceId = id;
-    m_currentOutputDeviceId.clear();
-    forceRecreateSink();
-    emit audioOutputSelectionChanged(false, QString::fromUtf8(id));
+    scheduleAutoRecovery();
 }
 
 void VideoDisplayWidget::selectMicInputFollowSystem()
@@ -1769,7 +1781,6 @@ void VideoDisplayWidget::softRestartSpeakerIfEnabled()
 }
 void VideoDisplayWidget::forceRecreateSink()
 {
-    if (!m_speakerEnabled) return;
     m_audioInitialized = false;
     m_currentOutputDeviceId.clear();
     if (m_audioSink) { m_audioSink->stop(); delete m_audioSink; m_audioSink = nullptr; m_audioIO = nullptr; }
@@ -1821,8 +1832,5 @@ void VideoDisplayWidget::scheduleAutoRecovery()
 void VideoDisplayWidget::hardSwitchOnSystemChange()
 {
     if (!m_speakerEnabled) return;
-    setSpeakerEnabled(false);
-    QTimer::singleShot(200, this, [this]() {
-        setSpeakerEnabled(true);
-    });
+    applyAudioOutputSelectionRuntime();
 }

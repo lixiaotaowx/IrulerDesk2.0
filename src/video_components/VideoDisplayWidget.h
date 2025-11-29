@@ -23,6 +23,7 @@
 #include <QAudioFormat>
 #include <QAudioSink>
 #include <QMediaDevices>
+#include <QAudioDevice>
 
 // 前向声明
 class DxvaVP9Decoder;
@@ -115,6 +116,7 @@ public:
     void selectAudioOutputByRawId(const QByteArray &id);
     bool isAudioOutputFollowSystem() const { return m_followSystemOutput; }
     QString currentAudioOutputId() const { return QString::fromUtf8(m_currentOutputDeviceId); }
+    void applyAudioOutputSelectionRuntime();
     void selectMicInputFollowSystem();
     void selectMicInputById(const QString &id);
     bool isMicInputFollowSystem() const;
@@ -225,6 +227,8 @@ private:
     int m_micGainPercent = 100;
     bool m_followSystemOutput = true;
     QByteArray m_outputDeviceId;
+    QString m_outputDeviceDesc;
+    QAudioDevice m_selectedOutputDevice;
     QByteArray m_currentOutputDeviceId;
     QMetaObject::Connection m_audioConn;
     class QMediaDevices *m_mediaDevices = nullptr;

@@ -374,7 +374,13 @@ void MainWindow::setupUI()
                     m_transparentImageList->updateUserAvatar(userId, iconId);
                 }
             });
-            vd->selectAudioOutputFollowSystem();
+            bool outFollow = loadAudioOutputFollowSystemFromConfig();
+            QString outId = loadAudioOutputDeviceIdFromConfig();
+            if (outFollow || outId.isEmpty()) {
+                vd->selectAudioOutputFollowSystem();
+            } else {
+                vd->selectAudioOutputById(outId);
+            }
             bool micFollow = loadMicInputFollowSystemFromConfig();
             QString micId = loadMicInputDeviceIdFromConfig();
             if (micFollow || micId.isEmpty()) { vd->selectMicInputFollowSystem(); }
@@ -1599,6 +1605,12 @@ void MainWindow::onAudioOutputSelectionChanged(bool followSystem, const QString 
     
     saveAudioOutputFollowSystemToConfig(followSystem);
     saveAudioOutputDeviceIdToConfig(deviceId);
+    if (m_videoWindow) {
+        auto *vd = m_videoWindow->getVideoDisplayWidget();
+        if (vd) {
+            vd->applyAudioOutputSelectionRuntime();
+        }
+    }
 }
 
 void MainWindow::onMicInputSelectionChanged(bool followSystem, const QString &deviceId)

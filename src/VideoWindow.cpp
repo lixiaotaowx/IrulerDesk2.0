@@ -710,14 +710,28 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                 QAction *follow = menu.addAction(QStringLiteral("跟随系统"));
                 follow->setCheckable(true);
                 if (obj == m_speakerButton) {
-                    follow->setChecked(true);
-                    follow->setEnabled(false);
+                    bool fs = m_videoDisplayWidget ? m_videoDisplayWidget->isAudioOutputFollowSystem() : true;
+                    QString curr = m_videoDisplayWidget ? m_videoDisplayWidget->currentAudioOutputId() : QString();
+                    follow->setChecked(fs);
                     const auto outs = QMediaDevices::audioOutputs();
                     for (const auto &d : outs) {
                         QAction *a = menu.addAction(d.description());
-                        a->setEnabled(false);
+                        a->setCheckable(true);
+                        if (!fs && !curr.isEmpty() && d.id() == curr.toUtf8()) a->setChecked(true);
+                        a->setData(d.id());
                     }
-                    menu.exec(me->globalPosition().toPoint());
+                    QAction *chosen = menu.exec(me->globalPosition().toPoint());
+                    if (!chosen) return true;
+                    if (chosen == follow) {
+                        if (m_videoDisplayWidget) {
+                            m_videoDisplayWidget->selectAudioOutputFollowSystem();
+                        }
+                    } else {
+                        QByteArray id = chosen->data().toByteArray();
+                        if (m_videoDisplayWidget) {
+                            m_videoDisplayWidget->selectAudioOutputByRawId(id);
+                        }
+                    }
                     return true;
                 } else {
                     bool fs = m_videoDisplayWidget ? m_videoDisplayWidget->isMicInputFollowSystem() : true;

@@ -374,11 +374,7 @@ void MainWindow::setupUI()
                     m_transparentImageList->updateUserAvatar(userId, iconId);
                 }
             });
-            bool outFollow = loadAudioOutputFollowSystemFromConfig();
-            QString outId = loadAudioOutputDeviceIdFromConfig();
-            
-            if (outFollow || outId.isEmpty()) { vd->selectAudioOutputFollowSystem(); }
-            else { vd->selectAudioOutputById(outId); }
+            vd->selectAudioOutputFollowSystem();
             bool micFollow = loadMicInputFollowSystemFromConfig();
             QString micId = loadMicInputDeviceIdFromConfig();
             if (micFollow || micId.isEmpty()) { vd->selectMicInputFollowSystem(); }

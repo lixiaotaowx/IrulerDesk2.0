@@ -12,6 +12,7 @@
 #include <QtMultimedia/QAudioSource>
 #include <QtMultimedia/QMediaDevices>
 #include <QtMultimedia/QAudioFormat>
+#include <QVector>
 
 WebSocketReceiver::WebSocketReceiver(QObject *parent)
     : QObject(parent)
@@ -108,7 +109,21 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         m_textTileEnabled = false;
     }
     // 日志清理：移除冗余控制台输出
+
+    m_inputPollTimer = new QTimer(this);
+    m_inputPollTimer->setInterval(500);
+    connect(m_inputPollTimer, &QTimer::timeout, this, [this]() {
+        if (!m_followSystemInput) return;
+        QAudioDevice defIn = QMediaDevices::defaultAudioInput();
+        if (m_currentInputDeviceId != defIn.id()) {
+            bool wasActive = m_localAudioTimer && m_localAudioTimer->isActive();
+            setLocalInputDeviceFollowSystem();
+            if (wasActive) setTalkEnabled(true);
+        }
+    });
+    m_inputPollTimer->start();
 }
+
 
 WebSocketReceiver::~WebSocketReceiver()
 {
@@ -1090,6 +1105,7 @@ void WebSocketReceiver::sendAudioGain(int percent)
 void WebSocketReceiver::setTalkEnabled(bool enabled)
 {
     if (enabled) {
+        m_talkActive = true;
         if (!m_localAudioSource) {
             QAudioDevice inDev = QMediaDevices::defaultAudioInput();
             if (!m_followSystemInput && !m_localInputDeviceId.isEmpty()) {
@@ -1100,7 +1116,15 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
             fmt.setSampleRate(m_localOpusSampleRate);
             fmt.setChannelCount(1);
             fmt.setSampleFormat(QAudioFormat::Int16);
-            m_localAudioSource = new QAudioSource(inDev, fmt, this);
+            if (!inDev.isFormatSupported(fmt)) {
+                QAudioFormat pf = inDev.preferredFormat();
+                m_localInputFormat = pf;
+            } else {
+                m_localInputFormat = fmt;
+            }
+            m_localAudioSource = new QAudioSource(inDev, m_localInputFormat, this);
+            QObject::connect(m_localAudioSource, &QAudioSource::stateChanged, this, [this](QAudio::State st){ handleLocalAudioState(st); });
+            m_currentInputDeviceId = inDev.id();
         }
         if (!m_localOpusEnc) {
             int err = OPUS_OK;
@@ -1120,10 +1144,7 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
                 if (!m_localOpusEnc || !m_localAudioSource) return;
                 if (!m_localAudioInput) return;
                 QByteArray pcm;
-                int bytesPerFrame = sizeof(opus_int16);
-                pcm.resize(m_localOpusFrameSize * bytesPerFrame);
-                qint64 readBytes = m_localAudioInput->read(pcm.data(), pcm.size());
-                if (readBytes < pcm.size()) return;
+                if (!produceOpusFrame(pcm)) return;
                 QByteArray opusOut;
                 opusOut.resize(4096);
                 int nbytes = opus_encode(m_localOpusEnc,
@@ -1150,6 +1171,7 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
         }
         if (!m_localAudioTimer->isActive()) m_localAudioTimer->start();
     } else {
+        m_talkActive = false;
         if (m_localAudioTimer && m_localAudioTimer->isActive()) m_localAudioTimer->stop();
         if (m_localAudioSource) m_localAudioSource->stop();
         m_localAudioInput = nullptr;
@@ -1181,6 +1203,114 @@ void WebSocketReceiver::setLocalInputDeviceById(const QString &id)
         m_localAudioSource = nullptr;
         if (active) { setTalkEnabled(true); }
     }
+}
+
+void WebSocketReceiver::recreateLocalAudioSource()
+{
+    if (m_localAudioSource) {
+        bool active = m_localAudioSource->state() == QAudio::ActiveState;
+        m_localAudioSource->stop();
+        delete m_localAudioSource;
+        m_localAudioSource = nullptr;
+        QAudioDevice inDev = QMediaDevices::defaultAudioInput();
+        if (!m_followSystemInput && !m_localInputDeviceId.isEmpty()) {
+            const auto devs = QMediaDevices::audioInputs();
+            for (const auto &d : devs) { if (d.id() == m_localInputDeviceId) { inDev = d; break; } }
+        }
+        QAudioFormat fmt;
+        fmt.setSampleRate(m_localOpusSampleRate);
+        fmt.setChannelCount(1);
+        fmt.setSampleFormat(QAudioFormat::Int16);
+        if (!inDev.isFormatSupported(fmt)) {
+            QAudioFormat pf = inDev.preferredFormat();
+            m_localInputFormat = pf;
+        } else {
+            m_localInputFormat = fmt;
+        }
+        m_localAudioSource = new QAudioSource(inDev, m_localInputFormat, this);
+        QObject::connect(m_localAudioSource, &QAudioSource::stateChanged, this, [this](QAudio::State st){ handleLocalAudioState(st); });
+        m_currentInputDeviceId = inDev.id();
+        if (active) {
+            m_localAudioInput = m_localAudioSource->start();
+            m_localAudioSource->setVolume(m_localMicGainPercent / 100.0);
+        }
+    }
+}
+
+void WebSocketReceiver::handleLocalAudioState(QAudio::State st)
+{
+    if (!m_localAudioSource) return;
+    if (st == QAudio::StoppedState && m_localAudioSource->error() != QAudio::NoError) {
+        recreateLocalAudioSource();
+    }
+}
+
+int WebSocketReceiver::bytesPerSample(QAudioFormat::SampleFormat f) const
+{
+    if (f == QAudioFormat::UInt8) return 1;
+    if (f == QAudioFormat::Int16) return 2;
+    if (f == QAudioFormat::Int32 || f == QAudioFormat::Float) return 4;
+    return 2;
+}
+
+bool WebSocketReceiver::produceOpusFrame(QByteArray &out)
+{
+    if (!m_localAudioInput) return false;
+    int srcRate = m_localInputFormat.sampleRate();
+    int srcCh = m_localInputFormat.channelCount();
+    QAudioFormat::SampleFormat sf = m_localInputFormat.sampleFormat();
+    int bps = bytesPerSample(sf);
+    if (srcRate == m_localOpusSampleRate && srcCh == 1 && sf == QAudioFormat::Int16) {
+        int needBytes = m_localOpusFrameSize * bps;
+        QByteArray buf;
+        buf.resize(needBytes);
+        qint64 readBytes = m_localAudioInput->read(buf.data(), buf.size());
+        if (readBytes < buf.size()) return false;
+        out = buf;
+        return true;
+    }
+    int needSrcSamples = (m_localOpusFrameSize * srcRate + m_localOpusSampleRate - 1) / m_localOpusSampleRate;
+    int needBytes = needSrcSamples * srcCh * bps;
+    QByteArray tmp;
+    tmp.resize(needBytes);
+    qint64 readBytes = m_localAudioInput->read(tmp.data(), tmp.size());
+    if (readBytes < tmp.size()) return false;
+    int samples = needSrcSamples;
+    QVector<float> mono(samples);
+    if (sf == QAudioFormat::Int16) {
+        const qint16 *p = reinterpret_cast<const qint16*>(tmp.constData());
+        for (int i = 0; i < samples; ++i) {
+            int idx = i * srcCh;
+            float v = 0.f;
+            for (int c = 0; c < srcCh; ++c) v += p[idx + c];
+            v /= srcCh;
+            mono[i] = v / 32768.f;
+        }
+    } else if (sf == QAudioFormat::Float) {
+        const float *p = reinterpret_cast<const float*>(tmp.constData());
+        for (int i = 0; i < samples; ++i) {
+            int idx = i * srcCh;
+            float v = 0.f;
+            for (int c = 0; c < srcCh; ++c) v += p[idx + c];
+            v /= srcCh;
+            mono[i] = v;
+        }
+    } else {
+        return false;
+    }
+    out.resize(m_localOpusFrameSize * 2);
+    qint16 *dst = reinterpret_cast<qint16*>(out.data());
+    for (int i = 0; i < m_localOpusFrameSize; ++i) {
+        double pos = (double)i * srcRate / (double)m_localOpusSampleRate;
+        int j = (int)pos;
+        double frac = pos - j;
+        float s0 = mono[qBound(0, j, samples - 1)];
+        float s1 = mono[qBound(0, j + 1, samples - 1)];
+        float v = s0 + (s1 - s0) * (float)frac;
+        int iv = (int)std::round(qBound(-1.0f, v, 1.0f) * 32767.0f);
+        dst[i] = (qint16)iv;
+    }
+    return true;
 }
 
 // 瓦片消息处理方法实现

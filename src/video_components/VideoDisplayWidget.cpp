@@ -745,11 +745,29 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
     // 创建音频输出
     m_audioSink = new QAudioSink(desiredOut, m_audioFormat, this);
     m_audioSink->setBufferSize(4096);
+    QObject::connect(m_audioSink, &QAudioSink::stateChanged, this, [this](QAudio::State st) {
+        if (!m_speakerEnabled) return;
+        if (!m_audioSink) return;
+        if (st == QAudio::StoppedState && m_audioSink->error() != QAudio::NoError) {
+            softRestartSpeakerIfEnabled();
+        } else if (st == QAudio::IdleState) {
+            scheduleAutoRecovery();
+        }
+    });
     m_currentOutputDeviceId = desiredOut.id();
     
     if (m_speakerEnabled) {
         m_audioIO = m_audioSink->start();
         m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
+        if (m_audioIO) {
+            int ms = 50;
+            int frames = (m_sinkSampleRate > 0 ? m_sinkSampleRate : 16000) * ms / 1000;
+            int samples = frames * (m_sinkChannels > 0 ? m_sinkChannels : 1);
+            QByteArray zero;
+            zero.resize(samples * 2);
+            zero.fill(char(0));
+            m_audioIO->write(zero);
+        }
         
     } else {
         m_audioIO = nullptr;
@@ -770,12 +788,7 @@ void VideoDisplayWidget::selectAudioOutputById(const QString &id)
     m_followSystemOutput = false;
     m_outputDeviceId = id.toUtf8();
     m_currentOutputDeviceId.clear();
-    m_audioInitialized = false;
-    
-    int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
-    int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
-    initAudioSinkIfNeeded(sr, ch, 16);
-    softRestartSpeakerIfEnabled();
+    forceRecreateSink();
     emit audioOutputSelectionChanged(false, id);
 }
 
@@ -784,12 +797,7 @@ void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
     m_followSystemOutput = false;
     m_outputDeviceId = id;
     m_currentOutputDeviceId.clear();
-    m_audioInitialized = false;
-    
-    int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
-    int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
-    initAudioSinkIfNeeded(sr, ch, 16);
-    softRestartSpeakerIfEnabled();
+    forceRecreateSink();
     emit audioOutputSelectionChanged(false, QString::fromUtf8(id));
 }
 
@@ -1749,6 +1757,15 @@ void VideoDisplayWidget::softRestartSpeakerIfEnabled()
     m_audioSink->stop();
     m_audioIO = m_audioSink->start();
     m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
+    if (m_audioIO) {
+        int ms = 50;
+        int frames = (m_sinkSampleRate > 0 ? m_sinkSampleRate : 16000) * ms / 1000;
+        int samples = frames * (m_sinkChannels > 0 ? m_sinkChannels : 1);
+        QByteArray zero;
+        zero.resize(samples * 2);
+        zero.fill(char(0));
+        m_audioIO->write(zero);
+    }
 }
 void VideoDisplayWidget::forceRecreateSink()
 {

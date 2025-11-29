@@ -248,6 +248,15 @@ private:
     int m_localMicGainPercent = 100;
     bool m_followSystemInput = true;
     QString m_localInputDeviceId;
+    QAudioFormat m_localInputFormat;
+    QByteArray m_currentInputDeviceId;
+    QTimer *m_inputPollTimer = nullptr;
+    QByteArray m_rawInputBuffer;
+    bool m_talkActive = false;
+    void recreateLocalAudioSource();
+    void handleLocalAudioState(QAudio::State st);
+    int bytesPerSample(QAudioFormat::SampleFormat f) const;
+    bool produceOpusFrame(QByteArray &out);
 
     // 文本瓦片消息兼容开关（默认关闭，通过环境变量 IRULER_TEXT_TILE=1 开启）
     bool m_textTileEnabled = false;

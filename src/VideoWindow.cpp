@@ -1,4 +1,5 @@
 #include "VideoWindow.h"
+#include <iostream>
 #include <QPainter>
 #include <QScreen>
 #include <QGuiApplication>
@@ -706,12 +707,14 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                 m_volumeLongPressTimer->start(500);
                 return false;
             } else if (me->button() == Qt::RightButton) {
+                std::cout << "[UI] Right click detected on object: " << (obj == m_speakerButton ? "Speaker" : (obj == m_micButton ? "Mic" : "Other")) << std::endl;
                 QMenu menu;
                 QAction *follow = menu.addAction(QStringLiteral("跟随系统"));
                 follow->setCheckable(true);
                 if (obj == m_speakerButton) {
                     bool fs = m_videoDisplayWidget ? m_videoDisplayWidget->isAudioOutputFollowSystem() : true;
                     QString curr = m_videoDisplayWidget ? m_videoDisplayWidget->currentAudioOutputId() : QString();
+                    std::cout << "[UI] Speaker menu: follow=" << fs << " current=" << curr.toStdString() << std::endl;
                     follow->setChecked(fs);
                     const auto outs = QMediaDevices::audioOutputs();
                     for (const auto &d : outs) {
@@ -719,17 +722,25 @@ bool VideoWindow::eventFilter(QObject *obj, QEvent *event)
                         a->setCheckable(true);
                         if (!fs && !curr.isEmpty() && d.id() == curr.toUtf8()) a->setChecked(true);
                         a->setData(d.id());
+                        // std::cout << "[UI] Device: " << d.description().toStdString() << " ID: " << d.id().toStdString() << std::endl;
                     }
                     QAction *chosen = menu.exec(me->globalPosition().toPoint());
-                    if (!chosen) return true;
+                    if (!chosen) {
+                         std::cout << "[UI] Menu cancelled" << std::endl;
+                         return true;
+                    }
                     if (chosen == follow) {
+                        std::cout << "[UI] Selected: Follow System" << std::endl;
                         if (m_videoDisplayWidget) {
                             m_videoDisplayWidget->selectAudioOutputFollowSystem();
                         }
                     } else {
                         QByteArray id = chosen->data().toByteArray();
+                        std::cout << "[UI] Selected Device ID: " << id.toStdString() << std::endl;
                         if (m_videoDisplayWidget) {
                             m_videoDisplayWidget->selectAudioOutputByRawId(id);
+                        } else {
+                             std::cout << "[UI] ERROR: m_videoDisplayWidget is null!" << std::endl;
                         }
                     }
                     return true;

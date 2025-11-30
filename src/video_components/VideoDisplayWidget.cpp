@@ -1,4 +1,5 @@
 #include "VideoDisplayWidget.h"
+#include <iostream>
 #include "../player/DxvaVP9Decoder.h"
 #include "../player/WebSocketReceiver.h"
 #include <QApplication>
@@ -704,12 +705,26 @@ void VideoDisplayWidget::setAnnotationColorId(int colorId)
 
 void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample)
 {
-    if (m_lastFrameSampleRate != sampleRate || m_lastFrameChannels != channels) {
+    // 如果尚未初始化，必须初始化
+    if (!m_audioInitialized) {
         m_lastFrameSampleRate = sampleRate;
         m_lastFrameChannels = channels;
         applyAudioOutputSelectionRuntime();
-    } else if (!m_audioInitialized) {
-        applyAudioOutputSelectionRuntime();
+        return;
+    }
+
+    // 如果输入格式发生变化，我们不需要重建 sink (因为 sink 使用的是设备固定格式)，
+    // 但我们需要更新重采样标志。最简单的方法是再次调用 applyAudioOutputSelectionRuntime，
+    // 或者是只更新标志。为了稳健起见，如果格式变了，我们刷新一下状态。
+    if (m_lastFrameSampleRate != sampleRate || m_lastFrameChannels != channels) {
+        m_lastFrameSampleRate = sampleRate;
+        m_lastFrameChannels = channels;
+        // 重新计算是否需要重采样
+        if (m_audioSink) {
+             m_needResample = (m_sinkSampleRate != m_lastFrameSampleRate) || (m_sinkChannels != m_lastFrameChannels);
+        } else {
+             applyAudioOutputSelectionRuntime();
+        }
     }
 }
 
@@ -725,11 +740,23 @@ void VideoDisplayWidget::selectAudioOutputFollowSystem()
 
 void VideoDisplayWidget::selectAudioOutputById(const QString &id)
 {
+    qDebug() << "[Audio] selectAudioOutputById called with ID:" << id;
     m_followSystemOutput = false;
+    m_selectedOutputDevice = QAudioDevice();
     m_outputDeviceId = id.toUtf8();
     m_outputDeviceDesc.clear();
     const auto devs = QMediaDevices::audioOutputs();
-    for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { m_outputDeviceDesc = d.description(); m_selectedOutputDevice = d; break; } }
+    for (const auto &d : devs) { 
+        if (d.id() == m_outputDeviceId) { 
+            m_outputDeviceDesc = d.description(); 
+            m_selectedOutputDevice = d; 
+            qDebug() << "[Audio] Found matching device in list:" << d.description();
+            break; 
+        } 
+    }
+    if (m_selectedOutputDevice.isNull()) {
+        qDebug() << "[Audio] WARNING: No matching device found for ID:" << id;
+    }
     m_currentOutputDeviceId.clear();
     applyAudioOutputSelectionRuntime();
     if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
@@ -740,11 +767,20 @@ void VideoDisplayWidget::selectAudioOutputById(const QString &id)
 
 void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
 {
+    qDebug() << "[Audio] selectAudioOutputByRawId called";
+    std::cout << "[Audio] selectAudioOutputByRawId called with ID len=" << id.size() << std::endl;
     m_followSystemOutput = false;
     m_outputDeviceId = id;
     m_outputDeviceDesc.clear();
     const auto devs = QMediaDevices::audioOutputs();
-    for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { m_outputDeviceDesc = d.description(); m_selectedOutputDevice = d; break; } }
+    for (const auto &d : devs) { 
+        if (d.id() == m_outputDeviceId) { 
+            m_outputDeviceDesc = d.description(); 
+            m_selectedOutputDevice = d; 
+            qDebug() << "[Audio] Found matching device in list:" << d.description();
+            break; 
+        } 
+    }
     m_currentOutputDeviceId.clear();
     applyAudioOutputSelectionRuntime();
     if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
@@ -755,62 +791,150 @@ void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
 
 void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
 {
-    if (m_audioSink) { m_audioSink->stop(); delete m_audioSink; m_audioSink = nullptr; m_audioIO = nullptr; }
-    QAudioDevice dev = m_followSystemOutput ? QMediaDevices::defaultAudioOutput() : QAudioDevice();
-    if (!m_followSystemOutput) {
-        if (!m_selectedOutputDevice.isNull()) {
-            dev = m_selectedOutputDevice;
-        } else if (!m_outputDeviceId.isEmpty()) {
-            const auto devs = QMediaDevices::audioOutputs();
-            for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { dev = d; m_selectedOutputDevice = d; break; } }
-            if (dev.isNull() && !m_outputDeviceDesc.isEmpty()) {
-                const auto devs2 = QMediaDevices::audioOutputs();
-                for (const auto &d : devs2) { if (d.description() == m_outputDeviceDesc) { dev = d; m_selectedOutputDevice = d; break; } }
-            }
-        }
-    }
-    if (dev.isNull()) dev = QMediaDevices::defaultAudioOutput();
-    QAudioFormat fmt;
-    if (m_lastFrameSampleRate > 0 && m_lastFrameChannels > 0) {
-        fmt.setSampleRate(m_lastFrameSampleRate);
-        fmt.setChannelCount(m_lastFrameChannels);
-        fmt.setSampleFormat(QAudioFormat::Int16);
-        if (!dev.isFormatSupported(fmt)) {
-            fmt = dev.preferredFormat();
-        }
-    } else {
-        fmt = dev.preferredFormat();
-    }
-    m_audioFormat = fmt;
-    m_sinkSampleRate = m_audioFormat.sampleRate();
-    m_sinkChannels = m_audioFormat.channelCount();
-    m_needResample = (m_sinkSampleRate != m_lastFrameSampleRate) || (m_sinkChannels != m_lastFrameChannels);
-    m_audioSink = new QAudioSink(dev, m_audioFormat, this);
-    m_audioSink->setBufferSize(4096);
-    QObject::connect(m_audioSink, &QAudioSink::stateChanged, this, [this](QAudio::State st) {
-        if (!m_speakerEnabled) return;
-        if (!m_audioSink) return;
-        if (st == QAudio::StoppedState && m_audioSink->error() != QAudio::NoError) { softRestartSpeakerIfEnabled(); }
-        else if (st == QAudio::IdleState) { scheduleAutoRecovery(); }
-    });
-    m_currentOutputDeviceId = dev.id();
-    if (m_speakerEnabled) {
-        m_audioIO = m_audioSink->start();
-        m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
-        if (m_audioIO) {
-            int ms = 50;
-            int frames = (m_sinkSampleRate > 0 ? m_sinkSampleRate : 16000) * ms / 1000;
-            int samples = frames * (m_sinkChannels > 0 ? m_sinkChannels : 1);
-            QByteArray zero;
-            zero.resize(samples * 2);
-            zero.fill(char(0));
-            m_audioIO->write(zero);
-        }
-    } else {
+    // 防止重入：如果正在配置中，不要再次触发
+    static bool isConfiguring = false;
+    if (isConfiguring) return;
+    isConfiguring = true;
+
+    qDebug() << "[Audio] applyAudioOutputSelectionRuntime start. FollowSystem:" << m_followSystemOutput;
+    std::cout << "[Audio] applyAudioOutputSelectionRuntime start. FollowSystem:" << m_followSystemOutput << std::endl;
+    
+    // 1. 清理旧资源 (Standard cleanup)
+    if (m_audioSink) {
+        m_audioSink->stop();
+        delete m_audioSink;
+        m_audioSink = nullptr;
         m_audioIO = nullptr;
     }
+
+    // 防止重入循环：立即标记为已初始化
+    // 这样在接下来的100ms延时期间，initAudioSinkIfNeeded 不会重复调用此函数
     m_audioInitialized = true;
-    scheduleAutoRecovery();
+
+    // 2. 确定目标设备 (Device Selection)
+    // 恢复用户认可的逻辑：优先使用缓存的有效设备，避免不必要的ID查找失败
+    QAudioDevice device;
+    if (m_followSystemOutput) {
+        device = QMediaDevices::defaultAudioOutput();
+        qDebug() << "[Audio] Using system default device:" << device.description();
+        std::cout << "[Audio] Using system default device: " << device.description().toStdString() << std::endl;
+    } else {
+        // 优先使用已选定的设备对象（如果有效且ID匹配）
+        // 这对解决"切换无效"至关重要，因为某些ID在热插拔后可能发生微小变化或查找失败
+        if (!m_selectedOutputDevice.isNull() && m_selectedOutputDevice.id() == m_outputDeviceId) {
+            device = m_selectedOutputDevice;
+            qDebug() << "[Audio] Using cached selected device:" << device.description();
+            std::cout << "[Audio] Using cached selected device: " << device.description().toStdString() << std::endl;
+        } else {
+            qDebug() << "[Audio] Cached device invalid or ID mismatch. Lookup by ID...";
+            std::cout << "[Audio] Cached device invalid or ID mismatch. Lookup by ID..." << std::endl;
+            // 尝试通过 ID 查找设备
+            bool found = false;
+            const auto devices = QMediaDevices::audioOutputs();
+            for (const auto &d : devices) {
+                if (d.id() == m_outputDeviceId) {
+                    device = d;
+                    found = true;
+                    qDebug() << "[Audio] Found device by ID lookup:" << d.description();
+                    std::cout << "[Audio] Found device by ID lookup: " << d.description().toStdString() << std::endl;
+                    break;
+                }
+            }
+            // 如果通过 ID 没找到，尝试通过描述查找 (作为后备)
+            if (!found && !m_outputDeviceDesc.isEmpty()) {
+                qDebug() << "[Audio] ID lookup failed. Lookup by description:" << m_outputDeviceDesc;
+                std::cout << "[Audio] ID lookup failed. Lookup by description: " << m_outputDeviceDesc.toStdString() << std::endl;
+                for (const auto &d : devices) {
+                    if (d.description() == m_outputDeviceDesc) {
+                        device = d;
+                        found = true;
+                        qDebug() << "[Audio] Found device by description:" << d.description();
+                        std::cout << "[Audio] Found device by description: " << d.description().toStdString() << std::endl;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 如果都找不到，回退到默认设备
+        if (device.isNull()) {
+            qDebug() << "[Audio] ERROR: Could not find target device. Falling back to default.";
+            std::cout << "[Audio] ERROR: Could not find target device. Falling back to default." << std::endl;
+            device = QMediaDevices::defaultAudioOutput();
+        }
+    }
+    
+    // 更新当前设备 ID 记录
+    m_currentOutputDeviceId = device.id();
+    m_selectedOutputDevice = device; // 缓存当前使用的设备
+    
+    qDebug() << "[Audio] Final selected device:" << device.description() << "ID size:" << device.id().size();
+    std::cout << "[Audio] Final selected device: " << device.description().toStdString() << " ID size: " << device.id().size() << std::endl;
+
+    // 3. 格式协商 (Format Negotiation)
+    // 使用设备首选格式作为基础，但强制使用 Int16 格式，因为我们的源数据和转换器只支持 Int16
+    // 保持设备首选的采样率和通道数以最小化重采样需求
+    m_audioFormat = device.preferredFormat();
+    m_audioFormat.setSampleFormat(QAudioFormat::Int16);
+    
+    m_sinkSampleRate = m_audioFormat.sampleRate();
+    m_sinkChannels = m_audioFormat.channelCount();
+    
+    // 仅做最基本的有效性检查
+    if (m_sinkSampleRate <= 0) {
+        m_sinkSampleRate = 48000;
+        m_audioFormat.setSampleRate(48000);
+    }
+    if (m_sinkChannels <= 0) {
+        m_sinkChannels = 2;
+        m_audioFormat.setChannelCount(2);
+    }
+
+    std::cout << "[Audio] Sink format: Rate=" << m_sinkSampleRate 
+              << " Channels=" << m_sinkChannels 
+              << " Format=" << m_audioFormat.sampleFormat() << std::endl;
+
+    // 更新重采样标志
+    m_needResample = (m_sinkSampleRate != m_lastFrameSampleRate) || (m_sinkChannels != m_lastFrameChannels);
+
+    // 4. 创建并启动 (Create and Start)
+    // 重要回滚：移除异步延时 (Async Delay)
+    // 虽然延时能解决滋啦声，但它导致了"切换无声"和"状态不同步"的问题
+    // 我们通过增大缓冲区来解决滋啦声，而不是依赖延时
+    
+    if (m_audioSink) {
+        m_audioSink->deleteLater();
+    }
+    
+    m_audioSink = new QAudioSink(device, m_audioFormat, this);
+    
+    // 计算合理的缓冲区大小 (约 200ms)
+    // 较大的缓冲区可以有效防止"滋啦声" (Underrun)
+    int bufferBytes = m_sinkSampleRate * m_sinkChannels * 2 * 0.2; // 200ms
+    if (bufferBytes < 32768) bufferBytes = 32768; // 至少 32KB
+    m_audioSink->setBufferSize(bufferBytes); 
+    std::cout << "[Audio] Set buffer size to: " << bufferBytes << " bytes" << std::endl;
+
+    // 监听状态变化
+    connect(m_audioSink, &QAudioSink::stateChanged, this, [this](QAudio::State st) {
+        if (st == QAudio::StoppedState && m_audioSink->error() != QAudio::NoError) {
+            qDebug() << "[Audio] Error occurred, state:" << st << " error:" << m_audioSink->error();
+            std::cout << "[Audio] Error occurred, state: " << st << " error: " << m_audioSink->error() << std::endl;
+            if (m_speakerEnabled) softRestartSpeakerIfEnabled();
+        }
+    });
+
+    if (m_speakerEnabled) {
+        m_audioIO = m_audioSink->start();
+        if (m_audioIO) {
+            // 写入静音数据预热
+            QByteArray silence(4096, 0);
+            m_audioIO->write(silence);
+        }
+    }
+    
+    std::cout << "[Audio] Sync start completed." << std::endl;
+    isConfiguring = false;
 }
 
 void VideoDisplayWidget::selectMicInputFollowSystem()
@@ -1809,9 +1933,26 @@ void VideoDisplayWidget::reconnectAudioSignal()
                     m_audioSink->resume();
                 }
                 if (m_audioIO) {
-                    QByteArray out = m_needResample ? convertForSink(pcmData, sampleRate, channels) : pcmData;
-                    m_audioIO->write(out);
-                    m_lastAudioWriteMs = QDateTime::currentMSecsSinceEpoch();
+                    // 动态判断是否需要重采样，不再依赖 m_needResample 状态变量
+                    // 这避免了状态不同步导致的采样率失配（"非人声"问题）
+                    bool resampleNeeded = (m_sinkSampleRate > 0 && sampleRate != m_sinkSampleRate) || 
+                                          (m_sinkChannels > 0 && channels != m_sinkChannels);
+                    
+                    // 简单的防抖日志：仅当状态变化时打印
+                    static bool lastResampleState = false;
+                    if (resampleNeeded != lastResampleState) {
+                         std::cout << "[Audio] Resample state changed: " << (resampleNeeded ? "ON" : "OFF") 
+                                   << " (Src: " << sampleRate << "Hz, Dst: " << m_sinkSampleRate << "Hz)" << std::endl;
+                         lastResampleState = resampleNeeded;
+                    }
+
+                    QByteArray out = resampleNeeded ? convertForSink(pcmData, sampleRate, channels) : pcmData;
+                    if (!out.isEmpty()) {
+                        m_audioIO->write(out);
+                        m_lastAudioWriteMs = QDateTime::currentMSecsSinceEpoch();
+                    } else {
+                        // std::cout << "[Audio] WARNING: Empty output after conversion" << std::endl;
+                    }
                 }
             });
 }

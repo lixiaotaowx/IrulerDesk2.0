@@ -60,6 +60,8 @@ public:
         qint64 timestamp;      // 瓦片时间戳
         bool isDirty;          // 是否需要重新渲染
     };
+
+    friend class RingAudioIODevice;
     
     struct TileComposition {
         QSize frameSize;       // 完整帧大小
@@ -235,11 +237,16 @@ private:
     QTimer *m_defaultOutPollTimer = nullptr;
     int m_sinkSampleRate = 16000;
     int m_sinkChannels = 1;
+    int m_bytesPerSample = 2;
     bool m_needResample = false;
     int m_lastFrameSampleRate = 16000;
     int m_lastFrameChannels = 1;
     int m_lastFrameBitsPerSample = 16;
     qint64 m_lastAudioWriteMs = 0;
+
+    QByteArray m_ringBuffer;
+    int m_ringCapacityBytes = 0;
+    QMutex m_ringMutex;
     
     // 端到端延迟统计
     QList<double> m_latencyHistory;

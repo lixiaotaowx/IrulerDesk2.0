@@ -340,6 +340,11 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         emit viewerNameUpdateReceived(vid, vname);
     } else if (type == "avatar_update") {
         sendTextMessage(message);
+    } else if (type == "viewer_exit" || type == "viewer_disconnected") {
+        QString vid = obj.value("viewer_id").toString();
+        if (!vid.isEmpty()) {
+            emit viewerExited(vid);
+        }
     }
 }
 

@@ -991,7 +991,7 @@ void WebSocketReceiver::sendSetQuality(const QString &quality)
     }
 
     QString normalized = quality.toLower();
-    if (normalized != "low" && normalized != "medium" && normalized != "high") {
+    if (normalized != "low" && normalized != "medium" && normalized != "high" && normalized != "extreme") {
         normalized = "medium";
     }
 

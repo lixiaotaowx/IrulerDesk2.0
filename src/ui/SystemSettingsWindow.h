@@ -1,4 +1,4 @@
-﻿#ifndef SYSTEMSETTINGSWINDOW_H
+#ifndef SYSTEMSETTINGSWINDOW_H
 #define SYSTEMSETTINGSWINDOW_H
 
 #include <QDialog>
@@ -36,6 +36,7 @@ private:
     QRadioButton* m_lowBtn = nullptr;
     QRadioButton* m_mediumBtn = nullptr;
     QRadioButton* m_highBtn = nullptr;
+    QRadioButton* m_extremeBtn = nullptr;
     QLabel* m_userNameLabel = nullptr;
     QLineEdit* m_userNameEdit = nullptr;
     QPushButton* m_userNameConfirmBtn = nullptr;

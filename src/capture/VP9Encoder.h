@@ -33,6 +33,11 @@ public:
     void setStaticBitrateReduction(double reduction) { m_staticBitrateReduction = reduction; }
     void setEnableStaticDetection(bool enable) { m_enableStaticDetection = enable; }
     void setSkipStaticFrames(bool skip) { m_skipStaticFrames = skip; }
+    void setCpuUsed(int v) { m_cpuUsed = v; }
+    void setQuantizerRange(int minQ, int maxQ) { m_minQuantizer = minQ; m_maxQuantizer = maxQ; }
+    void setRateControl(int undershootPct, int overshootPct, int bufInitial, int bufOptimal, int bufTotal) { m_undershootPct = undershootPct; m_overshootPct = overshootPct; m_bufInitial = bufInitial; m_bufOptimal = bufOptimal; m_bufTotal = bufTotal; }
+    void setDeadline(int v) { m_deadline = v; }
+    void setQualityPreset(const QString &q);
     
     // 状态查询
     bool isInitialized() const { return m_initialized; }
@@ -93,6 +98,16 @@ private:
     
     // 线程安全
     QMutex m_mutex;
+
+    int m_cpuUsed;
+    int m_minQuantizer;
+    int m_maxQuantizer;
+    int m_undershootPct;
+    int m_overshootPct;
+    int m_bufInitial;
+    int m_bufOptimal;
+    int m_bufTotal;
+    int m_deadline;
 };
 
 #endif // VP9ENCODER_H

@@ -35,6 +35,7 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     qualityRow->addWidget(m_lowBtn);
     qualityRow->addWidget(m_mediumBtn);
     qualityRow->addWidget(m_highBtn);
+    qualityRow->addWidget(m_extremeBtn);
     qualityRow->addStretch();
     layout->addLayout(qualityRow);
 
@@ -154,9 +155,11 @@ void SystemSettingsWindow::setupQualityControls()
     m_lowBtn = new QRadioButton("低", this);
     m_mediumBtn = new QRadioButton("中", this);
     m_highBtn = new QRadioButton("高", this);
+    m_extremeBtn = new QRadioButton("极高", this);
     m_qualityGroup->addButton(m_lowBtn);
     m_qualityGroup->addButton(m_mediumBtn);
     m_qualityGroup->addButton(m_highBtn);
+    m_qualityGroup->addButton(m_extremeBtn);
     m_mediumBtn->setChecked(true);
 
     // 从配置读取默认本地质量
@@ -170,7 +173,9 @@ void SystemSettingsWindow::setupQualityControls()
             if (line.startsWith("local_quality=")) {
                 QString q = line.mid(QString("local_quality=").length()).trimmed();
                 if (q == "low") m_lowBtn->setChecked(true);
+                else if (q == "medium") m_mediumBtn->setChecked(true);
                 else if (q == "high") m_highBtn->setChecked(true);
+                else if (q == "extreme") m_extremeBtn->setChecked(true);
                 else m_mediumBtn->setChecked(true);
                 break;
             }
@@ -182,12 +187,15 @@ void SystemSettingsWindow::setupQualityControls()
     auto emitQuality = [this]() {
         QString q = "medium";
         if (m_lowBtn->isChecked()) q = "low";
+        else if (m_mediumBtn->isChecked()) q = "medium";
         else if (m_highBtn->isChecked()) q = "high";
+        else if (m_extremeBtn->isChecked()) q = "extreme";
         emit localQualitySelected(q);
     };
     connect(m_lowBtn, &QRadioButton::toggled, this, [emitQuality](bool checked){ if (checked) emitQuality(); });
     connect(m_mediumBtn, &QRadioButton::toggled, this, [emitQuality](bool checked){ if (checked) emitQuality(); });
     connect(m_highBtn, &QRadioButton::toggled, this, [emitQuality](bool checked){ if (checked) emitQuality(); });
+    connect(m_extremeBtn, &QRadioButton::toggled, this, [emitQuality](bool checked){ if (checked) emitQuality(); });
 }
 
 void SystemSettingsWindow::notifySwitchSucceeded()

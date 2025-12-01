@@ -27,6 +27,7 @@ public slots:
     void onCursorMoved(int x, int y);
     void onViewerCursor(const QString &viewerId, int x, int y, const QString &viewerName);
     void onViewerNameUpdate(const QString &viewerId, const QString &viewerName);
+    void onViewerExited(const QString &viewerId);
 
 protected:
     void paintEvent(QPaintEvent *event) override;

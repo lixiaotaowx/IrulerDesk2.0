@@ -743,8 +743,6 @@ void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int
 
 void VideoDisplayWidget::selectAudioOutputFollowSystem()
 {
-    qDebug() << "[Audio] selectAudioOutputFollowSystem called (Full Reset)";
-    std::cout << "[Audio] selectAudioOutputFollowSystem called (Full Reset)" << std::endl;
 
     // 1. 彻底停止当前音频 (Full Stop)
     bool wasEnabled = m_speakerEnabled;
@@ -811,8 +809,6 @@ void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
     if (isConfiguring) return;
     isConfiguring = true;
 
-    qDebug() << "[Audio] applyAudioOutputSelectionRuntime start. FollowSystem:" << m_followSystemOutput;
-    std::cout << "[Audio] applyAudioOutputSelectionRuntime start. FollowSystem:" << m_followSystemOutput << std::endl;
     
     // 1. 清理旧资源 (Standard cleanup)
     if (m_audioSink) {
@@ -831,17 +827,11 @@ void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
     QAudioDevice device;
     if (m_followSystemOutput) {
         device = QMediaDevices::defaultAudioOutput();
-        qDebug() << "[Audio] Using system default device:" << device.description();
-        std::cout << "[Audio] Using system default device: " << device.description().toStdString() << std::endl;
     } else {
         // 优先使用已选定的设备对象（只要有效就用），避免热插拔后ID微变导致回退
         if (!m_selectedOutputDevice.isNull()) {
             device = m_selectedOutputDevice;
-            qDebug() << "[Audio] Using cached selected device:" << device.description();
-            std::cout << "[Audio] Using cached selected device: " << device.description().toStdString() << std::endl;
         } else {
-            qDebug() << "[Audio] No cached device, Lookup by ID/description";
-            std::cout << "[Audio] No cached device, Lookup by ID/description" << std::endl;
             bool found = false;
             const auto devices = QMediaDevices::audioOutputs();
             for (const auto &d : devices) {
@@ -856,8 +846,6 @@ void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
         
         // 如果都找不到，回退到默认设备
         if (device.isNull()) {
-            qDebug() << "[Audio] ERROR: Could not find target device. Falling back to default.";
-            std::cout << "[Audio] ERROR: Could not find target device. Falling back to default." << std::endl;
             device = QMediaDevices::defaultAudioOutput();
         }
     }
@@ -866,8 +854,6 @@ void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
     m_currentOutputDeviceId = device.id();
     m_selectedOutputDevice = device; // 缓存当前使用的设备
     
-    qDebug() << "[Audio] Final selected device:" << device.description() << "ID size:" << device.id().size();
-    std::cout << "[Audio] Final selected device: " << device.description().toStdString() << " ID size: " << device.id().size() << std::endl;
 
     // 3. 格式协商 (Format Negotiation)
     // 我们不直接修改 device.preferredFormat() 返回的对象，因为该对象可能包含
@@ -896,18 +882,12 @@ void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
         default: m_bytesPerSample = 2; break;
     }
 
-    std::cout << "[Audio] Sink format chosen: Rate=" << m_sinkSampleRate 
-              << " Channels=" << m_sinkChannels 
-              << " SampleFormat=" << m_audioFormat.sampleFormat() 
-              << " BytesPerSample=" << m_bytesPerSample << std::endl;
 
     // 更新重采样标志
     int srcRate = (m_lastFrameSampleRate > 0) ? m_lastFrameSampleRate : 16000;
     int srcCh = (m_lastFrameChannels > 0) ? m_lastFrameChannels : 1;
     m_needResample = (m_sinkSampleRate != srcRate) || (m_sinkChannels != srcCh);
     
-    qDebug() << "[Audio] Resample check: Sink(" << m_sinkSampleRate << "," << m_sinkChannels 
-             << ") vs Src(" << srcRate << "," << srcCh << ") -> NeedResample:" << m_needResample;
 
     // 4. 创建并启动 (Create and Start)
     // 1. 彻底断开旧连接，模拟"第一次启动"的状态
@@ -933,15 +913,12 @@ void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
     int bufferBytes = m_sinkSampleRate * m_sinkChannels * m_bytesPerSample * 0.2; // 200ms
     if (bufferBytes < 32768) bufferBytes = 32768; // 至少 32KB
     m_audioSink->setBufferSize(bufferBytes); 
-    std::cout << "[Audio] Set buffer size to: " << bufferBytes << " bytes" << std::endl;
 
     // 3. 安全的状态监听 (Signal Safety)
     QAudioSink *currentSink = m_audioSink;
     connect(currentSink, &QAudioSink::stateChanged, this, [this, currentSink](QAudio::State st) {
         if (m_audioSink != currentSink) return;
         if (st == QAudio::StoppedState && currentSink->error() != QAudio::NoError) {
-            qDebug() << "[Audio] Error occurred, state:" << st << " error:" << currentSink->error();
-            std::cout << "[Audio] Error occurred, state: " << st << " error: " << currentSink->error() << std::endl;
             if (m_speakerEnabled) softRestartSpeakerIfEnabled();
         }
     });
@@ -966,7 +943,6 @@ void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
     // 就像第一次启动一样，重新建立连接
     reconnectAudioSignal();
 
-    std::cout << "[Audio] Sync start completed." << std::endl;
     isConfiguring = false;
 }
 
@@ -1310,6 +1286,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 QAction *switchAction = menu.addAction(QStringLiteral("切换屏幕"));
                 // 质量子菜单
                 QMenu *qualityMenu = menu.addMenu(QStringLiteral("质量"));
+                QAction *qualityExtreme = qualityMenu->addAction(QStringLiteral("极高"));
                 QAction *qualityHigh = qualityMenu->addAction(QStringLiteral("高"));
                 QAction *qualityMedium = qualityMenu->addAction(QStringLiteral("中"));
                 QAction *qualityLow = qualityMenu->addAction(QStringLiteral("低"));
@@ -1322,6 +1299,8 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                     if (m_receiver) {
                         m_receiver->sendSwitchScreenNext();
                     }
+                } else if (chosen == qualityExtreme) {
+                    if (m_receiver) m_receiver->sendSetQuality("extreme");
                 } else if (chosen == qualityHigh) {
                     if (m_receiver) m_receiver->sendSetQuality("high");
                 } else if (chosen == qualityMedium) {
@@ -1446,6 +1425,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             QAction *clearAction = menu.addAction(QStringLiteral("清理绘制"));
             QAction *switchAction = menu.addAction(QStringLiteral("切换屏幕"));
             QMenu *qualityMenu = menu.addMenu(QStringLiteral("质量"));
+            QAction *qualityExtreme = qualityMenu->addAction(QStringLiteral("极高"));
             QAction *qualityHigh = qualityMenu->addAction(QStringLiteral("高"));
             QAction *qualityMedium = qualityMenu->addAction(QStringLiteral("中"));
             QAction *qualityLow = qualityMenu->addAction(QStringLiteral("低"));
@@ -1457,6 +1437,8 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 if (m_receiver) {
                     m_receiver->sendSwitchScreenNext();
                 }
+            } else if (chosen == qualityExtreme) {
+                if (m_receiver) m_receiver->sendSetQuality("extreme");
             } else if (chosen == qualityHigh) {
                 if (m_receiver) m_receiver->sendSetQuality("high");
             } else if (chosen == qualityMedium) {

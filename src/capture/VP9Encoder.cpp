@@ -32,6 +32,15 @@ VP9Encoder::VP9Encoder(QObject *parent)
     memset(&m_codec, 0, sizeof(m_codec));
     memset(&m_config, 0, sizeof(m_config));
     memset(&m_rawImage, 0, sizeof(m_rawImage));
+    m_cpuUsed = 8;
+    m_minQuantizer = 10;
+    m_maxQuantizer = 56;
+    m_undershootPct = 100;
+    m_overshootPct = 100;
+    m_bufInitial = 10;
+    m_bufOptimal = 20;
+    m_bufTotal = 30;
+    m_deadline = VPX_DL_GOOD_QUALITY;
 }
 
 VP9Encoder::~VP9Encoder()
@@ -228,16 +237,14 @@ bool VP9Encoder::initializeEncoder()
     m_config.g_error_resilient = 1; // 启用错误恢复
     m_config.g_pass = VPX_RC_ONE_PASS; // 单遍编码
     m_config.g_lag_in_frames = 0; // 零延迟
-    m_config.rc_end_usage = VPX_CBR; // 恒定比特率模式
-    // 调整量化器范围 - 最低质量但可看清
-    m_config.rc_min_quantizer = 10;  // 提高最低量化器，降低质量
-    m_config.rc_max_quantizer = 56; // 提高最大量化器，进一步降低质量
-    // 优化缓冲区设置 - 极低延迟配置
-    m_config.rc_undershoot_pct = 100; // 最大下冲容忍度
-    m_config.rc_overshoot_pct = 100; // 最大上冲容忍度
-    m_config.rc_buf_initial_sz = 10; // 极小初始缓冲区
-    m_config.rc_buf_optimal_sz = 20; // 极小最优缓冲区
-    m_config.rc_buf_sz = 30; // 极小总缓冲区大小
+    m_config.rc_end_usage = VPX_CBR;
+    m_config.rc_min_quantizer = m_minQuantizer;
+    m_config.rc_max_quantizer = m_maxQuantizer;
+    m_config.rc_undershoot_pct = m_undershootPct;
+    m_config.rc_overshoot_pct = m_overshootPct;
+    m_config.rc_buf_initial_sz = m_bufInitial;
+    m_config.rc_buf_optimal_sz = m_bufOptimal;
+    m_config.rc_buf_sz = m_bufTotal;
     // 关键帧设置 - 减少关键帧频率以节省流量
     m_config.kf_mode = VPX_KF_AUTO;
     m_config.kf_min_dist = 0;
@@ -259,8 +266,7 @@ bool VP9Encoder::initializeEncoder()
     // 设置编码器控制参数 - 极速实时编码和多线程优化
     vpx_codec_err_t ctrl_res;
     
-    // 使用极速实时编码速度 (cpu-used=8，优先速度)
-    ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_CPUUSED, 8);
+    ctrl_res = vpx_codec_control(&m_codec, VP8E_SET_CPUUSED, m_cpuUsed);
     if (ctrl_res != VPX_CODEC_OK) {
         
     }
@@ -415,7 +421,7 @@ QByteArray VP9Encoder::encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane,
         flags = VPX_EFLAG_FORCE_KF;
     }
     
-    vpx_codec_err_t res = vpx_codec_encode(&m_codec, &m_rawImage, m_frameCount, 1, flags, VPX_DL_GOOD_QUALITY);
+    vpx_codec_err_t res = vpx_codec_encode(&m_codec, &m_rawImage, m_frameCount, 1, flags, m_deadline);
     if (res != VPX_CODEC_OK) {
         return QByteArray();
     }
@@ -468,6 +474,62 @@ QByteArray VP9Encoder::encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane,
     }
     
     return encodedData;
+}
+
+void VP9Encoder::setQualityPreset(const QString &q)
+{
+    QString v = q.toLower();
+    if (v == "low") {
+        m_cpuUsed = 8;
+        m_minQuantizer = 20;
+        m_maxQuantizer = 58;
+        m_undershootPct = 100;
+        m_overshootPct = 100;
+        m_bufInitial = 10;
+        m_bufOptimal = 20;
+        m_bufTotal = 30;
+        m_deadline = VPX_DL_REALTIME;
+    } else if (v == "medium") {
+        m_cpuUsed = 7;
+        m_minQuantizer = 16;
+        m_maxQuantizer = 54;
+        m_undershootPct = 80;
+        m_overshootPct = 80;
+        m_bufInitial = 50;
+        m_bufOptimal = 100;
+        m_bufTotal = 200;
+        m_deadline = VPX_DL_REALTIME;
+    } else if (v == "high") {
+        m_cpuUsed = 6;
+        m_minQuantizer = 12;
+        m_maxQuantizer = 52;
+        m_undershootPct = 60;
+        m_overshootPct = 60;
+        m_bufInitial = 100;
+        m_bufOptimal = 200;
+        m_bufTotal = 400;
+        m_deadline = VPX_DL_GOOD_QUALITY;
+    } else if (v == "extreme") {
+        m_cpuUsed = 2;
+        m_minQuantizer = 2;
+        m_maxQuantizer = 42;
+        m_undershootPct = 30;
+        m_overshootPct = 30;
+        m_bufInitial = 500;
+        m_bufOptimal = 1000;
+        m_bufTotal = 1500;
+        m_deadline = VPX_DL_BEST_QUALITY;
+    } else {
+        m_cpuUsed = 7;
+        m_minQuantizer = 16;
+        m_maxQuantizer = 54;
+        m_undershootPct = 80;
+        m_overshootPct = 80;
+        m_bufInitial = 50;
+        m_bufOptimal = 100;
+        m_bufTotal = 200;
+        m_deadline = VPX_DL_REALTIME;
+    }
 }
 
 // 静态检测相关方法实现

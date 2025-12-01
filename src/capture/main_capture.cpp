@@ -54,7 +54,7 @@ QString getLocalQualityFromConfig()
                 if (line.startsWith("local_quality=")) {
                     QString q = line.mid(QString("local_quality=").length()).toLower();
                     configFile.close();
-                    if (q == "low" || q == "medium" || q == "high") {
+                    if (q == "low" || q == "medium" || q == "high" || q == "extreme") {
                         return q;
                     }
                 }
@@ -62,7 +62,7 @@ QString getLocalQualityFromConfig()
             configFile.close();
         }
     }
-    return "medium"; // 默认中画质
+    return "medium";
 }
 
 // 从配置文件读取设备ID
@@ -580,7 +580,7 @@ int main(int argc, char *argv[])
     // 新增：质量应用方法
     auto applyQualitySetting = [&](const QString &qualityRaw) {
         QString q = qualityRaw.toLower();
-        if (q != "low" && q != "medium" && q != "high") {
+        if (q != "low" && q != "medium" && q != "high" && q != "extreme") {
             q = "medium";
         }
         currentQuality = q;
@@ -600,35 +600,39 @@ int main(int argc, char *argv[])
             // 禁用瓦片检测（低质）
             staticCapture->setTileDetectionEnabled(false);
         } else {
-            // 中/高质启用瓦片检测
+            // 中/高/极高启用瓦片检测
             staticCapture->setTileDetectionEnabled(true);
             desired = orig;
         }
 
-        // 重新初始化编码器以匹配目标分辨率
+        staticEncoder->setQualityPreset(q);
         staticEncoder->cleanup();
-    // 切换分辨率时保持既有帧率，减少重初始化引入的负载
-    if (!staticEncoder->initialize(desired.width(), desired.height(), staticEncoder->getFrameRate())) {
+        if (!staticEncoder->initialize(desired.width(), desired.height(), staticEncoder->getFrameRate())) {
             return; // 保持旧状态以避免崩溃
         }
         targetEncodeSize = staticEncoder->getFrameSize();
 
         // 按质量调整码率与静态内容降码策略
         if (q == "low") {
-            staticEncoder->setBitrate(200000); // 200 kbps
+            staticEncoder->setBitrate(200000);
             staticEncoder->setEnableStaticDetection(true);
-            staticEncoder->setStaticBitrateReduction(0.20); // 静态时保留20%
+            staticEncoder->setStaticBitrateReduction(0.20);
             staticEncoder->setStaticThreshold(0.012);
         } else if (q == "medium") {
-            staticEncoder->setBitrate(600000); // 600 kbps（提升清晰）
+            staticEncoder->setBitrate(400000);
             staticEncoder->setEnableStaticDetection(true);
-            staticEncoder->setStaticBitrateReduction(0.45); // 静态保留45%
+            staticEncoder->setStaticBitrateReduction(0.55);
             staticEncoder->setStaticThreshold(0.015);
-        } else { // high
-            staticEncoder->setBitrate(3000000); // 3.0 Mbps（更高清晰度）
+        } else if (q == "high") {
+            staticEncoder->setBitrate(500000);
             staticEncoder->setEnableStaticDetection(true);
-            staticEncoder->setStaticBitrateReduction(0.75); // 静态保留75%，减少模糊
-            staticEncoder->setStaticThreshold(0.018);
+            staticEncoder->setStaticBitrateReduction(0.50);
+            staticEncoder->setStaticThreshold(0.015);
+        } else if (q == "extreme") {
+            staticEncoder->setBitrate(3000000);
+            staticEncoder->setEnableStaticDetection(true);
+            staticEncoder->setStaticBitrateReduction(0.95);
+            staticEncoder->setStaticThreshold(0.015);
         }
 
         // 重置瓦片元数据发送标志（在启用检测的情况下会重新发送）
@@ -647,14 +651,22 @@ int main(int argc, char *argv[])
                      [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_overlays.size()) {
-            s_overlays[idx]->onAnnotationEvent(phase, x, y, viewerId, colorId);
+            QSize orig = staticCapture->getScreenSize();
+            QSize enc = targetEncodeSize;
+            int sx = enc.width() > 0 ? qRound(double(x) * double(orig.width()) / double(enc.width())) : x;
+            int sy = enc.height() > 0 ? qRound(double(y) * double(orig.height()) / double(enc.height())) : y;
+            s_overlays[idx]->onAnnotationEvent(phase, sx, sy, viewerId, colorId);
         }
     });
     QObject::connect(sender, &WebSocketSender::textAnnotationReceived,
                      [&](const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize) {
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_overlays.size()) {
-            s_overlays[idx]->onTextAnnotation(text, x, y, viewerId, colorId, fontSize);
+            QSize orig = staticCapture->getScreenSize();
+            QSize enc = targetEncodeSize;
+            int sx = enc.width() > 0 ? qRound(double(x) * double(orig.width()) / double(enc.width())) : x;
+            int sy = enc.height() > 0 ? qRound(double(y) * double(orig.height()) / double(enc.height())) : y;
+            s_overlays[idx]->onTextAnnotation(text, sx, sy, viewerId, colorId, fontSize);
         }
     });
     QObject::connect(sender, &WebSocketSender::likeRequested,
@@ -713,7 +725,11 @@ int main(int argc, char *argv[])
                      [&](const QString &viewerId, int x, int y, const QString &viewerName) {
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_cursorOverlays.size()) {
-            s_cursorOverlays[idx]->onViewerCursor(viewerId, x, y, viewerName);
+            QSize orig = staticCapture->getScreenSize();
+            QSize enc = targetEncodeSize;
+            int sx = enc.width() > 0 ? qRound(double(x) * double(orig.width()) / double(enc.width())) : x;
+            int sy = enc.height() > 0 ? qRound(double(y) * double(orig.height()) / double(enc.height())) : y;
+            s_cursorOverlays[idx]->onViewerCursor(viewerId, sx, sy, viewerName);
         }
     });
     QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived,
@@ -721,6 +737,16 @@ int main(int argc, char *argv[])
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_cursorOverlays.size()) {
             s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
+        }
+    });
+
+    QObject::connect(sender, &WebSocketSender::viewerExited,
+                     [&](const QString &viewerId) {
+        for (auto *cv : s_cursorOverlays) {
+            if (cv) cv->onViewerExited(viewerId);
+        }
+        for (auto *ov : s_overlays) {
+            if (ov) ov->onViewerExited(viewerId);
         }
     });
 

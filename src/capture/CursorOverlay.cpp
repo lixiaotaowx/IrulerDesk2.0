@@ -102,6 +102,17 @@ void CursorOverlay::onViewerNameUpdate(const QString &viewerId, const QString &v
     }
 }
 
+void CursorOverlay::onViewerExited(const QString &viewerId)
+{
+    if (m_cursors.contains(viewerId)) {
+        m_cursors.remove(viewerId);
+    }
+    if (m_cursorColors.contains(viewerId)) {
+        m_cursorColors.remove(viewerId);
+    }
+    update();
+}
+
 void CursorOverlay::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event);

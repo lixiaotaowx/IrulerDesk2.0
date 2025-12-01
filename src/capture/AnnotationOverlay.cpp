@@ -506,3 +506,14 @@ void AnnotationOverlay::onViewerNameUpdate(const QString &viewerId, const QStrin
         update();
     }
 }
+
+void AnnotationOverlay::onViewerExited(const QString &viewerId)
+{
+    if (m_cursors.contains(viewerId)) {
+        m_cursors.remove(viewerId);
+    }
+    if (m_cursorColors.contains(viewerId)) {
+        m_cursorColors.remove(viewerId);
+    }
+    update();
+}

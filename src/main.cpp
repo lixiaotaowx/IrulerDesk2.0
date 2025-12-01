@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     
     QString appDir = QCoreApplication::applicationDirPath();
-    app.setWindowIcon(QIcon(appDir + "/maps/logo/logo.png"));
+    app.setWindowIcon(QIcon(appDir + "/maps/logo/iruler.ico"));
     
     // 设置应用程序信息
     app.setApplicationName("ScreenStreamApp");

@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     ConsoleLogger::installQtMessageHandler();
 
     QApplication app(argc, argv); // 使用QApplication支持GUI窗口
-    app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/logo.png"));
+    app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
     // 统一工具提示样式为黑底白字（播放器窗口也受益）
     app.setStyleSheet(
         "QToolTip {\n"
@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
         
         
         VideoDisplayWidget *videoWidget = new VideoDisplayWidget();
-        videoWidget->setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/logo.png"));
+        videoWidget->setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
         videoWidget->setWindowTitle("屏幕流播放器");
         videoWidget->resize(800, 600);
         videoWidget->show();

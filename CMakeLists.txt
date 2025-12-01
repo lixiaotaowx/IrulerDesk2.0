@@ -146,6 +146,7 @@ target_link_libraries(ScreenStreamApp PRIVATE
 set_target_properties(ScreenStreamApp PROPERTIES
     WIN32_EXECUTABLE TRUE
     LINK_FLAGS "/SUBSYSTEM:WINDOWS"
+    OUTPUT_NAME irulerdesk
 )
 
 # 链接捕获进程库
@@ -283,3 +284,48 @@ endif()
 
 # 可选：添加测试子目录（仅在需要时启用）
 # 通过选项控制是否编译测试（默认关闭）
+
+# 安装与打包配置
+include(GNUInstallDirs)
+
+# 将已部署的可执行文件与其依赖（Qt DLL、插件、资源）整体安装到根目录
+set(INSTALL_BUNDLE_DIR ${CMAKE_BINARY_DIR}/bin/$<CONFIG>)
+install(DIRECTORY ${INSTALL_BUNDLE_DIR}/ DESTINATION .
+        PATTERN "*.pdb" EXCLUDE
+        PATTERN "config" EXCLUDE
+        PATTERN "config/*" EXCLUDE)
+
+# 安装静态资源（地图/头像等），以确保无构建工序也可包含
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/maps DESTINATION .)
+
+# CPack 打包元数据（默认生成 ZIP 包，免外部打包器依赖）
+include(InstallRequiredSystemLibraries)
+set(CPACK_PACKAGE_NAME "IrulerDeskPro")
+set(CPACK_PACKAGE_VENDOR "lunzi")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "屏幕采集、VP9 传输、Qt 前端一体化客户端")
+set(CPACK_PACKAGE_VERSION "0.1.0")
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win64")
+set(CPACK_SYSTEM_NAME "Windows")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "IrulerDeskPro")
+set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
+set(CPACK_NSIS_ENABLE_UNINSTALL ON)
+set(CPACK_NSIS_DISPLAY_NAME "IrulerDeskPro")
+set(CPACK_NSIS_CONTACT "support@iruler.local")
+set(CPACK_NSIS_HELP_LINK "http://www.iruler.cn/")
+set(CPACK_NSIS_URL_INFO_ABOUT "http://www.iruler.cn/")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/installer/LICENSE_en.txt")
+set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/src/maps/logo/iruler.ico")
+set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/src/maps/logo/iruler.ico")
+set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
+set(CPACK_NSIS_MENU_LINKS "irulerdesk.exe" "IrulerDeskPro")
+set(CPACK_GENERATOR "NSIS")
+set(CPACK_NSIS_EXECUTABLE "C:/Program Files (x86)/NSIS/makensis.exe")
+include(CPack)
+
+# 嵌入应用图标（使用 src/maps/logo/iruler.ico）
+set(IRULER_ICON_PATH "${CMAKE_SOURCE_DIR}/src/maps/logo/iruler.ico")
+if(EXISTS "${IRULER_ICON_PATH}")
+    set(APP_RC "${CMAKE_BINARY_DIR}/app_icon.rc")
+    file(WRITE "${APP_RC}" "IDI_ICON1 ICON \"${IRULER_ICON_PATH}\"\n")
+    target_sources(ScreenStreamApp PRIVATE "${APP_RC}")
+endif()

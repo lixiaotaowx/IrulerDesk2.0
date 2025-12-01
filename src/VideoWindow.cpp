@@ -217,7 +217,7 @@ void VideoWindow::setupCustomTitleBar()
     // 使用与头像相同的相对路径策略：appDir/maps/logo
     QString appDir = QCoreApplication::applicationDirPath();
     QString iconDir = appDir + "/maps/logo";
-    setWindowIcon(QIcon(iconDir + "/logo.png"));
+    setWindowIcon(QIcon(iconDir + "/iruler.ico"));
     m_micIconOff = QIcon(iconDir + "/Mic_off.png");
     m_micIconOn  = QIcon(iconDir + "/Mic_on.png");
     m_micButton->setIcon(m_micIconOff);

@@ -51,7 +51,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     if (!m_trayIcon) {
         QString appDir = QCoreApplication::applicationDirPath();
-        m_trayIcon = new QSystemTrayIcon(QIcon(QString("%1/maps/logo/logo.png").arg(appDir)), this);
+        m_trayIcon = new QSystemTrayIcon(QIcon(QString("%1/maps/logo/iruler.ico").arg(appDir)), this);
         m_trayMenu = new QMenu();
         QAction *showAction = m_trayMenu->addAction(QStringLiteral("显示主窗口"));
         QAction *exitAction = m_trayMenu->addAction(QStringLiteral("退出"));

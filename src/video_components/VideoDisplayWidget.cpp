@@ -515,8 +515,19 @@ void VideoDisplayWidget::updateConnectionStatus(const QString &status)
 {
     m_stats.connectionStatus = status;
     m_statusLabel->setText(QString("状态: %1").arg(status));
-    if (status == "Connecting..." || (status == "Disconnected" && m_isReceiving)) {
+    if (status == "Connecting..." || status.contains(QStringLiteral("连接中")) || (status == "Disconnected" && m_isReceiving)) {
         showWaitingSplash();
+    }
+    if (status.contains(QStringLiteral("断开"))) {
+        showOfflineReminder(QStringLiteral("对方已下线或退出，连接已断开"));
+    }
+    if (status.contains(QStringLiteral("已连接"))) {
+        if (m_offlineLabel) {
+            m_offlineLabel->hide();
+        }
+        if (m_offlineHideTimer) {
+            m_offlineHideTimer->stop();
+        }
     }
     
     emit connectionStatusChanged(status);
@@ -635,6 +646,62 @@ void VideoDisplayWidget::updateWaitingSplashFrame()
     m_videoLabel->setPixmap(canvas);
     m_videoLabel->setAlignment(Qt::AlignCenter);
     m_waitingDotsPhase = (m_waitingDotsPhase + 1) % 3;
+}
+
+void VideoDisplayWidget::showOfflineReminder(const QString &reason)
+{
+    if (!m_videoLabel) return;
+    if (!m_offlineLabel) {
+        m_offlineLabel = new QLabel(m_videoLabel);
+        m_offlineLabel->setAlignment(Qt::AlignCenter);
+        m_offlineLabel->setStyleSheet("QLabel { background-color: rgba(220, 60, 60, 180); color: white; padding: 8px 14px; border-radius: 6px; font-weight: bold; }");
+        m_offlineOpacity = new QGraphicsOpacityEffect(m_offlineLabel);
+        m_offlineOpacity->setOpacity(1.0);
+        m_offlineLabel->setGraphicsEffect(m_offlineOpacity);
+    }
+    QString text = reason.isEmpty() ? QStringLiteral("连接已断开") : reason;
+    m_offlineLabel->setText(text);
+    QSize s = m_videoLabel->size();
+    m_offlineLabel->adjustSize();
+    QSize ls = m_offlineLabel->size();
+    int x = (s.width() - ls.width()) / 2;
+    int y = qMax(10, s.height() / 10);
+    m_offlineLabel->move(x, y);
+    m_offlineLabel->show();
+    m_offlineLabel->raise();
+    if (!m_offlineHideTimer) {
+        m_offlineHideTimer = new QTimer(this);
+        m_offlineHideTimer->setSingleShot(true);
+        connect(m_offlineHideTimer, &QTimer::timeout, this, [this]() {
+            if (m_offlineLabel) m_offlineLabel->hide();
+        });
+    }
+    m_offlineHideTimer->start(10000);
+}
+
+void VideoDisplayWidget::notifyTargetOffline(const QString &reason)
+{
+    showOfflineReminder(reason);
+}
+
+void VideoDisplayWidget::clearOfflineReminder()
+{
+    if (m_offlineHideTimer) m_offlineHideTimer->stop();
+    if (m_offlineLabel) m_offlineLabel->hide();
+}
+
+void VideoDisplayWidget::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (m_offlineLabel && m_offlineLabel->isVisible() && m_videoLabel) {
+        QSize s = m_videoLabel->size();
+        m_offlineLabel->adjustSize();
+        QSize ls = m_offlineLabel->size();
+        int x = (s.width() - ls.width()) / 2;
+        int y = qMax(10, s.height() / 10);
+        m_offlineLabel->move(x, y);
+        m_offlineLabel->raise();
+    }
 }
 
 

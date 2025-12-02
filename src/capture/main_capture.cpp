@@ -650,6 +650,11 @@ int main(int argc, char *argv[])
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
                      [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
         int idx = currentScreenIndex;
+        if (phase == QStringLiteral("clear")) {
+            for (auto *ov : s_overlays) { if (ov) ov->clear(); }
+            for (auto *cv : s_cursorOverlays) { if (cv) cv->clear(); }
+            return;
+        }
         if (idx >= 0 && idx < s_overlays.size()) {
             QSize orig = staticCapture->getScreenSize();
             QSize enc = targetEncodeSize;

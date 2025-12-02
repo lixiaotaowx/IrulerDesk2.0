@@ -1117,6 +1117,25 @@ void MainWindow::updateUserList(const QJsonArray& users)
     
     // 更新透明图片列表 - 使用新的JSON格式
     m_transparentImageList->updateUserList(users);
+    bool targetOnline = false;
+    if (!m_currentTargetId.isEmpty()) {
+        for (int i = 0; i < users.size(); ++i) {
+            const QJsonValue &uv = users[i];
+            if (!uv.isObject()) continue;
+            QJsonObject uo = uv.toObject();
+            if (uo.value("id").toString() == m_currentTargetId) { targetOnline = true; break; }
+        }
+        if (m_videoWindow) {
+            auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
+            if (videoWidget) {
+                if (!targetOnline) {
+                    videoWidget->notifyTargetOffline(QStringLiteral("对方已离线或退出"));
+                } else {
+                    videoWidget->clearOfflineReminder();
+                }
+            }
+        }
+    }
     
 }
 

@@ -154,6 +154,8 @@ public slots:
     void sendCloseOverlay();
     void sendLike();
     QImage captureToImage() const;
+    void notifyTargetOffline(const QString &reason = QString());
+    void clearOfflineReminder();
 
 private slots:
     void onStartStopClicked();
@@ -191,6 +193,8 @@ private:
     void stopWaitingSplash();
     void updateWaitingSplashFrame();
     void animateWaitingSplashFlyOut();
+    void showOfflineReminder(const QString &reason = QString());
+    void resizeEvent(QResizeEvent *event) override;
     
     // UI组件
     QVBoxLayout *m_mainLayout;
@@ -304,6 +308,9 @@ private:
     QPropertyAnimation *m_waitFlyGeomAnim = nullptr;
     QPropertyAnimation *m_waitFlyOpacityAnim = nullptr;
     QParallelAnimationGroup *m_waitFlyGroup = nullptr;
+    QLabel *m_offlineLabel = nullptr;
+    QGraphicsOpacityEffect *m_offlineOpacity = nullptr;
+    QTimer *m_offlineHideTimer = nullptr;
     // 批注颜色ID（0:红,1:绿,2:蓝,3:黄）
     int m_currentColorId = 0;
     int m_textFontSize = 16;

@@ -255,12 +255,12 @@ int main(int argc, char *argv[])
     }
     // qDebug() << "[CaptureProcess] VP9编码器初始化成功";
     
-    // 配置VP9静态检测优化参数
+    // 配置VP9静态检测优化参数 - 极致流量控制
     // qDebug() << "[CaptureProcess] 配置VP9静态检测优化...";
     encoder->setEnableStaticDetection(true);        // 启用静态检测
-    encoder->setStaticThreshold(5.0);               // 设置5%的变化阈值，降低敏感度
-    encoder->setStaticBitrateReduction(0.5);        // 静态内容码率减少50%，不要太激进
-    encoder->setSkipStaticFrames(false);            // 禁用静态帧跳过，避免视频流中断
+    encoder->setStaticThreshold(0.005);             // 设置0.5%的变化阈值，非常敏感
+    encoder->setStaticBitrateReduction(0.10);       // 静态内容码率减少到10%，极致压缩
+    encoder->setSkipStaticFrames(true);             // 启用静态帧跳过，画面静止时不发送数据
     // qDebug() << "[CaptureProcess] VP9静态检测优化配置完成";
     //     qDebug() << "[CaptureProcess] - 静态检测阈值: 5%";
     //     qDebug() << "[CaptureProcess] - 码率减少: 50%";
@@ -506,26 +506,29 @@ int main(int argc, char *argv[])
         targetEncodeSize = staticEncoder->getFrameSize();
 
         // 按质量调整码率与静态内容降码策略
+        // 全局启用静态帧跳过以实现最低流量
+        staticEncoder->setSkipStaticFrames(true);
+
         if (q == "low") {
             staticEncoder->setBitrate(200000);
             staticEncoder->setEnableStaticDetection(true);
-            staticEncoder->setStaticBitrateReduction(0.20);
-            staticEncoder->setStaticThreshold(0.012);
+            staticEncoder->setStaticBitrateReduction(0.05);
+            staticEncoder->setStaticThreshold(0.005);
         } else if (q == "medium") {
             staticEncoder->setBitrate(400000);
             staticEncoder->setEnableStaticDetection(true);
-            staticEncoder->setStaticBitrateReduction(0.55);
-            staticEncoder->setStaticThreshold(0.015);
+            staticEncoder->setStaticBitrateReduction(0.10);
+            staticEncoder->setStaticThreshold(0.005);
         } else if (q == "high") {
             staticEncoder->setBitrate(500000);
             staticEncoder->setEnableStaticDetection(true);
-            staticEncoder->setStaticBitrateReduction(0.50);
-            staticEncoder->setStaticThreshold(0.015);
+            staticEncoder->setStaticBitrateReduction(0.15);
+            staticEncoder->setStaticThreshold(0.005);
         } else if (q == "extreme") {
             staticEncoder->setBitrate(3000000);
             staticEncoder->setEnableStaticDetection(true);
-            staticEncoder->setStaticBitrateReduction(0.95);
-            staticEncoder->setStaticThreshold(0.015);
+            staticEncoder->setStaticBitrateReduction(0.20);
+            staticEncoder->setStaticThreshold(0.005);
         }
 
         // 强制关键帧以快速稳定画面
@@ -944,8 +947,6 @@ int main(int argc, char *argv[])
             if (captureLatency > 20000) { // 超过20ms时输出警告
             }
             
-            // 瓦片检测已移除
-
             // 如果编码目标分辨率与屏幕尺寸不同（例如低质720p），进行缩放
             const QSize encSize = staticEncoder->getFrameSize();
             const QSize capSize = staticCapture->getScreenSize();

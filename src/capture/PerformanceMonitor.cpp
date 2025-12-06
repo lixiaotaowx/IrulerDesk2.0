@@ -1,5 +1,4 @@
 #include "PerformanceMonitor.h"
-#include "TileManager.h"
 #include "WebSocketSender.h"
 #include <QFile>
 #include <QTextStream>
@@ -8,7 +7,6 @@
 
 PerformanceMonitor::PerformanceMonitor(QObject *parent)
     : QObject(parent)
-    , m_tileManager(nullptr)
     , m_webSocketSender(nullptr)
     , m_reportTimer(new QTimer(this))
     , m_reportInterval(30000) // 默认30秒
@@ -25,12 +23,6 @@ PerformanceMonitor::PerformanceMonitor(QObject *parent)
 PerformanceMonitor::~PerformanceMonitor()
 {
     stopMonitoring();
-}
-
-void PerformanceMonitor::registerTileManager(TileManager *tileManager)
-{
-    QMutexLocker locker(&m_mutex);
-    m_tileManager = tileManager;
 }
 
 void PerformanceMonitor::registerWebSocketSender(WebSocketSender *sender)
@@ -92,7 +84,6 @@ void PerformanceMonitor::generateReport()
         (void)QDateTime::currentMSecsSinceEpoch();
     }
     
-    outputTileManagerStats();
     outputWebSocketSenderStats();
     outputSummaryStats();
 }
@@ -102,7 +93,6 @@ void PerformanceMonitor::generateDetailedReport()
     QMutexLocker locker(&m_mutex);
     
     outputSystemInfo();
-    outputTileManagerStats();
     outputWebSocketSenderStats();
     outputSummaryStats();
 }
@@ -110,10 +100,6 @@ void PerformanceMonitor::generateDetailedReport()
 void PerformanceMonitor::resetAllStats()
 {
     QMutexLocker locker(&m_mutex);
-    
-    if (m_tileManager) {
-        m_tileManager->resetPerformanceStats();
-    }
     
     if (m_webSocketSender) {
         m_webSocketSender->resetSenderStats();
@@ -159,15 +145,6 @@ void PerformanceMonitor::outputSystemInfo()
     }
 }
 
-void PerformanceMonitor::outputTileManagerStats()
-{
-    if (!m_tileManager) {
-        return;
-    }
-    
-    TileManager::PerformanceStats stats = m_tileManager->getPerformanceStats();
-}
-
 void PerformanceMonitor::outputWebSocketSenderStats()
 {
     if (!m_webSocketSender) {
@@ -179,10 +156,6 @@ void PerformanceMonitor::outputWebSocketSenderStats()
 
 void PerformanceMonitor::outputSummaryStats()
 {
-    if (m_tileManager) {
-        TileManager::PerformanceStats tileStats = m_tileManager->getPerformanceStats();
-    }
-    
     if (m_webSocketSender) {
         WebSocketSender::SenderStats senderStats = m_webSocketSender->getSenderStats();
     }

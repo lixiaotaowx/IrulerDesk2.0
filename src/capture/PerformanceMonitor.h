@@ -7,7 +7,6 @@
 #include <QMutex>
 
 // 前向声明
-class TileManager;
 class WebSocketSender;
 
 /**
@@ -25,7 +24,6 @@ public:
     ~PerformanceMonitor();
 
     // 注册监控组件
-    void registerTileManager(TileManager *tileManager);
     void registerWebSocketSender(WebSocketSender *sender);
 
     // 监控控制
@@ -49,7 +47,6 @@ public slots:
 
 private:
     void outputSystemInfo();
-    void outputTileManagerStats();
     void outputWebSocketSenderStats();
     void outputSummaryStats();
     
@@ -59,7 +56,6 @@ private:
 
 private:
     // 监控组件
-    TileManager *m_tileManager;
     WebSocketSender *m_webSocketSender;
 
     // 定时器

@@ -245,108 +245,6 @@ int main(int argc, char *argv[])
     }
     // qDebug() << "[CaptureProcess] 屏幕捕获模块初始化成功";
     
-    // 初始化瓦片系统
-    
-    
-    // 演示不同瓦片大小的性能对比
-    QSize screenSize = capture->getScreenSize();
-    
-    
-    
-    // 计算推荐的瓦片大小
-    QSize optimalSize = TileManager::calculateOptimalTileSize(screenSize);
-    int recommendedCount = TileManager::getRecommendedTileCount(screenSize);
-    
-    
-    // 启用自适应瓦片大小
-    capture->getTileManager().setAdaptiveTileSize(true);
-    
-    
-    // 使用推荐的瓦片大小初始化
-    capture->initializeTileSystem(screenSize, optimalSize);
-    capture->enableTileCapture(true);
-    
-    // 演示瓦片检测开关控制
-    
-    
-    // 可以通过以下方式控制瓦片检测
-    // capture->setTileDetectionEnabled(false);  // 禁用瓦片检测
-    // capture->toggleTileDetection();           // 切换瓦片检测状态
-    
-    
-    
-    // ==================== 瓦片序列化功能测试 ====================
-    
-    
-    // 获取瓦片管理器进行测试
-    TileManager& tileManager = capture->getTileManager();
-    
-    // 测试1: 序列化单个瓦片信息
-    
-    const QVector<TileInfo>& allTiles = tileManager.getTiles();
-    if (!allTiles.isEmpty()) {
-        // 创建一个测试瓦片，设置有效的哈希值
-        TileInfo originalTile = allTiles.first();
-        originalTile.hash = 0x12345678; // 设置一个有效的测试哈希值
-        
-        QByteArray tileInfoData = tileManager.serializeTileInfo(originalTile);
-    
-        
-        if (tileInfoData.isEmpty()) {
-    
-        } else {
-            // 反序列化测试
-            TileInfo deserializedTile = tileManager.deserializeTileInfo(tileInfoData);
-            
-            bool infoTestPassed = (deserializedTile.x == originalTile.x && 
-                                   deserializedTile.y == originalTile.y &&
-                                   deserializedTile.width == originalTile.width &&
-                                   deserializedTile.height == originalTile.height &&
-                                   deserializedTile.hash == originalTile.hash);
-    
-        }
-    } else {
-    
-    }
-    
-    // 测试2: 序列化瓦片数据（模拟场景）
-    
-    QVector<int> testIndices = {0, 1, 2}; // 测试前3个瓦片
-    QImage testImage(100, 100, QImage::Format_RGB32);
-    testImage.fill(Qt::blue); // 填充蓝色作为测试数据
-    
-    
-    QByteArray serializedData = tileManager.serializeTileData(testIndices, testImage);
-    
-    
-    if (serializedData.isEmpty()) {
-    
-    } else {
-        // 反序列化测试
-        QVector<TileInfo> deserializedTiles;
-        QVector<QImage> deserializedImages;
-        bool deserializeSuccess = tileManager.deserializeTileData(serializedData, deserializedTiles, deserializedImages);
-        
-    
-        
-        // 验证数据完整性
-        bool dataIntegrityTest = (deserializedTiles.size() == testIndices.size() && 
-                                  deserializedImages.size() == testIndices.size());
-    
-        
-        // 验证图像数据
-        if (!deserializedImages.isEmpty()) {
-            const QImage& firstImage = deserializedImages.first();
-    
-            bool imageDataValid = (firstImage.size() == testImage.size() && 
-                                   firstImage.format() == testImage.format());
-    
-        }
-    }
-    
-    
-    // ==================== 序列化测试结束 ====================
-    
     // 创建VP9编码器
     QSize actualScreenSize = capture->getScreenSize();
     
@@ -433,7 +331,6 @@ int main(int argc, char *argv[])
     static MouseCapture *staticMouseCapture = mouseCapture; // 新增：静态鼠标捕获指针
     static WebSocketSender *staticSender = sender; // 新增：静态WebSocket发送器指针
     static bool isCapturing = false; // 控制捕获状态
-    static bool tileMetadataSent = false; // 瓦片元数据发送标志
     static int currentScreenIndex = getScreenIndexFromConfig(); // 当前屏幕索引
     static bool isSwitching = false; // 屏幕热切换中标志（不断流）
     // 新增：质量控制相关静态状态
@@ -597,11 +494,7 @@ int main(int argc, char *argv[])
             } else {
                 desired = orig;
             }
-            // 禁用瓦片检测（低质）
-            staticCapture->setTileDetectionEnabled(false);
         } else {
-            // 中/高/极高启用瓦片检测
-            staticCapture->setTileDetectionEnabled(true);
             desired = orig;
         }
 
@@ -635,8 +528,6 @@ int main(int argc, char *argv[])
             staticEncoder->setStaticThreshold(0.015);
         }
 
-        // 重置瓦片元数据发送标志（在启用检测的情况下会重新发送）
-        tileMetadataSent = false;
         // 强制关键帧以快速稳定画面
         staticEncoder->forceKeyFrame();
 
@@ -696,7 +587,6 @@ int main(int argc, char *argv[])
     QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer]() {
         if (!isCapturing) {
             isCapturing = true;
-            tileMetadataSent = false; // 重置瓦片元数据发送标志
             captureTimer->start(33); // 30fps
             staticMouseCapture->startCapture(); // 开始鼠标捕获
             if (currentScreenIndex >= 0 && currentScreenIndex < s_overlays.size()) {
@@ -816,13 +706,6 @@ int main(int argc, char *argv[])
         }
 
         QSize newSize = staticCapture->getScreenSize();
-
-        // 重新初始化瓦片系统（保持自适应设置）
-        TileManager &tm = staticCapture->getTileManager();
-        tm.setAdaptiveTileSize(true);
-        QSize optimalSize = TileManager::calculateOptimalTileSize(newSize);
-        staticCapture->initializeTileSystem(newSize, optimalSize);
-        tileMetadataSent = false; // 切屏后需要重新发送瓦片元数据
 
         // 重新初始化编码器以匹配新分辨率
         staticEncoder->cleanup();
@@ -1054,54 +937,14 @@ int main(int argc, char *argv[])
         auto captureStartTime = std::chrono::high_resolution_clock::now();
         QByteArray frameData = staticCapture->captureScreen();
         if (!frameData.isEmpty()) {
-        auto captureEndTime = std::chrono::high_resolution_clock::now();
-        auto captureLatency = std::chrono::duration_cast<std::chrono::microseconds>(captureEndTime - captureStartTime).count();
-        frameCount++;
-        // 只在延迟过高时输出警告
-        if (captureLatency > 20000) { // 超过20ms时输出警告
-        }
-            
-            // 瓦片检测和发送逻辑
-            if (staticCapture->isTileDetectionEnabled()) {
-                // 执行瓦片检测
-                staticCapture->performTileDetection(frameData);
-                
-                // 发送瓦片元数据（仅在第一次或瓦片配置改变时）
-                if (!tileMetadataSent) {
-                    TileManager& tileManager = staticCapture->getTileManager();
-                    if (tileManager.isInitialized()) {
-                        QVector<TileInfo> allTiles = tileManager.getAllTiles();
-                        if (!allTiles.isEmpty()) {
-                            staticSender->sendTileMetadata(allTiles);
-                            tileMetadataSent = true;
-                        }
-                    }
-                }
-                
-                // 发送变化的瓦片数据
-                TileManager& tileManager = staticCapture->getTileManager();
-                QVector<TileInfo> changedTiles = tileManager.getChangedTiles();
-                if (!changedTiles.isEmpty()) {
-                    // 获取变化瓦片的索引
-                    QVector<int> changedIndices;
-                    for (const TileInfo& tile : changedTiles) {
-                        changedIndices.append(tile.x / tileManager.getTileWidth() * tileManager.getTileCountY() + 
-                                            tile.y / tileManager.getTileHeight());
-                    }
-                    
-                    // 将帧数据转换为QImage进行瓦片提取
-                    QSize screenSize = staticCapture->getScreenSize();
-                    QImage frameImage(reinterpret_cast<const uchar*>(frameData.constData()), 
-                                    screenSize.width(), screenSize.height(), 
-                                    QImage::Format_ARGB32);
-                    
-                    // 序列化变化的瓦片数据
-                    QByteArray serializedData = tileManager.serializeTileData(changedIndices, frameImage);
-                    if (!serializedData.isEmpty()) {
-                        staticSender->sendTileData(changedIndices, serializedData);
-                    }
-                }
+            auto captureEndTime = std::chrono::high_resolution_clock::now();
+            auto captureLatency = std::chrono::duration_cast<std::chrono::microseconds>(captureEndTime - captureStartTime).count();
+            frameCount++;
+            // 只在延迟过高时输出警告
+            if (captureLatency > 20000) { // 超过20ms时输出警告
             }
+            
+            // 瓦片检测已移除
 
             // 如果编码目标分辨率与屏幕尺寸不同（例如低质720p），进行缩放
             const QSize encSize = staticEncoder->getFrameSize();

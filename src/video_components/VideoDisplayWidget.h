@@ -38,39 +38,19 @@ struct VideoStats {
     QString connectionStatus = "Disconnected";
     QSize frameSize = QSize(0, 0);
     
-    // 瓦片统计信息
-    int totalTiles = 0;
-    int activeTiles = 0;
-    int dirtyTiles = 0;
-    qint64 lastTileUpdate = 0;
-    double tileUpdateRate = 0.0;
+    // 瓦片统计信息已移除
+
 };
 
 class VideoDisplayWidget : public QWidget
 {
     Q_OBJECT
 
-public:
-    // 瓦片渲染相关数据结构
-    struct TileData {
-        int tileId;
-        QRect sourceRect;      // 瓦片在原始帧中的位置
-        QRect targetRect;      // 瓦片在屏幕上的位置
-        QPixmap pixmap;        // 瓦片图像数据
-        qint64 timestamp;      // 瓦片时间戳
-        bool isDirty;          // 是否需要重新渲染
-    };
-
+    // Allow RingAudioIODevice to access private members
     friend class RingAudioIODevice;
-    
-    struct TileComposition {
-        QSize frameSize;       // 完整帧大小
-        QSize tileSize;        // 单个瓦片大小
-        int tilesPerRow;       // 每行瓦片数
-        int tilesPerColumn;    // 每列瓦片数
-        QHash<int, TileData> tiles; // 瓦片数据映射
-        qint64 lastUpdateTime; // 最后更新时间
-    };
+
+public:
+    // 瓦片渲染相关数据结构已移除
 
     explicit VideoDisplayWidget(QWidget *parent = nullptr);
     ~VideoDisplayWidget();
@@ -124,12 +104,8 @@ public:
     bool isMicInputFollowSystem() const;
     QString currentMicInputDeviceId() const;
     
-    // 瓦片渲染方法
-    void renderTile(int tileId, const QByteArray &tileData, const QRect &sourceRect, qint64 timestamp);
-    void updateTile(int tileId, const QByteArray &deltaData, const QRect &updateRect, qint64 timestamp);
-    void setTileConfiguration(const QSize &frameSize, const QSize &tileSize);
-    void clearTiles();
-    void setTileMode(bool enabled) { m_tileMode = enabled; }
+    // 瓦片渲染方法已移除
+
     
 signals:
     void connectionStatusChanged(const QString &status);
@@ -176,14 +152,8 @@ private:
     double currentScale() const;
     void updateScaledCursorComposite(double scale);
     
-    // 瓦片渲染私有方法
-    void updateTileMapping();
-    void composeTiles();
-    void renderTileToPixmap(const TileData &tile);
-    QRect calculateTileTargetRect(int tileId) const;
-    QRect calculateTileSourceRect(int tileId) const;
-    void markTilesDirty();
-    void cleanupOldTiles();
+    // 瓦片渲染私有方法已移除
+
     // 定时继续观看提示逻辑
     void setupContinuePrompt();
     void showContinuePrompt();
@@ -278,15 +248,8 @@ private:
     bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）
     bool m_mouseButtonsSwapped = false; // 系统是否交换了鼠标左右键
     
-    // 瓦片渲染相关
-    TileComposition m_tileComposition;
-    QPixmap m_compositeFrame;      // 合成后的完整帧
-    mutable QMutex m_tileMutex;   // 瓦片数据保护（可变以支持const方法）
-    QReadWriteLock m_tileReadWriteLock; // 读写锁，提高并发性能
-    bool m_tileMode;              // 是否启用瓦片模式
-    qint64 m_tileTimeout;         // 瓦片超时时间（毫秒）
-    QTimer *m_tileCleanupTimer;   // 瓦片清理定时器
-    std::atomic<bool> m_compositionInProgress; // 合成进行中标志
+    // 瓦片渲染相关成员已移除
+
     
     // 继续观看提示定时与对话框
     QTimer *m_continuePromptTimer = nullptr; // 周期触发30分钟/测试1分钟

@@ -9,7 +9,6 @@
 #include <QVector>
 
 // 前向声明
-struct TileInfo;
 
 class WebSocketSender : public QObject
 {
@@ -25,13 +24,6 @@ public:
     void sendFrame(const QByteArray &frameData);
     void sendTextMessage(const QString &message); // 新增：发送文本消息
     
-    // 瓦片数据传输方法
-    void sendTileData(const QVector<int> &tileIndices, const QByteArray &serializedData);
-    void sendTileUpdate(const QVector<TileInfo> &updatedTiles, const QVector<QByteArray> &tileImages);
-    void sendTileMetadata(const QVector<TileInfo> &allTiles);
-    
-
-    
     // 推流控制
     void startStreaming();
     void stopStreaming();
@@ -45,12 +37,9 @@ public:
     // 统计信息
     qint64 getTotalBytesSent() const { return m_totalBytesSent; }
     qint64 getTotalFramesSent() const { return m_totalFramesSent; }
-    qint64 getTotalTilesSent() const { return m_totalTilesSent; }
-    qint64 getTotalTileDataSent() const { return m_totalTileDataSent; }
     
     // 性能统计结构
     struct SenderStats {
-        quint64 totalTilesSent;               // 总发送瓦片数
         quint64 totalBytesSent;               // 总发送字节数
         quint64 totalEncodingOperations;      // 总编码操作数
         qint64 totalEncodingTime;             // 总编码时间 (ms)
@@ -64,7 +53,6 @@ public:
         qint64 maxSendingTime;                // 最大发送时间 (ms)
         qint64 minSendingTime;                // 最小发送时间 (ms)
         double sendingRate;                   // 发送速率 (bytes/s)
-        double tileTransmissionRate;          // 瓦片传输速率 (tiles/s)
         qint64 lastSendTime;                  // 上次发送时间戳
         quint64 reconnectionCount;            // 重连次数
         qint64 totalDowntime;                 // 总断线时间 (ms)
@@ -86,11 +74,6 @@ signals:
     void streamingStarted(); // 开始推流信号
     void streamingStopped(); // 停止推流信号
     
-    // 瓦片相关信号
-    void tileDataSent(int tileCount, int dataSize);
-    void tileUpdateSent(int updatedTileCount);
-    void tileMetadataSent(int totalTileCount);
-
     // 远程批注事件（观看端发来），包含颜色ID
     void annotationEventReceived(const QString &phase, int x, int y, const QString &viewerId, int colorId);
     void textAnnotationReceived(const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize);
@@ -122,11 +105,9 @@ private:
     void stopReconnectTimer();
     
     // 性能统计更新方法
-    void updateSenderStats(qint64 encodingTime, qint64 sendingTime, qint64 serializationTime, qint64 bytesSent, int tilesSent);
+    void updateSenderStats(qint64 encodingTime, qint64 sendingTime, qint64 serializationTime, qint64 bytesSent);
     
-
-    
-// WebSocket客户端
+    // WebSocket客户端
     QWebSocket *m_webSocket;
     QString m_serverUrl;
     bool m_connected;
@@ -141,8 +122,6 @@ private:
     // 统计信息
     qint64 m_totalBytesSent;
     qint64 m_totalFramesSent;
-    qint64 m_totalTilesSent;      // 瓦片发送统计
-    qint64 m_totalTileDataSent;   // 瓦片数据字节统计
     
     // 性能监控相关
     SenderStats m_senderStats;                  // 性能统计数据

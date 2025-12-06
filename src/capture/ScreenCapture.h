@@ -8,7 +8,6 @@
 #include <QPixmap>
 #include <QScreen>
 #include <QGuiApplication>
-#include "TileManager.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,26 +37,7 @@ public:
     QByteArray captureScreen();
     QSize getScreenSize() const { return m_screenSize; }
     void setTargetScreenIndex(int index) { m_targetScreenIndex = index; }
-    
-    // 瓦片相关方法
-    bool initializeTileSystem(const QSize &tileSize = QSize(64, 64));
-    void initializeTileSystem(const QSize& screenSize, const QSize& tileSize);
-    void enableTileCapture(bool enable) { m_tileEnabled = enable; }
-    bool isTileEnabled() const { return m_tileEnabled; }
-    
-    // 瓦片检测开关控制
-    void setTileDetectionEnabled(bool enabled);
-    bool isTileDetectionEnabled() const { return m_tileDetectionEnabled; }
-    void toggleTileDetection() { setTileDetectionEnabled(!m_tileDetectionEnabled); }
-    
-    // 瓦片统计信息
-    int getTileCount() const;
-    int getChangedTileCount() const;
-    TileManager& getTileManager() { return m_tileManager; }
-    
-    // 瓦片检测方法
-    void performTileDetection(const QByteArray &frameData);
-    
+
 signals:
     void frameReady(const QByteArray &frameData);
     void error(const QString &errorMessage);
@@ -71,12 +51,6 @@ private:
     QSize m_screenSize;
     bool m_initialized;
     bool m_useD3D11;
-    
-    // 瓦片系统相关
-    TileManager m_tileManager;
-    bool m_tileEnabled;
-    bool m_tileDetectionEnabled;  // 瓦片检测开关
-    QSize m_tileSize;
     
 #ifdef _WIN32
     // D3D11 相关

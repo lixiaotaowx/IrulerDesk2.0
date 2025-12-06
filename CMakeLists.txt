@@ -74,8 +74,6 @@ set(CAPTURE_SOURCES
     src/capture/WebSocketSender.h         # WebSocket 发送端声明
     src/capture/MouseCapture.cpp          # 鼠标捕获实现：记录鼠标位置与状态用于批注
     src/capture/MouseCapture.h            # 鼠标捕获声明
-    src/capture/TileManager.cpp           # 瓦片管理实现：切片/合并/调度传输
-    src/capture/TileManager.h             # 瓦片管理声明
     src/capture/PerformanceMonitor.cpp    # 性能监控实现：统计编码/网络/帧率指标
     src/capture/PerformanceMonitor.h      # 性能监控声明
     src/capture/AnnotationOverlay.cpp     # 批注叠加层实现：在采集端绘制/组合批注图层

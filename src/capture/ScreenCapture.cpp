@@ -10,9 +10,6 @@ ScreenCapture::ScreenCapture(QObject *parent)
     , m_useD3D11(false)
     , m_primaryScreen(nullptr)
     , m_frameCounter(0)
-    , m_tileEnabled(false)
-    , m_tileDetectionEnabled(true)  // 默认启用瓦片检测
-    , m_tileSize(64, 64)
     , m_targetScreenIndex(-1)
 {
 }
@@ -95,10 +92,6 @@ QByteArray ScreenCapture::captureScreen()
         CaptureResult result = captureWithD3D11(frameData);
         
         if (result == Success) {
-            // D3D11捕获成功，进行瓦片检测
-            if (m_tileEnabled && m_tileDetectionEnabled && m_tileManager.isInitialized()) {
-                performTileDetection(frameData);
-            }
             return frameData;
         } else if (result == HardwareError) {
             m_useD3D11 = false;
@@ -108,13 +101,11 @@ QByteArray ScreenCapture::captureScreen()
     
     frameData = captureWithQt();
     
-    // Qt捕获成功，进行瓦片检测
-    if (!frameData.isEmpty() && m_tileEnabled && m_tileDetectionEnabled && m_tileManager.isInitialized()) {
-        performTileDetection(frameData);
-    }
-    
     return frameData;
 }
+
+    // 瓦片系统相关方法已移除
+
 
 #ifdef _WIN32
 bool ScreenCapture::initializeD3D11()
@@ -322,87 +313,3 @@ QByteArray ScreenCapture::captureWithQt()
     return frameData;
 }
 
-// 瓦片系统相关方法实现
-bool ScreenCapture::initializeTileSystem(const QSize &tileSize)
-{
-    if (!m_initialized) {
-        return false;
-    }
-    
-    // 如果启用自适应瓦片大小，计算最优尺寸
-    QSize actualTileSize = tileSize;
-    if (m_tileManager.isAdaptiveTileSizeEnabled()) {
-        actualTileSize = TileManager::calculateOptimalTileSize(m_screenSize);
-    }
-    
-    m_tileSize = actualTileSize;
-    
-    // qDebug() << "[ScreenCapture] 初始化瓦片系统..."; // 已禁用以提升性能
-    
-    
-    if (m_tileManager.initialize(m_screenSize, m_tileSize.width(), m_tileSize.height())) {
-        m_tileManager.printTileInfo();
-        return true;
-    } else {
-        return false;
-    }
-}
-
-// 重载的瓦片系统初始化方法（接受屏幕尺寸和瓦片尺寸）
-void ScreenCapture::initializeTileSystem(const QSize& screenSize, const QSize& tileSize)
-{
-    // 如果启用自适应瓦片大小，计算最优尺寸
-    QSize actualTileSize = tileSize;
-    if (m_tileManager.isAdaptiveTileSizeEnabled()) {
-        actualTileSize = TileManager::calculateOptimalTileSize(screenSize);
-    }
-    
-    m_tileSize = actualTileSize;
-    
-    
-    m_tileManager.initialize(screenSize, actualTileSize.width(), actualTileSize.height());
-    
-    int totalTiles = m_tileManager.getTileCount();
-}
-
-int ScreenCapture::getTileCount() const
-{
-    return m_tileManager.getTileCount();
-}
-
-int ScreenCapture::getChangedTileCount() const
-{
-    return m_tileManager.getChangedTileCount();
-}
-
-void ScreenCapture::performTileDetection(const QByteArray &frameData)
-{
-    if (frameData.isEmpty() || !m_tileManager.isInitialized()) {
-        return;
-    }
-    
-    // 将字节数组转换为QImage进行瓦片检测
-    QImage image(reinterpret_cast<const uchar*>(frameData.constData()), 
-                 m_screenSize.width(), m_screenSize.height(), 
-                 QImage::Format_ARGB32);
-    
-    if (image.isNull()) {
-        return;
-    }
-    
-    // 执行瓦片变化检测
-    m_tileManager.compareAndUpdateTiles(image);
-}
-
-// 瓦片检测开关控制方法实现
-void ScreenCapture::setTileDetectionEnabled(bool enabled)
-{
-    if (m_tileDetectionEnabled != enabled) {
-        m_tileDetectionEnabled = enabled;
-        
-        // 如果禁用瓦片检测，重置瓦片状态
-        if (!enabled && m_tileManager.isInitialized()) {
-            m_tileManager.resetChangeFlags();
-        }
-    }
-}

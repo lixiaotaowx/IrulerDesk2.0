@@ -29,39 +29,6 @@ public:
     explicit WebSocketReceiver(QObject *parent = nullptr);
     ~WebSocketReceiver();
     
-    // 瓦片数据结构
-    struct TileMetadata {
-        int tileId;
-        int x, y, width, height;
-        int totalChunks;
-        int dataSize;
-        qint64 timestamp;
-        QString format;
-    };
-    
-    struct TileChunk {
-        int tileId;
-        int chunkIndex;
-        int totalChunks;
-        QByteArray data;
-        qint64 timestamp;
-    };
-    
-    struct TileUpdate {
-        int tileId;
-        int x, y, width, height;
-        QByteArray deltaData;
-        qint64 timestamp;
-    };
-    
-    struct TileCache {
-        TileMetadata metadata;
-        QMap<int, QByteArray> chunks; // chunkIndex -> data
-        QSet<int> receivedChunks;
-        qint64 lastUpdateTime;
-        bool isComplete;
-    };
-    
     // 连接到WebSocket服务器
     bool connectToServer(const QString &url);
     
@@ -103,24 +70,6 @@ public:
         quint64 totalBytes;
         double averageFrameSize;
         qint64 connectionTime;
-        // 瓦片统计
-        quint64 totalTiles;
-        quint64 completedTiles;
-        quint64 lostTiles;
-        quint64 retransmissionRequests;
-        double tileCompletionRate;
-        
-        // 详细性能统计
-        quint64 totalTileBytes;           // 瓦片总字节数
-        quint64 totalChunksReceived;      // 接收的数据块总数
-        quint64 totalChunksLost;          // 丢失的数据块数
-        double averageTileSize;           // 平均瓦片大小
-        double tileTransferRate;          // 瓦片传输速率 (bytes/sec)
-        double chunkLossRate;             // 数据块丢包率
-        qint64 averageAssemblyTime;       // 平均瓦片组装时间 (ms)
-        qint64 averageTransmissionTime;   // 平均传输时间 (ms)
-        qint64 maxAssemblyTime;           // 最大组装时间 (ms)
-        qint64 minAssemblyTime;           // 最小组装时间 (ms)
         
         // 网络性能统计
         double networkLatency;            // 网络延迟 (ms)
@@ -140,14 +89,6 @@ signals:
     void connectionStatusChanged(const QString &status);
     void statsUpdated(const ReceiverStats &stats);
     
-    // 瓦片相关信号
-    void tileMetadataReceived(const TileMetadata &metadata);
-    void tileChunkReceived(const TileChunk &chunk);
-    void tileUpdateReceived(const TileUpdate &update);
-    void tileCompleted(int tileId, const QByteArray &completeData);
-    void tileDataLost(int tileId, const QSet<int> &missingChunks);
-    void retransmissionRequested(int tileId, const QSet<int> &missingChunks);
-
     // 新增：音频帧信号（PCM）
     void audioFrameReceived(const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 timestamp);
     void audioGainChanged(int percent);
@@ -168,16 +109,6 @@ private:
     void startReconnectTimer();
     void stopReconnectTimer();
     
-    // 瓦片处理方法
-    void processTileMessage(const QJsonObject &header, const QByteArray &binaryData);
-    void handleTileMetadata(const QJsonObject &header);
-    void handleTileData(const QJsonObject &header, const QByteArray &data);
-    void handleTileUpdate(const QJsonObject &header, const QByteArray &data);
-    void handleTileComplete(const QJsonObject &header);
-    void assembleTile(int tileId);
-    void checkTileTimeout();
-    void requestRetransmission(int tileId, const QSet<int> &missingChunks);
-    
     QWebSocket *m_webSocket;
     QString m_serverUrl;
     bool m_connected;
@@ -196,26 +127,11 @@ private:
     QList<int> m_frameSizes;
     
     // 性能监控相关变量
-    QList<qint64> m_assemblyTimes;        // 瓦片组装时间记录
-    QList<qint64> m_transmissionTimes;    // 传输时间记录
     QList<qint64> m_latencyMeasurements;  // 延迟测量记录
-    QHash<int, qint64> m_tileStartTimes;  // 瓦片开始接收时间
-    QHash<int, qint64> m_chunkTimestamps; // 数据块时间戳
     qint64 m_lastStatsUpdateTime;         // 上次统计更新时间
     qint64 m_totalDowntimeStart;          // 断线开始时间
-    quint64 m_totalChunksReceived;        // 总接收数据块数
-    quint64 m_totalChunksLost;            // 总丢失数据块数
-    quint64 m_totalTileBytes;             // 总瓦片字节数
     
-    // 瓦片缓存和管理
-    QHash<int, TileCache> m_tileCache; // tileId -> TileCache
-    QTimer *m_tileTimeoutTimer;
-    int m_tileTimeoutMs;
-    int m_maxRetransmissionAttempts;
-    QHash<int, int> m_retransmissionCounts; // tileId -> attempt count
-
     QMutex m_mutex;
-    QMutex m_tileMutex;
 
     // 最近一次观看请求信息，用于重连后自动重发
     QString m_lastViewerId;
@@ -258,8 +174,6 @@ private:
     int bytesPerSample(QAudioFormat::SampleFormat f) const;
     bool produceOpusFrame(QByteArray &out);
 
-    // 文本瓦片消息兼容开关（默认关闭，通过环境变量 IRULER_TEXT_TILE=1 开启）
-    bool m_textTileEnabled = false;
 };
 
 #endif // WEBSOCKETRECEIVER_H

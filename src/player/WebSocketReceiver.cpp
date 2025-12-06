@@ -27,12 +27,6 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     , m_connectionStartTime(0)
     , m_lastStatsUpdateTime(0)
     , m_totalDowntimeStart(0)
-    , m_totalChunksReceived(0)
-    , m_totalChunksLost(0)
-    , m_totalTileBytes(0)
-    , m_tileTimeoutTimer(nullptr)
-    , m_tileTimeoutMs(5000) // 5秒超时
-    , m_maxRetransmissionAttempts(3)
 {
     setupWebSocket();
     
@@ -95,19 +89,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     m_reconnectTimer->setSingleShot(true);
     connect(m_reconnectTimer, &QTimer::timeout, this, &WebSocketReceiver::attemptReconnect);
     
-    // 设置瓦片超时检查定时器
-    m_tileTimeoutTimer = new QTimer(this);
-    connect(m_tileTimeoutTimer, &QTimer::timeout, this, &WebSocketReceiver::checkTileTimeout);
-    m_tileTimeoutTimer->start(1000); // 每秒检查一次超时
-
-    // 环境变量控制：是否启用文本通道瓦片消息兼容（默认关闭）
-    QByteArray envVal = qgetenv("IRULER_TEXT_TILE");
-    if (!envVal.isEmpty()) {
-        QString v = QString::fromUtf8(envVal).toLower();
-        m_textTileEnabled = (v == "1" || v == "true" || v == "yes");
-    } else {
-        m_textTileEnabled = false;
-    }
+    // 环境变量控制已移除
     // 日志清理：移除冗余控制台输出
 
     m_inputPollTimer = new QTimer(this);
@@ -173,21 +155,6 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     m_frameSizes.clear();
     m_connectionStartTime = 0;
     m_reconnectAttempts = 0; // 主动连接归零重连计数，确保首次尝试立即进行
-    // 额外清理瓦片相关缓存与计数，避免上次连接残留影响本次会话
-    {
-        QMutexLocker tileLocker(&m_tileMutex);
-        m_tileCache.clear();
-        m_retransmissionCounts.clear();
-        m_tileStartTimes.clear();
-        m_chunkTimestamps.clear();
-        m_assemblyTimes.clear();
-        m_transmissionTimes.clear();
-        m_latencyMeasurements.clear();
-        m_totalChunksReceived = 0;
-        m_totalChunksLost = 0;
-        m_totalTileBytes = 0;
-    }
-    
     m_serverUrl = url;
     m_reconnectEnabled = true;
 
@@ -229,24 +196,6 @@ void WebSocketReceiver::disconnectFromServer()
     memset(&m_stats, 0, sizeof(m_stats));
     m_frameSizes.clear();
     m_connectionStartTime = 0;
-    // 停止瓦片超时定时器并清理瓦片缓存与计数，避免断开后仍然进行超时检查或重传逻辑
-    if (m_tileTimeoutTimer && m_tileTimeoutTimer->isActive()) {
-        m_tileTimeoutTimer->stop();
-    }
-    {
-        QMutexLocker tileLocker(&m_tileMutex);
-        m_tileCache.clear();
-        m_retransmissionCounts.clear();
-        m_tileStartTimes.clear();
-        m_chunkTimestamps.clear();
-        m_assemblyTimes.clear();
-        m_transmissionTimes.clear();
-        m_latencyMeasurements.clear();
-        m_totalChunksReceived = 0;
-        m_totalChunksLost = 0;
-        m_totalTileBytes = 0;
-    }
-    
     m_connected = false;
 }
 
@@ -283,11 +232,6 @@ void WebSocketReceiver::onConnected()
     emit connectionStatusChanged("已连接");
 
     // 日志清理：移除冗余连接状态输出
-
-    // 连接成功后如定时器未运行则重启瓦片超时检查
-    if (m_tileTimeoutTimer && !m_tileTimeoutTimer->isActive()) {
-        m_tileTimeoutTimer->start(1000);
-    }
 
     // 重连后自动重发观看请求，确保推流立即恢复（避免互斥锁重入造成死锁）
     if (m_autoResendWatchRequest && !viewerIdCopy.isEmpty() && !targetIdCopy.isEmpty()) {
@@ -338,24 +282,6 @@ void WebSocketReceiver::onDisconnected()
         emit connectionStatusChanged("已断开");
     }
     
-    // 断开后停止瓦片超时定时器并清理瓦片缓存，避免断开状态下进行重传检查
-    if (m_tileTimeoutTimer && m_tileTimeoutTimer->isActive()) {
-        m_tileTimeoutTimer->stop();
-    }
-    {
-        QMutexLocker tileLocker(&m_tileMutex);
-        m_tileCache.clear();
-        m_retransmissionCounts.clear();
-        m_tileStartTimes.clear();
-        m_chunkTimestamps.clear();
-        m_assemblyTimes.clear();
-        m_transmissionTimes.clear();
-        m_latencyMeasurements.clear();
-        m_totalChunksReceived = 0;
-        m_totalChunksLost = 0;
-        m_totalTileBytes = 0;
-    }
-
     // 如果启用了重连，开始重连尝试
     if (m_reconnectEnabled && m_reconnectAttempts < m_maxReconnectAttempts) {
         startReconnectTimer();
@@ -425,11 +351,7 @@ void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
     QByteArray binaryData = message.mid(4 + headerLength);
     
     // 根据消息类型处理
-    if (messageType.startsWith("tile_")) {
-        processTileMessage(header, binaryData);
-    } else {
-        // 处理其他类型的消息（如传统帧数据）
-    }
+    // 处理其他类型的消息（如传统帧数据）
 }
 
 void WebSocketReceiver::onTextMessageReceived(const QString &message)
@@ -499,30 +421,6 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             return;
         } else if (type == "streaming_ok") {
             return;
-        } else if (type.startsWith("tile_")) {
-            // 文本瓦片消息仅在开启兼容开关时处理
-            if (!m_textTileEnabled) {
-                return;
-            }
-            // 兼容服务器以文本发送瓦片控制信息的情况
-            if (type == "tile_metadata") {
-                handleTileMetadata(obj);
-                return;
-            } else if (type == "tile_data") {
-                QString base64 = obj.value("data_base64").toString();
-                QByteArray data = base64.isEmpty() ? QByteArray() : QByteArray::fromBase64(base64.toUtf8());
-                handleTileData(obj, data);
-                return;
-            } else if (type == "tile_update") {
-                QString base64 = obj.value("delta_base64").toString();
-                if (base64.isEmpty()) base64 = obj.value("data_base64").toString();
-                QByteArray data = base64.isEmpty() ? QByteArray() : QByteArray::fromBase64(base64.toUtf8());
-                handleTileUpdate(obj, data);
-                return;
-            } else if (type == "tile_complete") {
-                handleTileComplete(obj);
-                return;
-            }
         }
     }
     
@@ -624,55 +522,6 @@ void WebSocketReceiver::updateStats()
     // 计算连接时间
     if (m_connected && m_connectionStartTime > 0) {
         m_stats.connectionTime = currentTime - m_connectionStartTime;
-    }
-    
-    // 更新详细性能统计
-    m_stats.totalTileBytes = m_totalTileBytes;
-    m_stats.totalChunksReceived = m_totalChunksReceived;
-    m_stats.totalChunksLost = m_totalChunksLost;
-    
-    // 计算平均瓦片大小
-    if (m_stats.completedTiles > 0) {
-        m_stats.averageTileSize = static_cast<double>(m_totalTileBytes) / m_stats.completedTiles;
-    }
-    
-    // 计算瓦片传输速率
-    qint64 timeDiff = currentTime - m_lastStatsUpdateTime;
-    if (timeDiff > 0) {
-        m_stats.tileTransferRate = static_cast<double>(m_totalTileBytes) / (timeDiff / 1000.0);
-    }
-    
-    // 计算数据块丢包率
-    quint64 totalChunks = m_totalChunksReceived + m_totalChunksLost;
-    if (totalChunks > 0) {
-        m_stats.chunkLossRate = static_cast<double>(m_totalChunksLost) / totalChunks;
-    }
-    
-    // 计算平均组装时间
-    if (!m_assemblyTimes.isEmpty()) {
-        qint64 totalAssemblyTime = 0;
-        m_stats.maxAssemblyTime = 0;
-        m_stats.minAssemblyTime = LLONG_MAX;
-        
-        for (qint64 time : m_assemblyTimes) {
-            totalAssemblyTime += time;
-            if (time > m_stats.maxAssemblyTime) {
-                m_stats.maxAssemblyTime = time;
-            }
-            if (time < m_stats.minAssemblyTime) {
-                m_stats.minAssemblyTime = time;
-            }
-        }
-        m_stats.averageAssemblyTime = totalAssemblyTime / m_assemblyTimes.size();
-    }
-    
-    // 计算平均传输时间
-    if (!m_transmissionTimes.isEmpty()) {
-        qint64 totalTransmissionTime = 0;
-        for (qint64 time : m_transmissionTimes) {
-            totalTransmissionTime += time;
-        }
-        m_stats.averageTransmissionTime = totalTransmissionTime / m_transmissionTimes.size();
     }
     
     // 计算网络延迟和抖动
@@ -1313,271 +1162,5 @@ bool WebSocketReceiver::produceOpusFrame(QByteArray &out)
     return true;
 }
 
-// 瓦片消息处理方法实现
-void WebSocketReceiver::processTileMessage(const QJsonObject &header, const QByteArray &binaryData)
-{
-    QString messageType = header["type"].toString();
-    
-    if (messageType == "tile_metadata") {
-        handleTileMetadata(header);
-    } else if (messageType == "tile_data") {
-        handleTileData(header, binaryData);
-    } else if (messageType == "tile_update") {
-        handleTileUpdate(header, binaryData);
-    } else if (messageType == "tile_complete") {
-        handleTileComplete(header);
-    } else {
-    }
-}
+// 瓦片消息处理方法实现已移除
 
-void WebSocketReceiver::handleTileMetadata(const QJsonObject &header)
-{
-    TileMetadata metadata;
-    metadata.tileId = header["tile_id"].toInt();
-    metadata.x = header["x"].toInt();
-    metadata.y = header["y"].toInt();
-    metadata.width = header["width"].toInt();
-    metadata.height = header["height"].toInt();
-    metadata.totalChunks = header["total_chunks"].toInt();
-    metadata.dataSize = header["data_size"].toInt();
-    metadata.timestamp = header["timestamp"].toVariant().toLongLong();
-    metadata.format = header["format"].toString();
-    
-    QMutexLocker locker(&m_tileMutex);
-    
-    // 创建或更新瓦片缓存
-    TileCache &cache = m_tileCache[metadata.tileId];
-    cache.metadata = metadata;
-    cache.chunks.clear();
-    cache.receivedChunks.clear();
-    cache.lastUpdateTime = QDateTime::currentMSecsSinceEpoch();
-    cache.isComplete = false;
-    
-    // 更新统计
-    m_stats.totalTiles++;
-
-    // 日志清理：移除瓦片元数据的冗余打印
-
-    emit tileMetadataReceived(metadata);
-}
-
-void WebSocketReceiver::handleTileData(const QJsonObject &header, const QByteArray &data)
-{
-    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-    
-    TileChunk chunk;
-    chunk.tileId = header["tile_id"].toInt();
-    chunk.chunkIndex = header["chunk_index"].toInt();
-    chunk.totalChunks = header["total_chunks"].toInt();
-    chunk.timestamp = header["timestamp"].toVariant().toLongLong();
-    chunk.data = data;
-    
-    QMutexLocker locker(&m_tileMutex);
-    
-    // 性能监控：记录数据块接收
-    m_totalChunksReceived++;
-    m_totalTileBytes += data.size();
-    
-    // 记录网络延迟（如果有时间戳）
-    if (chunk.timestamp > 0) {
-        qint64 latency = currentTime - chunk.timestamp;
-        m_latencyMeasurements.append(latency);
-        // 保持最近100个延迟测量
-        if (m_latencyMeasurements.size() > 100) {
-            m_latencyMeasurements.removeFirst();
-        }
-    }
-    
-    // 检查瓦片缓存是否存在
-    if (!m_tileCache.contains(chunk.tileId)) {
-        return;
-    }
-    
-    TileCache &cache = m_tileCache[chunk.tileId];
-    
-    // 记录瓦片开始接收时间（第一个数据块）
-    if (chunk.chunkIndex == 0 && !m_tileStartTimes.contains(chunk.tileId)) {
-        m_tileStartTimes[chunk.tileId] = currentTime;
-    }
-    
-    // 存储数据块
-    cache.chunks[chunk.chunkIndex] = chunk.data;
-    cache.receivedChunks.insert(chunk.chunkIndex);
-    cache.lastUpdateTime = currentTime;
-    
-    emit tileChunkReceived(chunk);
-    
-    // 检查是否收到所有块
-    
-    if (cache.receivedChunks.size() == cache.metadata.totalChunks) {
-        
-        // 记录传输时间
-        if (m_tileStartTimes.contains(chunk.tileId)) {
-            qint64 transmissionTime = currentTime - m_tileStartTimes[chunk.tileId];
-            m_transmissionTimes.append(transmissionTime);
-            m_tileStartTimes.remove(chunk.tileId);
-            // 保持最近100个传输时间记录
-            if (m_transmissionTimes.size() > 100) {
-                m_transmissionTimes.removeFirst();
-            }
-        }
-        
-        assembleTile(chunk.tileId);
-    }
-}
-
-void WebSocketReceiver::handleTileUpdate(const QJsonObject &header, const QByteArray &data)
-{
-    TileUpdate update;
-    update.tileId = header["tile_id"].toInt();
-    update.x = header["x"].toInt();
-    update.y = header["y"].toInt();
-    update.width = header["width"].toInt();
-    update.height = header["height"].toInt();
-    update.timestamp = header["timestamp"].toVariant().toLongLong();
-    update.deltaData = data;
-
-    emit tileUpdateReceived(update);
-}
-
-void WebSocketReceiver::handleTileComplete(const QJsonObject &header)
-{
-    int tileId = header["tile_id"].toInt();
-    qint64 timestamp = header["timestamp"].toVariant().toLongLong();
-    
-    QMutexLocker locker(&m_tileMutex);
-    
-    // 检查瓦片是否存在且已完成
-    if (m_tileCache.contains(tileId)) {
-        TileCache &cache = m_tileCache[tileId];
-        if (cache.isComplete) {
-            
-            // 组装完整数据
-            QByteArray completeData;
-            for (int i = 0; i < cache.metadata.totalChunks; ++i) {
-                if (cache.chunks.contains(i)) {
-                    completeData.append(cache.chunks[i]);
-                }
-            }
-            
-            emit tileCompleted(tileId, completeData);
-        } else {
-        }
-    } else {
-    }
-}
-
-void WebSocketReceiver::assembleTile(int tileId)
-{
-    qint64 assemblyStartTime = QDateTime::currentMSecsSinceEpoch();
-    
-    // 注意：调用此方法的函数应该已经获取了m_tileMutex锁
-    
-    if (!m_tileCache.contains(tileId)) {
-        return;
-    }
-    
-    TileCache &cache = m_tileCache[tileId];
-    // 按顺序组装数据块
-    QByteArray completeData;
-    for (int i = 0; i < cache.metadata.totalChunks; ++i) {
-        if (!cache.chunks.contains(i)) {
-            return;
-        }
-        completeData.append(cache.chunks[i]);
-    }
-
-    cache.isComplete = true;
-    
-    // 性能监控：记录组装时间
-    qint64 assemblyEndTime = QDateTime::currentMSecsSinceEpoch();
-    qint64 assemblyTime = assemblyEndTime - assemblyStartTime;
-    m_assemblyTimes.append(assemblyTime);
-    // 保持最近100个组装时间记录
-    if (m_assemblyTimes.size() > 100) {
-        m_assemblyTimes.removeFirst();
-    }
-    
-    // 更新统计
-    m_stats.completedTiles++;
-    if (m_stats.totalTiles > 0) {
-        m_stats.tileCompletionRate = static_cast<double>(m_stats.completedTiles) / m_stats.totalTiles;
-    }
-    
-    emit tileCompleted(tileId, completeData);
-    
-    // 清理缓存（可选，根据需要保留一段时间）
-    // m_tileCache.remove(tileId);
-}
-
-void WebSocketReceiver::checkTileTimeout()
-{
-    QMutexLocker locker(&m_tileMutex);
-    
-    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-    QList<int> timedOutTiles;
-    
-    for (auto it = m_tileCache.begin(); it != m_tileCache.end(); ++it) {
-        TileCache &cache = it.value();
-        
-        if (!cache.isComplete && 
-            (currentTime - cache.lastUpdateTime) > m_tileTimeoutMs) {
-            
-            int tileId = it.key();
-            timedOutTiles.append(tileId);
-            
-            // 检查缺失的块
-            QSet<int> missingChunks;
-            for (int i = 0; i < cache.metadata.totalChunks; ++i) {
-                if (!cache.receivedChunks.contains(i)) {
-                    missingChunks.insert(i);
-                }
-            }
-            
-            // 检查重传次数
-            int retransmissionCount = m_retransmissionCounts.value(tileId, 0);
-            if (retransmissionCount < m_maxRetransmissionAttempts) {
-                requestRetransmission(tileId, missingChunks);
-                m_retransmissionCounts[tileId] = retransmissionCount + 1;
-                cache.lastUpdateTime = currentTime; // 重置超时时间
-            } else {
-                // 超过最大重传次数，标记为丢失
-                m_stats.lostTiles++;
-                emit tileDataLost(tileId, missingChunks);
-            }
-        }
-    }
-    
-    // 清理超时且无法恢复的瓦片
-    for (int tileId : timedOutTiles) {
-        if (m_retransmissionCounts.value(tileId, 0) >= m_maxRetransmissionAttempts) {
-            m_tileCache.remove(tileId);
-            m_retransmissionCounts.remove(tileId);
-        }
-    }
-}
-
-void WebSocketReceiver::requestRetransmission(int tileId, const QSet<int> &missingChunks)
-{
-    if (!m_connected || !m_webSocket) {
-        return;
-    }
-    
-    QJsonObject request;
-    request["type"] = "retransmission_request";
-    request["tile_id"] = tileId;
-    
-    QJsonArray chunksArray;
-    for (int chunkIndex : missingChunks) {
-        chunksArray.append(chunkIndex);
-    }
-    request["missing_chunks"] = chunksArray;
-    
-    QJsonDocument doc(request);
-    QString jsonString = doc.toJson(QJsonDocument::Compact);
-    
-    m_webSocket->sendTextMessage(jsonString);
-    m_stats.retransmissionRequests++;
-    
-    emit retransmissionRequested(tileId, missingChunks);
-}

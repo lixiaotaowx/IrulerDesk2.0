@@ -1,5 +1,4 @@
 #include "WebSocketSender.h"
-#include "TileManager.h"  // 包含TileInfo结构体定义
 #include <QMutexLocker>
 #include <QDateTime>
 #include <QJsonDocument>
@@ -22,8 +21,6 @@ WebSocketSender::WebSocketSender(QObject *parent)
     , m_reconnectInterval(1000)
     , m_totalBytesSent(0)
     , m_totalFramesSent(0)
-    , m_totalTilesSent(0)      // 初始化瓦片统计
-    , m_totalTileDataSent(0)   // 初始化瓦片数据统计
     , m_lastStatsUpdateTime(QDateTime::currentMSecsSinceEpoch())
     , m_disconnectStartTime(0)
 {
@@ -348,171 +345,13 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     }
 }
 
-// 瓦片数据传输方法实现
-void WebSocketSender::sendTileData(const QVector<int> &tileIndices, const QByteArray &serializedData)
-{
-    QMutexLocker locker(&m_mutex);
-    
-    // 开始性能监控
-    qint64 serializationStartTime = QDateTime::currentMSecsSinceEpoch();
-    qint64 encodingTime = 0; // 这里没有编码操作，设为0
-    
-    if (!m_connected || !m_isStreaming) {
-        return;
-    }
-    
-    // 创建瓦片数据消息
-    QJsonObject message;
-    message["type"] = "tile_data";
-    message["tile_count"] = tileIndices.size();
-    message["data_size"] = serializedData.size();
-    
-    // 将瓦片索引转换为JSON数组
-    QJsonArray indicesArray;
-    for (int index : tileIndices) {
-        indicesArray.append(index);
-    }
-    message["tile_indices"] = indicesArray;
-    
-    // 发送JSON消息头
-    QJsonDocument doc(message);
-    QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
-    
-    // 组合消息：JSON头 + 分隔符 + 二进制数据
-    QByteArray fullMessage;
-    fullMessage.append(jsonData);
-    fullMessage.append("\n---TILE_DATA_SEPARATOR---\n");
-    fullMessage.append(serializedData);
-    
-    qint64 serializationEndTime = QDateTime::currentMSecsSinceEpoch();
-    qint64 serializationTime = serializationEndTime - serializationStartTime;
-    
-    // 开始发送计时
-    qint64 sendingStartTime = QDateTime::currentMSecsSinceEpoch();
-    qint64 bytesSent = m_webSocket->sendBinaryMessage(fullMessage);
-    qint64 sendingEndTime = QDateTime::currentMSecsSinceEpoch();
-    qint64 sendingTime = sendingEndTime - sendingStartTime;
-    
-    if (bytesSent > 0) {
-        m_totalBytesSent += bytesSent;
-        m_totalTilesSent += tileIndices.size();
-        m_totalTileDataSent += serializedData.size();
-        
-        // 更新性能统计（默认关闭以减少开销）
-        if (m_enableStats) {
-            updateSenderStats(encodingTime, sendingTime, serializationTime, bytesSent, tileIndices.size());
-        }
-        
-        emit tileDataSent(tileIndices.size(), serializedData.size());
-        
-        
-    }
-}
 
-void WebSocketSender::sendTileUpdate(const QVector<TileInfo> &updatedTiles, const QVector<QByteArray> &tileImages)
-{
-    QMutexLocker locker(&m_mutex);
-    
-    if (!m_connected || !m_isStreaming) {
-        return;
-    }
-    
-    if (updatedTiles.size() != tileImages.size()) {
-        return;
-    }
-    
-    // 序列化瓦片更新数据
-    QByteArray serializedData;
-    QDataStream stream(&serializedData, QIODevice::WriteOnly);
-    stream.setVersion(QDataStream::Qt_5_15);
-    
-    // 写入瓦片数量
-    stream << static_cast<quint32>(updatedTiles.size());
-    
-    // 写入每个瓦片的信息和图像数据
-    for (int i = 0; i < updatedTiles.size(); ++i) {
-        const TileInfo &tile = updatedTiles[i];
-        const QByteArray &imageData = tileImages[i];
-        
-        // 写入瓦片信息
-        stream << tile.x << tile.y << tile.width << tile.height << tile.hash;
-        
-        // 写入图像数据大小和数据
-        stream << static_cast<quint32>(imageData.size());
-        stream.writeRawData(imageData.constData(), imageData.size());
-    }
-    
-    // 创建消息头
-    QJsonObject message;
-    message["type"] = "tile_update";
-    message["updated_count"] = updatedTiles.size();
-    message["data_size"] = serializedData.size();
-    
-    QJsonDocument doc(message);
-    QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
-    
-    // 组合消息
-    QByteArray fullMessage;
-    fullMessage.append(jsonData);
-    fullMessage.append("\n---TILE_UPDATE_SEPARATOR---\n");
-    fullMessage.append(serializedData);
-    
-    qint64 bytesSent = m_webSocket->sendBinaryMessage(fullMessage);
-    if (bytesSent > 0) {
-        m_totalBytesSent += bytesSent;
-        m_totalTilesSent += updatedTiles.size();
-        m_totalTileDataSent += serializedData.size();
-        
-        emit tileUpdateSent(updatedTiles.size());
-        
-        
-    }
-}
 
-void WebSocketSender::sendTileMetadata(const QVector<TileInfo> &allTiles)
-{
-    QMutexLocker locker(&m_mutex);
-    
-    if (!m_connected) {
-        return;
-    }
-    
-    // 创建瓦片元数据消息
-    QJsonObject message;
-    message["type"] = "tile_metadata";
-    message["total_tiles"] = allTiles.size();
-    
-    QJsonArray tilesArray;
-    for (const TileInfo &tile : allTiles) {
-        QJsonObject tileObj;
-        tileObj["x"] = tile.x;
-        tileObj["y"] = tile.y;
-        tileObj["width"] = tile.width;
-        tileObj["height"] = tile.height;
-        tileObj["hash"] = static_cast<qint64>(tile.hash);
-        tilesArray.append(tileObj);
-    }
-    message["tiles"] = tilesArray;
-    
-    QJsonDocument doc(message);
-    QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
-    
-    qint64 bytesSent = m_webSocket->sendTextMessage(QString::fromUtf8(jsonData));
-    if (bytesSent > 0) {
-        m_totalBytesSent += bytesSent;
-        
-        emit tileMetadataSent(allTiles.size());
-        
-        
-    }
-}
-
-void WebSocketSender::updateSenderStats(qint64 encodingTime, qint64 sendingTime, qint64 serializationTime, qint64 bytesSent, int tilesSent)
+void WebSocketSender::updateSenderStats(qint64 encodingTime, qint64 sendingTime, qint64 serializationTime, qint64 bytesSent)
 {
     qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
     
     // 更新基本统计
-    m_senderStats.totalTilesSent += tilesSent;
     m_senderStats.totalBytesSent += bytesSent;
     m_senderStats.totalEncodingOperations++;
     m_senderStats.totalEncodingTime += encodingTime;
@@ -569,15 +408,10 @@ void WebSocketSender::updateSenderStats(qint64 encodingTime, qint64 sendingTime,
     if (timeDiff >= 1000) { // 每秒更新一次速率
         if (timeDiff > 0) {
             m_senderStats.sendingRate = (m_senderStats.totalBytesSent * 1000.0) / timeDiff;
-            m_senderStats.tileTransmissionRate = (m_senderStats.totalTilesSent * 1000.0) / timeDiff;
         }
         m_lastStatsUpdateTime = currentTime;
     }
     
-    // 每1000次发送输出详细统计
-    if (m_senderStats.totalTilesSent % 1000 == 0) {
-        
-    }
 }
 
 WebSocketSender::SenderStats WebSocketSender::getSenderStats() const

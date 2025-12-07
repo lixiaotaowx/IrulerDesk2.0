@@ -71,6 +71,8 @@ private slots:
     void onHideRequested();
     void onAnnotationColorChanged(int colorId); // 新增：批注颜色变化持久化
     void onUserNameChanged(const QString &name);
+    void onMicToggleRequested(bool enabled);
+    void onSpeakerToggleRequested(bool enabled);
 
 private:
     void setupUI();

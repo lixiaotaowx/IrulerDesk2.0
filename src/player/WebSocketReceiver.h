@@ -155,6 +155,11 @@ private:
     int m_audioMaxBufferFrames = 30;
     int m_audioUnderflowCount = 0;
     void initOpusDecoderIfNeeded(int sampleRate, int channels);
+    QMap<QString, OpusDecoder*> m_peerDecoders;
+    QMap<QString, QQueue<QByteArray>> m_peerQueues;
+    QMap<QString, int> m_peerSampleRates;
+    QMap<QString, int> m_peerChannels;
+    QMap<QString, int> m_peerFrameSamples;
     QAudioSource *m_localAudioSource = nullptr;
     QIODevice *m_localAudioInput = nullptr;
     QTimer *m_localAudioTimer = nullptr;

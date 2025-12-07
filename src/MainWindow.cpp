@@ -132,12 +132,12 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     videoWidget->startReceiving(serverUrl);
     bool spkEnabled = loadSpeakerEnabledFromConfig();
     qInfo() << "config.load.speaker_enabled" << spkEnabled;
-    bool micEnabled = loadMicEnabledFromConfig();
+    bool micEnabled = true;
     m_videoWindow->setSpeakerChecked(spkEnabled);
     m_videoWindow->setMicChecked(micEnabled);
     videoWidget->setSpeakerEnabled(spkEnabled);
     videoWidget->setTalkEnabled(micEnabled);
-    videoWidget->sendAudioToggle(micEnabled);
+    videoWidget->setMicSendEnabled(micEnabled);
 
     // 记录viewer/target并在连接后即时重发watch请求
     QString viewerId = getDeviceId();
@@ -418,6 +418,10 @@ void MainWindow::setupUI()
             this, &MainWindow::onExitRequested);
     connect(m_transparentImageList, &TransparentImageList::hideRequested,
             this, &MainWindow::onHideRequested);
+    connect(m_transparentImageList, &TransparentImageList::micToggleRequested,
+            this, &MainWindow::onMicToggleRequested);
+    connect(m_transparentImageList, &TransparentImageList::speakerToggleRequested,
+            this, &MainWindow::onSpeakerToggleRequested);
     
 }
 
@@ -1532,6 +1536,32 @@ void MainWindow::onHideRequested()
     if (m_systemSettingsWindow) m_systemSettingsWindow->hide();
 }
 
+void MainWindow::onMicToggleRequested(bool enabled)
+{
+    saveMicEnabledToConfig(enabled);
+    if (m_videoWindow) {
+        m_videoWindow->setMicChecked(enabled);
+        auto *vd = m_videoWindow->getVideoDisplayWidget();
+        if (vd) {
+            vd->sendAudioToggle(enabled);
+            vd->setTalkEnabled(enabled);
+            vd->setMicSendEnabled(enabled);
+        }
+    }
+}
+
+void MainWindow::onSpeakerToggleRequested(bool enabled)
+{
+    saveSpeakerEnabledToConfig(enabled);
+    if (m_videoWindow) {
+        m_videoWindow->setSpeakerChecked(enabled);
+        auto *vd = m_videoWindow->getVideoDisplayWidget();
+        if (vd) {
+            vd->setSpeakerEnabled(enabled);
+        }
+    }
+}
+
 void MainWindow::onScreenSelected(int index)
 {
 
@@ -1724,7 +1754,7 @@ bool MainWindow::loadMicEnabledFromConfig() const
         }
         configFile.close();
     }
-    return false;
+    return true;
 }
 
 void MainWindow::saveSpeakerEnabledToConfig(bool enabled)

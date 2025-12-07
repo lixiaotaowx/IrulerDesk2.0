@@ -257,20 +257,40 @@ if(WIN32)
 
     if(WINDEPLOYQT_EXECUTABLE)
         add_custom_command(TARGET ScreenStreamApp POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies..."
+            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for ScreenStreamApp..."
             COMMAND ${WINDEPLOYQT_EXECUTABLE}
                 --verbose 2
-                --no-compiler-runtime
+                $<IF:$<CONFIG:Debug>,--debug,--release>
+                --compiler-runtime
                 --no-system-d3d-compiler
                 $<TARGET_FILE:ScreenStreamApp>
-            COMMENT "Deploying Qt libraries and plugins"
+            COMMENT "Deploying Qt libraries and plugins for ScreenStreamApp"
+        )
+        add_custom_command(TARGET CaptureProcess POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for CaptureProcess..."
+            COMMAND ${WINDEPLOYQT_EXECUTABLE}
+                --verbose 2
+                $<IF:$<CONFIG:Debug>,--debug,--release>
+                --compiler-runtime
+                --no-system-d3d-compiler
+                $<TARGET_FILE:CaptureProcess>
+            COMMENT "Deploying Qt libraries and plugins for CaptureProcess"
+        )
+        add_custom_command(TARGET PlayerProcess POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for PlayerProcess..."
+            COMMAND ${WINDEPLOYQT_EXECUTABLE}
+                --verbose 2
+                $<IF:$<CONFIG:Debug>,--debug,--release>
+                --compiler-runtime
+                --no-system-d3d-compiler
+                $<TARGET_FILE:PlayerProcess>
+            COMMENT "Deploying Qt libraries and plugins for PlayerProcess"
         )
         message(STATUS "Found windeployqt: ${WINDEPLOYQT_EXECUTABLE}")
     else()
         message(WARNING "windeployqt not found! Qt dependencies will not be deployed automatically.")
     endif()
 
-    # 复制头像文件到输出目录
     add_custom_command(TARGET ScreenStreamApp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Copying avatar files..."
         COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -278,6 +298,56 @@ if(WIN32)
             $<TARGET_FILE_DIR:ScreenStreamApp>/maps
         COMMENT "Copying avatar files to output directory"
     )
+endif()
+
+# 显式复制 MSVC 运行库到输出目录，避免目标机器缺少 VC++ 运行库
+if(MSVC AND WIN32)
+    set(_vc_redist_candidates
+        "$ENV{VCToolsRedistDir}/x64/Microsoft.VC143.CRT"
+        "$ENV{VCToolsRedistDir}/x64/Microsoft.VC142.CRT"
+        "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT"
+        "C:/Program Files/Microsoft Visual Studio/2019/Community/VC/Redist/MSVC/*/x64/Microsoft.VC142.CRT"
+        "C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT"
+        "C:/Program Files/Microsoft Visual Studio/2019/Professional/VC/Redist/MSVC/*/x64/Microsoft.VC142.CRT"
+        "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT"
+        "C:/Program Files/Microsoft Visual Studio/2019/Enterprise/VC/Redist/MSVC/*/x64/Microsoft.VC142.CRT"
+        "C:/Program Files (x86)/Microsoft Visual Studio/2022/Community/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT"
+        "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Redist/MSVC/*/x64/Microsoft.VC142.CRT"
+    )
+    unset(VCREDIST_DIR)
+    foreach(dir IN LISTS _vc_redist_candidates)
+        if(dir MATCHES "\\*")
+            file(GLOB _vc_dirs "${dir}")
+            if(_vc_dirs)
+                list(GET _vc_dirs 0 VCREDIST_DIR)
+                break()
+            endif()
+        elseif(EXISTS "${dir}")
+            set(VCREDIST_DIR "${dir}")
+            break()
+        endif()
+    endforeach()
+
+    if(VCREDIST_DIR AND (EXISTS "${VCREDIST_DIR}/vcruntime140_1.dll" OR EXISTS "${VCREDIST_DIR}/vcruntime140.dll"))
+        set(_vcr_dlls
+            vcruntime140_1.dll
+            vcruntime140.dll
+            msvcp140.dll
+            concrt140.dll
+        )
+        foreach(tgt IN ITEMS ScreenStreamApp CaptureProcess PlayerProcess)
+            foreach(dll IN LISTS _vcr_dlls)
+                add_custom_command(TARGET ${tgt} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${VCREDIST_DIR}/${dll}"
+                        "$<TARGET_FILE_DIR:${tgt}>/"
+                )
+            endforeach()
+        endforeach()
+        message(STATUS "VC++ runtime detected: ${VCREDIST_DIR}")
+    else()
+        message(WARNING "VC++ runtime folder not found; ensure Visual Studio VC Redist is installed or rely on windeployqt --compiler-runtime.")
+    endif()
 endif()
 
 # 可选：添加测试子目录（仅在需要时启用）

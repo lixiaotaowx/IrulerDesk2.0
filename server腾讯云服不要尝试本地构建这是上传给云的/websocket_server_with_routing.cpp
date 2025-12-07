@@ -433,19 +433,32 @@ private slots:
             }
         }
         
-        // 文本消息可以双向转发（用于控制信令等）
+        // 文本消息转发
         if (m_rooms.contains(roomId)) {
             Room *room = m_rooms[roomId];
-            
-            if (role == "publisher") {
-                // 推流端发送给所有订阅者
+            QJsonParseError jerr;
+            QJsonDocument jdoc = QJsonDocument::fromJson(message.toUtf8(), &jerr);
+            QString t = QString();
+            if (jerr.error == QJsonParseError::NoError && jdoc.isObject()) {
+                t = jdoc.object().value("type").toString();
+            }
+            if (role == "subscriber" && t == "viewer_audio_opus") {
+                if (room->publisher && room->publisher->state() == QAbstractSocket::ConnectedState) {
+                    room->publisher->sendTextMessage(message);
+                }
+                for (QWebSocket *subscriber : room->subscribers) {
+                    if (subscriber == sender) continue;
+                    if (subscriber->state() == QAbstractSocket::ConnectedState) {
+                        subscriber->sendTextMessage(message);
+                    }
+                }
+            } else if (role == "publisher") {
                 for (QWebSocket *subscriber : room->subscribers) {
                     if (subscriber->state() == QAbstractSocket::ConnectedState) {
                         subscriber->sendTextMessage(message);
                     }
                 }
             } else {
-                // 订阅者发送给推流端
                 if (room->publisher && room->publisher->state() == QAbstractSocket::ConnectedState) {
                     room->publisher->sendTextMessage(message);
                 }

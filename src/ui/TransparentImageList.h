@@ -67,6 +67,8 @@ signals:
     void clearMarksRequested(); // 新增：清理标记请求
     void exitRequested();       // 新增：退出请求
     void hideRequested();
+    void micToggleRequested(bool enabled);
+    void speakerToggleRequested(bool enabled);
 
 private:
     struct UserImageItem {

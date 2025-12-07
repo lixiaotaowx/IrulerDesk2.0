@@ -93,6 +93,8 @@ public:
     void setMicGainPercent(int percent);
     int micGainPercent() const { return m_micGainPercent; }
     void setTalkEnabled(bool enabled);
+    void setMicSendEnabled(bool enabled);
+    bool micSendEnabled() const { return m_micSendEnabled; }
     void selectAudioOutputFollowSystem();
     void selectAudioOutputById(const QString &id);
     void selectAudioOutputByRawId(const QByteArray &id);
@@ -187,6 +189,7 @@ private:
     QString m_serverUrl;
     VideoStats m_stats;
     bool m_speakerEnabled = true; // 本地扬声器开关，默认开启
+    bool m_micSendEnabled = true;
     // 音频播放相关状态
     QAudioFormat m_audioFormat;
     QAudioSink *m_audioSink = nullptr;

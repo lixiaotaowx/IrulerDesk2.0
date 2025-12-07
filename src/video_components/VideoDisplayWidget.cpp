@@ -130,6 +130,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
             m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+            sendAudioToggle(m_micSendEnabled);
         }
     });
     
@@ -1534,6 +1535,7 @@ void VideoDisplayWidget::recreateReceiver()
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
             m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+            sendAudioToggle(m_micSendEnabled);
         }
     });
     if (m_audioConn) QObject::disconnect(m_audioConn);
@@ -1562,6 +1564,12 @@ void VideoDisplayWidget::setMicGainPercent(int percent)
 void VideoDisplayWidget::setTalkEnabled(bool enabled)
 {
     if (m_receiver) { m_receiver->setTalkEnabled(enabled); }
+}
+
+void VideoDisplayWidget::setMicSendEnabled(bool enabled)
+{
+    m_micSendEnabled = enabled;
+    sendAudioToggle(enabled);
 }
 
 void VideoDisplayWidget::pauseReceiving()

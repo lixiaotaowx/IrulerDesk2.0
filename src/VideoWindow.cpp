@@ -212,7 +212,7 @@ void VideoWindow::setupCustomTitleBar()
     // 麦克风按钮（置于标题栏最右侧区域，靠近最小化）
     m_micButton = new QPushButton("", m_titleBar);
     m_micButton->setCheckable(true);
-    m_micButton->setChecked(false);
+    m_micButton->setChecked(true);
     m_micButton->setToolTip(QStringLiteral("点击开启/关闭麦克风"));
     // 使用与头像相同的相对路径策略：appDir/maps/logo
     QString appDir = QCoreApplication::applicationDirPath();
@@ -220,7 +220,7 @@ void VideoWindow::setupCustomTitleBar()
     setWindowIcon(QIcon(iconDir + "/iruler.ico"));
     m_micIconOff = QIcon(iconDir + "/Mic_off.png");
     m_micIconOn  = QIcon(iconDir + "/Mic_on.png");
-    m_micButton->setIcon(m_micIconOff);
+    m_micButton->setIcon(m_micIconOn);
     m_micButton->setIconSize(QSize(16, 16));
     // 与窗口控制按钮风格一致
     QString micButtonStyle = 

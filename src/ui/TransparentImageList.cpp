@@ -524,7 +524,29 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     connect(setAvatarAction, &QAction::triggered, this, &TransparentImageList::setAvatarRequested);
                     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
                     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
-                    // 新增右键菜单项
+
+                    bool micEnabled = true;
+                    bool speakerEnabled = true;
+                    {
+                        QString appDir = QCoreApplication::applicationDirPath();
+                        QString path = appDir + "/config/app_config.txt";
+                        QFile f(path);
+                        QStringList lines;
+                        if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) { QTextStream in(&f); while (!in.atEnd()) lines << in.readLine(); f.close(); }
+                        for (int i = 0; i < lines.size(); ++i) {
+                            if (lines[i].startsWith("mic_enabled=")) { QString v = lines[i].mid(QString("mic_enabled=").length()).trimmed(); micEnabled = (v.compare("true", Qt::CaseInsensitive) == 0); }
+                            if (lines[i].startsWith("speaker_enabled=")) { QString v = lines[i].mid(QString("speaker_enabled=").length()).trimmed(); speakerEnabled = (v.compare("true", Qt::CaseInsensitive) == 0); }
+                        }
+                    }
+                    QAction *micAction = contextMenu.addAction("麦克风");
+                    micAction->setCheckable(true);
+                    micAction->setChecked(micEnabled);
+                    connect(micAction, &QAction::toggled, this, &TransparentImageList::micToggleRequested);
+                    QAction *speakerAction = contextMenu.addAction("扬声器");
+                    speakerAction->setCheckable(true);
+                    speakerAction->setChecked(speakerEnabled);
+                    connect(speakerAction, &QAction::toggled, this, &TransparentImageList::speakerToggleRequested);
+
                     QAction *clearMarksAction = contextMenu.addAction("清理标记");
                     connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
                     QAction *hideAction = contextMenu.addAction("隐藏");
@@ -739,6 +761,27 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
 
     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
+    bool micEnabled = true;
+    bool speakerEnabled = true;
+    {
+        QString appDir = QCoreApplication::applicationDirPath();
+        QString path = appDir + "/config/app_config.txt";
+        QFile f(path);
+        QStringList lines;
+        if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) { QTextStream in(&f); while (!in.atEnd()) lines << in.readLine(); f.close(); }
+        for (int i = 0; i < lines.size(); ++i) {
+            if (lines[i].startsWith("mic_enabled=")) { QString v = lines[i].mid(QString("mic_enabled=").length()).trimmed(); micEnabled = (v.compare("true", Qt::CaseInsensitive) == 0); }
+            if (lines[i].startsWith("speaker_enabled=")) { QString v = lines[i].mid(QString("speaker_enabled=").length()).trimmed(); speakerEnabled = (v.compare("true", Qt::CaseInsensitive) == 0); }
+        }
+    }
+    QAction *micAction = contextMenu.addAction("麦克风");
+    micAction->setCheckable(true);
+    micAction->setChecked(micEnabled);
+    connect(micAction, &QAction::toggled, this, &TransparentImageList::micToggleRequested);
+    QAction *speakerAction = contextMenu.addAction("扬声器");
+    speakerAction->setCheckable(true);
+    speakerAction->setChecked(speakerEnabled);
+    connect(speakerAction, &QAction::toggled, this, &TransparentImageList::speakerToggleRequested);
     
     // 新增右键菜单项（窗口泛用菜单）
     QAction *clearMarksAction = contextMenu.addAction("清理标记");

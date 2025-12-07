@@ -154,6 +154,11 @@ void WebSocketSender::onDisconnected()
     m_connected = false;
     
     if (wasConnected) {
+        // 断开连接时必须停止推流，确保状态重置
+        if (m_isStreaming) {
+            m_isStreaming = false;
+            emit streamingStopped();
+        }
         
         emit disconnected();
         
@@ -259,8 +264,16 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         QString targetId = obj["target_id"].toString();
         
         
-        // 响应观看请求，开始推流
+        // 响应观看请求
+        // 如果正在推流，先停止再重新开始，确保编码器重置并发送关键帧
+        // 这样可以解决再次观看时黑屏的问题（通过模拟"第一次观看"的流程）
+        if (m_isStreaming) {
+            stopStreaming();
+        }
         startStreaming();
+        
+        // 强制请求关键帧（双重保险）
+        emit requestKeyFrame();
         
         // 可以在这里发送确认消息给观看者（如果需要的话）
         QJsonObject response;

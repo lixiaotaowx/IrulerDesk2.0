@@ -248,7 +248,7 @@ bool VP9Encoder::initializeEncoder()
     // 关键帧设置 - 减少关键帧频率以节省流量
     m_config.kf_mode = VPX_KF_AUTO;
     m_config.kf_min_dist = 0;
-    m_config.kf_max_dist = 60; // 每60帧一个关键帧，节省流量
+    m_config.kf_max_dist = 300; // 每300帧一个关键帧（约10秒），大幅节省流量
     
     // 更新实际使用的分辨率
     m_frameSize = QSize(width, height);

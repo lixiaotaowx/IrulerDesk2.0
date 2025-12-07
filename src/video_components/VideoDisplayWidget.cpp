@@ -98,7 +98,10 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
             this, &VideoDisplayWidget::onMousePositionReceived);
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
-            m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+            // WebSocketReceiver已内置自动重发机制(m_autoResendWatchRequest)，
+            // 此处移除重复发送，防止双重请求导致目标端推流服务冻结
+            // m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+            
             sendAudioToggle(m_micSendEnabled);
         }
     });
@@ -258,7 +261,11 @@ void VideoDisplayWidget::stopReceiving()
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
-    // 避免在停止时清理解码器，减少重开延迟；仅在析构时清理
+    // 强制清理以防止黑屏问题
+    if (m_decoder) {
+        m_decoder->cleanup();
+        m_decoderInitialized = false;
+    }
 
     // 停止并清理音频输出，避免残留状态影响下一次播放
     if (m_audioPlayer) {

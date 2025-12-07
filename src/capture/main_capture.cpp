@@ -1,5 +1,6 @@
 #include <QtWidgets/QApplication>
 #include <QTimer>
+#include <QDateTime>
 #include <QVector>
 #include <QFile>
 #include <QTextStream>
@@ -614,6 +615,25 @@ int main(int argc, char *argv[])
             }
             if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
             if (mp3Decoder) { mp3Decoder->stop(); }
+            
+            // 重置捕获和编码器状态，防止下次连接时出现残留问题（如黑屏）
+            if (staticCapture) {
+                staticCapture->cleanup();
+                staticCapture->initialize();
+            }
+            if (staticEncoder) {
+                // 编码器也重置一下比较安全
+                staticEncoder->cleanup();
+                QSize capSize = staticCapture->getScreenSize();
+                staticEncoder->initialize(capSize.width(), capSize.height(), staticEncoder->getFrameRate());
+            }
+        }
+    });
+
+    // 响应关键帧请求
+    QObject::connect(sender, &WebSocketSender::requestKeyFrame, []() {
+        if (staticEncoder) {
+            staticEncoder->forceKeyFrame();
         }
     });
 
@@ -937,6 +957,18 @@ int main(int argc, char *argv[])
         if (!isCapturing) return; // 只有在推流状态下才捕获
         if (isSwitching) return;   // 热切换过程中不断流，但暂时不抓帧
         
+        // 关键帧保活机制：每隔8秒强制发送一个关键帧
+        // 这可以解决网络抖动导致的关键帧丢失，或观看端重连时的黑屏问题
+        static qint64 lastKeyFrameTime = 0;
+        const qint64 keyFrameInterval = 8000; // 8秒，避免流量过大
+        qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        
+        if (staticEncoder && (currentTime - lastKeyFrameTime > keyFrameInterval)) {
+            staticEncoder->forceKeyFrame();
+            lastKeyFrameTime = currentTime;
+            // qDebug() << "[CaptureProcess] 触发保活关键帧";
+        }
+
         auto captureStartTime = std::chrono::high_resolution_clock::now();
         QByteArray frameData = staticCapture->captureScreen();
         if (!frameData.isEmpty()) {

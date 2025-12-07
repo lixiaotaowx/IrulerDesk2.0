@@ -19,11 +19,7 @@
 #include <QParallelAnimationGroup>
 #include <memory>
 #include <atomic>
-// 音频播放（Qt6）
-#include <QAudioFormat>
-#include <QAudioSink>
-#include <QMediaDevices>
-#include <QAudioDevice>
+#include "AudioPlayer.h"
 
 // 前向声明
 class DxvaVP9Decoder;
@@ -45,9 +41,6 @@ struct VideoStats {
 class VideoDisplayWidget : public QWidget
 {
     Q_OBJECT
-
-    // Allow RingAudioIODevice to access private members
-    friend class RingAudioIODevice;
 
 public:
     // 瓦片渲染相关数据结构已移除
@@ -87,9 +80,9 @@ public:
     void sendAudioToggle(bool enabled);
     // 本地播放开关（不影响推流端）
     void setSpeakerEnabled(bool enabled);
-    bool isSpeakerEnabled() const { return m_speakerEnabled; }
+    bool isSpeakerEnabled() const { return m_audioPlayer ? m_audioPlayer->isSpeakerEnabled() : false; }
     void setVolumePercent(int percent);
-    int volumePercent() const { return m_volumePercent; }
+    int volumePercent() const { return m_audioPlayer ? m_audioPlayer->volumePercent() : 0; }
     void setMicGainPercent(int percent);
     int micGainPercent() const { return m_micGainPercent; }
     void setTalkEnabled(bool enabled);
@@ -98,8 +91,8 @@ public:
     void selectAudioOutputFollowSystem();
     void selectAudioOutputById(const QString &id);
     void selectAudioOutputByRawId(const QByteArray &id);
-    bool isAudioOutputFollowSystem() const { return m_followSystemOutput; }
-    QString currentAudioOutputId() const { return QString::fromUtf8(m_currentOutputDeviceId); }
+    bool isAudioOutputFollowSystem() const { return m_audioPlayer ? m_audioPlayer->isAudioOutputFollowSystem() : true; }
+    QString currentAudioOutputId() const { return m_audioPlayer ? m_audioPlayer->currentAudioOutputId() : QString(); }
     void applyAudioOutputSelectionRuntime();
     void selectMicInputFollowSystem();
     void selectMicInputById(const QString &id);
@@ -188,43 +181,11 @@ private:
     bool m_autoResize;
     QString m_serverUrl;
     VideoStats m_stats;
-    bool m_speakerEnabled = true; // 本地扬声器开关，默认开启
     bool m_micSendEnabled = true;
-    // 音频播放相关状态
-    QAudioFormat m_audioFormat;
-    QAudioSink *m_audioSink = nullptr;
-    QIODevice *m_audioIO = nullptr;
-    bool m_audioInitialized = false;
-    void initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample);
-    QByteArray convertForSink(const QByteArray &srcPcm, int srcSr, int srcCh) const;
-    void softRestartSpeakerIfEnabled();
-    void forceRecreateSink();
-    void reconnectAudioSignal();
-    void scheduleAutoRecovery();
-    void hardSwitchOnSystemChange();
-    int m_volumePercent = 100;
     int m_micGainPercent = 100;
-    bool m_followSystemOutput = true;
-    QByteArray m_outputDeviceId;
-    QString m_outputDeviceDesc;
-    QAudioDevice m_selectedOutputDevice;
-    QByteArray m_currentOutputDeviceId;
-    QMetaObject::Connection m_audioConn;
-    class QMediaDevices *m_mediaDevices = nullptr;
-    QTimer *m_defaultOutPollTimer = nullptr;
-    int m_sinkSampleRate = 16000;
-    int m_sinkChannels = 1;
-    int m_bytesPerSample = 2;
-    bool m_needResample = false;
-    int m_lastFrameSampleRate = 16000;
-    int m_lastFrameChannels = 1;
-    int m_lastFrameBitsPerSample = 16;
-    qint64 m_lastAudioWriteMs = 0;
-
-    QByteArray m_ringBuffer;
-    int m_ringCapacityBytes = 0;
-    QMutex m_ringMutex;
     
+    std::unique_ptr<AudioPlayer> m_audioPlayer;
+
     // 端到端延迟统计
     QList<double> m_latencyHistory;
     qint64 m_currentCaptureTimestamp = 0; // 当前帧的捕获时间戳

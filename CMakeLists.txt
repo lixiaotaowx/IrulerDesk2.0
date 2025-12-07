@@ -104,6 +104,8 @@ set(PLAYER_SOURCES
 
 # 视频组件库源文件
 set(VIDEO_COMPONENTS_SOURCES
+    src/video_components/AudioPlayer.cpp        # 音频播放组件实现
+    src/video_components/AudioPlayer.h          # 音频播放组件声明
     src/video_components/VideoDisplayWidget.cpp # 视频显示与批注控件实现（复用到播放器）
     src/video_components/VideoDisplayWidget.h   # 视频显示与批注控件声明
     src/player/VP9Decoder.cpp                   # VP9 软件解码器实现
@@ -396,4 +398,15 @@ if(EXISTS "${IRULER_ICON_PATH}")
     set(APP_RC "${CMAKE_BINARY_DIR}/app_icon.rc")
     file(WRITE "${APP_RC}" "IDI_ICON1 ICON \"${IRULER_ICON_PATH}\"\n")
     target_sources(ScreenStreamApp PRIVATE "${APP_RC}")
+endif()
+
+# 自定义目标：构建完成后生成带时间戳的ZIP包（仅限Release模式）
+# 包名格式：ReleaseMMddHHmm.zip，位置在 build/bin/ 目录下
+if(MSVC)
+    add_custom_target(ZipRelease ALL
+        DEPENDS ScreenStreamApp CaptureProcess PlayerProcess
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command 
+        "if ('$<CONFIG>' -eq 'Release') { $t = Get-Date -Format 'MMddHHmm'; $src = '${CMAKE_BINARY_DIR}/bin/Release'; $dst = '${CMAKE_BINARY_DIR}/bin/Release' + $t + '.zip'; Write-Host 'Zipping Release to ' $dst; if (Test-Path $dst) { Remove-Item $dst -Force }; Get-ChildItem -Path $src -Exclude '*.pdb' | Where-Object { $_.Name -ne 'config' } | Compress-Archive -DestinationPath $dst -Update }"
+        COMMENT "Generating Release timestamped ZIP..."
+    )
 endif()

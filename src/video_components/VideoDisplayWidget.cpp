@@ -28,38 +28,7 @@
 #include <windows.h>
 #include <iostream>
 
-class RingAudioIODevice : public QIODevice {
-public:
-    explicit RingAudioIODevice(VideoDisplayWidget *owner) : QIODevice(owner), m_owner(owner) {}
-    bool isSequential() const override { return true; }
-protected:
-    qint64 readData(char *data, qint64 maxSize) override {
-        if (!m_owner) return 0;
-        QMutexLocker locker(&m_owner->m_ringMutex);
-        int ch = m_owner->m_sinkChannels > 0 ? m_owner->m_sinkChannels : 2;
-        int bps = m_owner->m_bytesPerSample > 0 ? m_owner->m_bytesPerSample : 2;
-        int frameSize = ch * bps;
-        qint64 bytesToProvide = maxSize - (maxSize % frameSize);
-        if (bytesToProvide <= 0) return 0;
-        qint64 available = m_owner->m_ringBuffer.size();
-        qint64 provide = qMin(bytesToProvide, available - (available % frameSize));
-        qint64 pos = 0;
-        if (provide > 0) {
-            memcpy(data, m_owner->m_ringBuffer.constData(), size_t(provide));
-            m_owner->m_ringBuffer.remove(0, int(provide));
-            pos += provide;
-        }
-        qint64 remain = bytesToProvide - pos;
-        if (remain > 0) {
-            memset(data + pos, 0, size_t(remain));
-            pos += remain;
-        }
-        return pos;
-    }
-    qint64 writeData(const char *, qint64) override { return -1; }
-private:
-    VideoDisplayWidget *m_owner;
-};
+
 
 VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     : QWidget(parent)
@@ -137,7 +106,19 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
 
 
 
-    reconnectAudioSignal();
+    // Initialize AudioPlayer
+    m_audioPlayer = std::make_unique<AudioPlayer>(this);
+    connect(m_audioPlayer.get(), &AudioPlayer::audioOutputSelectionChanged, this, 
+        [this](bool followSystem, const QString &deviceId) {
+            emit audioOutputSelectionChanged(followSystem, deviceId);
+        });
+
+    connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
+        this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
+            if (m_audioPlayer) {
+                m_audioPlayer->processAudioData(pcmData, sampleRate, channels, bitsPerSample);
+            }
+        });
     
     // 统计定时器
     m_statsTimer = new QTimer(this);
@@ -149,28 +130,14 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     
     // 继续观看提示定时器初始化（默认30分钟，可通过环境变量覆盖）
     setupContinuePrompt();
-
-    m_mediaDevices = new QMediaDevices(this);
-    connect(m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
-        if (m_followSystemOutput) {
-            hardSwitchOnSystemChange();
-        }
-    });
-    m_defaultOutPollTimer = new QTimer(this);
-    m_defaultOutPollTimer->setInterval(500);
-    connect(m_defaultOutPollTimer, &QTimer::timeout, this, [this]() {
-        if (!m_followSystemOutput) return;
-        QAudioDevice def = QMediaDevices::defaultAudioOutput();
-        if (m_currentOutputDeviceId != def.id()) {
-            hardSwitchOnSystemChange();
-        }
-    });
-    m_defaultOutPollTimer->start();
 }
 
 VideoDisplayWidget::~VideoDisplayWidget()
 {
     stopReceiving();
+    if (m_audioPlayer) {
+        m_audioPlayer->stop();
+    }
     if (m_decoder) {
         m_decoder->cleanup();
         m_decoderInitialized = false;
@@ -294,13 +261,9 @@ void VideoDisplayWidget::stopReceiving()
     // 避免在停止时清理解码器，减少重开延迟；仅在析构时清理
 
     // 停止并清理音频输出，避免残留状态影响下一次播放
-    if (m_audioSink) {
-        if (m_audioSink->state() != QAudio::StoppedState) {
-            m_audioSink->stop();
-        }
+    if (m_audioPlayer) {
+        m_audioPlayer->stop();
     }
-    m_audioIO = nullptr;
-    m_audioInitialized = false;
     
     // 瓦片清理逻辑已移除
 
@@ -690,44 +653,18 @@ void VideoDisplayWidget::sendAudioToggle(bool enabled)
 
 void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
 {
-    m_speakerEnabled = enabled;
-    {
-        QString desc;
-        QByteArray id;
-        if (m_followSystemOutput) {
-            QAudioDevice d = QMediaDevices::defaultAudioOutput();
-            desc = d.description();
-            id = d.id();
-        } else {
-            const auto devs = QMediaDevices::audioOutputs();
-            for (const auto &d : devs) { if (d.id() == m_outputDeviceId) { desc = d.description(); id = d.id(); break; } }
-            if (desc.isEmpty()) {
-                QAudioDevice d = QMediaDevices::defaultAudioOutput();
-                desc = d.description();
-                id = d.id();
-            }
-        }
-        
+    if (m_audioPlayer) {
+        m_audioPlayer->setSpeakerEnabled(enabled);
     }
+    
     if (!enabled) {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
             if (m_receiver) m_receiver->sendViewerListenMute(true);
         }
-        if (m_audioConn) { QObject::disconnect(m_audioConn); }
-        if (m_audioSink) { m_audioSink->stop(); }
-        m_audioIO = nullptr;
-        if (m_audioSink) { m_audioSink->setVolume(0.0); }
-        if (m_audioSink) { delete m_audioSink; m_audioSink = nullptr; }
-        m_audioInitialized = false;
     } else {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
             if (m_receiver) m_receiver->sendViewerListenMute(false);
         }
-        int sr = m_audioFormat.sampleRate() > 0 ? m_audioFormat.sampleRate() : 16000;
-        int ch = m_audioFormat.channelCount() > 0 ? m_audioFormat.channelCount() : 1;
-        initAudioSinkIfNeeded(sr, ch, 16);
-        reconnectAudioSignal();
-        scheduleAutoRecovery();
     }
 }
 
@@ -742,234 +679,32 @@ void VideoDisplayWidget::setAnnotationColorId(int colorId)
     emit annotationColorChanged(m_currentColorId);
 }
 
-void VideoDisplayWidget::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPerSample)
-{
-    // 如果尚未初始化，必须初始化
-    if (!m_audioInitialized) {
-        m_lastFrameSampleRate = sampleRate;
-        m_lastFrameChannels = channels;
-        applyAudioOutputSelectionRuntime();
-        return;
-    }
-
-    // 如果输入格式发生变化，我们不需要重建 sink (因为 sink 使用的是设备固定格式)，
-    // 但我们需要更新重采样标志。最简单的方法是再次调用 applyAudioOutputSelectionRuntime，
-    // 或者是只更新标志。为了稳健起见，如果格式变了，我们刷新一下状态。
-    if (m_lastFrameSampleRate != sampleRate || m_lastFrameChannels != channels) {
-        m_lastFrameSampleRate = sampleRate;
-        m_lastFrameChannels = channels;
-        // 重新计算是否需要重采样
-        if (m_audioSink) {
-             m_needResample = (m_sinkSampleRate != m_lastFrameSampleRate) || (m_sinkChannels != m_lastFrameChannels);
-        } else {
-             applyAudioOutputSelectionRuntime();
-        }
-    }
-}
-
 void VideoDisplayWidget::selectAudioOutputFollowSystem()
 {
-
-    // 1. 彻底停止当前音频 (Full Stop)
-    bool wasEnabled = m_speakerEnabled;
-    if (wasEnabled) {
-        // 断开信号，停止数据流入
-        if (m_audioConn) {
-            QObject::disconnect(m_audioConn);
-            m_audioConn = QMetaObject::Connection();
-        }
-        
-        // 销毁 Sink
-        if (m_audioSink) {
-            m_audioSink->stop();
-            delete m_audioSink;
-            m_audioSink = nullptr;
-        }
-        m_audioIO = nullptr;
-        m_audioInitialized = false; // 标记为未初始化
-        
-        // 关键：处理事件循环，确保系统释放音频设备句柄
-        QCoreApplication::processEvents();
+    if (m_audioPlayer) {
+        m_audioPlayer->selectAudioOutputFollowSystem();
     }
-
-    // 2. 更新状态 (Update State)
-    m_followSystemOutput = true;
-    m_outputDeviceId.clear();
-    m_outputDeviceDesc.clear();
-    m_selectedOutputDevice = QMediaDevices::defaultAudioOutput();
-    m_currentOutputDeviceId.clear();
-
-    // 3. 重新启动 (Full Start)
-    if (wasEnabled) {
-        // 模拟第一次启动：initAudioSinkIfNeeded 会检测到 !m_audioInitialized 并调用 applyAudioOutputSelectionRuntime
-        int sr = (m_lastFrameSampleRate > 0) ? m_lastFrameSampleRate : 16000;
-        int ch = (m_lastFrameChannels > 0) ? m_lastFrameChannels : 1;
-        initAudioSinkIfNeeded(sr, ch, 16);
-        
-        // 恢复信号连接
-        reconnectAudioSignal();
-    } else {
-        // 如果当前是关闭的，仅应用配置，为下次打开做准备
-        applyAudioOutputSelectionRuntime();
-    }
-    
-    emit audioOutputSelectionChanged(true, QString());
 }
 
 void VideoDisplayWidget::selectAudioOutputById(const QString &id)
 {
-    Q_UNUSED(id);
-    selectAudioOutputFollowSystem();
+    if (m_audioPlayer) {
+        m_audioPlayer->selectAudioOutputById(id);
+    }
 }
 
 void VideoDisplayWidget::selectAudioOutputByRawId(const QByteArray &id)
 {
-    Q_UNUSED(id);
-    selectAudioOutputFollowSystem();
+    if (m_audioPlayer) {
+        m_audioPlayer->selectAudioOutputByRawId(id);
+    }
 }
 
 void VideoDisplayWidget::applyAudioOutputSelectionRuntime()
 {
-    // 防止重入：如果正在配置中，不要再次触发
-    static bool isConfiguring = false;
-    if (isConfiguring) return;
-    isConfiguring = true;
-
-    
-    // 1. 清理旧资源 (Standard cleanup)
-    if (m_audioSink) {
-        m_audioSink->stop();
-        delete m_audioSink;
-        m_audioSink = nullptr;
-        m_audioIO = nullptr;
+    if (m_audioPlayer) {
+        m_audioPlayer->applyAudioOutputSelectionRuntime();
     }
-
-    // 防止重入循环：立即标记为已初始化
-    // 这样在接下来的100ms延时期间，initAudioSinkIfNeeded 不会重复调用此函数
-    m_audioInitialized = true;
-
-    // 2. 确定目标设备 (Device Selection)
-    // 恢复用户认可的逻辑：优先使用缓存的有效设备，避免不必要的ID查找失败
-    QAudioDevice device;
-    if (m_followSystemOutput) {
-        device = QMediaDevices::defaultAudioOutput();
-    } else {
-        // 优先使用已选定的设备对象（只要有效就用），避免热插拔后ID微变导致回退
-        if (!m_selectedOutputDevice.isNull()) {
-            device = m_selectedOutputDevice;
-        } else {
-            bool found = false;
-            const auto devices = QMediaDevices::audioOutputs();
-            for (const auto &d : devices) {
-                if (d.id() == m_outputDeviceId) { device = d; found = true; break; }
-            }
-            if (!found && !m_outputDeviceDesc.isEmpty()) {
-                for (const auto &d : devices) {
-                    if (d.description() == m_outputDeviceDesc) { device = d; found = true; break; }
-                }
-            }
-        }
-        
-        // 如果都找不到，回退到默认设备
-        if (device.isNull()) {
-            device = QMediaDevices::defaultAudioOutput();
-        }
-    }
-    
-    // 更新当前设备 ID 记录
-    m_currentOutputDeviceId = device.id();
-    m_selectedOutputDevice = device; // 缓存当前使用的设备
-    
-
-    // 3. 格式协商 (Format Negotiation)
-    // 我们不直接修改 device.preferredFormat() 返回的对象，因为该对象可能包含
-    // 与 Int16 不兼容的隐藏元数据（如特定通道映射或浮点专用配置）。
-    // 相反，我们构建一个全新的、干净的格式对象。
-    QAudioFormat preferred = device.preferredFormat();
-    
-    m_audioFormat = QAudioFormat();
-    m_audioFormat.setSampleRate(preferred.sampleRate());
-    m_audioFormat.setChannelCount(preferred.channelCount());
-    m_audioFormat.setSampleFormat(QAudioFormat::Int16); // 优先使用 Int16（与源PCM一致）
-    
-    if (m_audioFormat.sampleRate() <= 0) m_audioFormat.setSampleRate(48000);
-    if (m_audioFormat.channelCount() <= 0) m_audioFormat.setChannelCount(2);
-
-    if (!device.isFormatSupported(m_audioFormat)) {
-        m_audioFormat = device.preferredFormat();
-    }
-
-    m_sinkSampleRate = m_audioFormat.sampleRate();
-    m_sinkChannels = m_audioFormat.channelCount();
-    switch (m_audioFormat.sampleFormat()) {
-        case QAudioFormat::Int16: m_bytesPerSample = 2; break;
-        case QAudioFormat::Float: m_bytesPerSample = 4; break;
-        case QAudioFormat::UInt8: m_bytesPerSample = 1; break;
-        default: m_bytesPerSample = 2; break;
-    }
-
-
-    // 更新重采样标志
-    int srcRate = (m_lastFrameSampleRate > 0) ? m_lastFrameSampleRate : 16000;
-    int srcCh = (m_lastFrameChannels > 0) ? m_lastFrameChannels : 1;
-    m_needResample = (m_sinkSampleRate != srcRate) || (m_sinkChannels != srcCh);
-    
-
-    // 4. 创建并启动 (Create and Start)
-    // 1. 彻底断开旧连接，模拟"第一次启动"的状态
-    // 先断开信号，防止数据在切换过程中流入
-    if (m_audioConn) {
-        QObject::disconnect(m_audioConn);
-        m_audioConn = QMetaObject::Connection();
-    }
-
-    // 2. 释放旧资源
-    if (m_audioSink) {
-        m_audioSink->stop();
-        delete m_audioSink; 
-        m_audioSink = nullptr;
-        QCoreApplication::processEvents(); 
-    }
-    m_audioIO = nullptr;
-    
-    // 3. 创建新 Sink
-    m_audioSink = new QAudioSink(device, m_audioFormat, this);
-    
-    // 2. 设置足够大的缓冲区 (Buffer Size)
-    int bufferBytes = m_sinkSampleRate * m_sinkChannels * m_bytesPerSample * 0.2; // 200ms
-    if (bufferBytes < 32768) bufferBytes = 32768; // 至少 32KB
-    m_audioSink->setBufferSize(bufferBytes); 
-
-    // 3. 安全的状态监听 (Signal Safety)
-    QAudioSink *currentSink = m_audioSink;
-    connect(currentSink, &QAudioSink::stateChanged, this, [this, currentSink](QAudio::State st) {
-        if (m_audioSink != currentSink) return;
-        if (st == QAudio::StoppedState && currentSink->error() != QAudio::NoError) {
-            if (m_speakerEnabled) softRestartSpeakerIfEnabled();
-        }
-    });
-
-    if (m_speakerEnabled) {
-        {
-            QMutexLocker locker(&m_ringMutex);
-            m_ringBuffer.clear();
-            int cap = int(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample * 0.5);
-            if (cap < 65536) cap = 65536;
-            m_ringCapacityBytes = cap;
-            int silenceBytes = int(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample * 0.15);
-            if (silenceBytes > 0) m_ringBuffer.append(QByteArray(silenceBytes, 0));
-        }
-        auto *ring = new RingAudioIODevice(this);
-        ring->open(QIODevice::ReadOnly);
-        m_audioIO = ring;
-        m_audioSink->start(ring);
-    }
-    
-    // 5. 恢复数据连接
-    // 就像第一次启动一样，重新建立连接
-    reconnectAudioSignal();
-
-    isConfiguring = false;
 }
 
 void VideoDisplayWidget::selectMicInputFollowSystem()
@@ -1538,17 +1273,21 @@ void VideoDisplayWidget::recreateReceiver()
             sendAudioToggle(m_micSendEnabled);
         }
     });
-    if (m_audioConn) QObject::disconnect(m_audioConn);
-    if (m_speakerEnabled) reconnectAudioSignal();
+
+    connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
+        this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
+            if (m_audioPlayer) {
+                m_audioPlayer->processAudioData(pcmData, sampleRate, channels, bitsPerSample);
+            }
+        });
 }
 void VideoDisplayWidget::setVolumePercent(int percent)
 {
     int p = percent;
     if (p < 0) p = 0;
     if (p > 100) p = 100;
-    m_volumePercent = p;
-    if (m_audioSink) {
-        m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
+    if (m_audioPlayer) {
+        m_audioPlayer->setVolumePercent(p);
     }
 }
 void VideoDisplayWidget::setMicGainPercent(int percent)
@@ -1581,13 +1320,10 @@ void VideoDisplayWidget::pauseReceiving()
         m_receiver->disconnectFromServer();
     }
     // 停止音频播放
-    if (m_audioSink) {
-        if (m_audioSink->state() != QAudio::StoppedState) {
-            m_audioSink->stop();
-        }
+    if (m_audioPlayer) {
+        m_audioPlayer->stop();
     }
-    m_audioIO = nullptr;
-    m_audioInitialized = false;
+
     // 瓦片显示清理已移除
     // 显示等待图并更新状态
     m_videoLabel->clear();
@@ -1652,164 +1388,4 @@ void VideoDisplayWidget::updateScaledCursorComposite(double scale)
     m_cursorScaledComposite = m_cursorComposite.scaled(QSize(w, h), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     m_lastCursorScale = scale;
 }
-QByteArray VideoDisplayWidget::convertForSink(const QByteArray &srcPcm, int srcSr, int srcCh) const
-{
-    if (srcPcm.isEmpty()) return srcPcm;
-    const int16_t *in = reinterpret_cast<const int16_t*>(srcPcm.constData());
-    int totalSamples = srcPcm.size() / 2;
-    int srcFrames = srcCh > 0 ? totalSamples / srcCh : 0;
-    if (srcFrames <= 0) return srcPcm;
-    int dstFrames = int(std::llround(double(srcFrames) * double(m_sinkSampleRate) / double(srcSr)));
-    if (dstFrames <= 0) return QByteArray();
-    int dstCh = m_sinkChannels;
-    QByteArray out;
-    bool toFloat = (m_audioFormat.sampleFormat() == QAudioFormat::Float);
-    if (!toFloat) {
-        out.resize(dstFrames * dstCh * 2);
-        int16_t *outp = reinterpret_cast<int16_t*>(out.data());
-        for (int f = 0; f < dstFrames; ++f) {
-            double pos = double(f) * double(srcSr) / double(m_sinkSampleRate);
-            int i = int(pos);
-            if (i >= srcFrames) i = srcFrames - 1;
-            double frac = pos - double(i);
-            auto sampleAt = [&](int chIndex)->int {
-                int i0 = i * srcCh + chIndex;
-                int i1 = (i + 1 < srcFrames ? (i + 1) : i) * srcCh + chIndex;
-                int s0 = in[i0];
-                int s1 = in[i1];
-                int s = int(std::llround(double(s0) + (double(s1 - s0) * frac)));
-                if (s > 32767) s = 32767; if (s < -32768) s = -32768;
-                return s;
-            };
-            int l = (srcCh == 1) ? sampleAt(0) : sampleAt(0);
-            int r = (srcCh == 1) ? l : sampleAt(1);
-            if (dstCh == 1) {
-                int m = (srcCh == 2) ? ((l + r) / 2) : l;
-                outp[f] = int16_t(m);
-            } else {
-                outp[f * 2] = int16_t(l);
-                outp[f * 2 + 1] = int16_t(r);
-            }
-        }
-    } else {
-        out.resize(dstFrames * dstCh * 4);
-        float *outp = reinterpret_cast<float*>(out.data());
-        auto toFloat32 = [](int s)->float {
-            return float(s) / 32768.0f;
-        };
-        for (int f = 0; f < dstFrames; ++f) {
-            double pos = double(f) * double(srcSr) / double(m_sinkSampleRate);
-            int i = int(pos);
-            if (i >= srcFrames) i = srcFrames - 1;
-            double frac = pos - double(i);
-            auto sampleAt = [&](int chIndex)->int {
-                int i0 = i * srcCh + chIndex;
-                int i1 = (i + 1 < srcFrames ? (i + 1) : i) * srcCh + chIndex;
-                int s0 = in[i0];
-                int s1 = in[i1];
-                int s = int(std::llround(double(s0) + (double(s1 - s0) * frac)));
-                if (s > 32767) s = 32767; if (s < -32768) s = -32768;
-                return s;
-            };
-            int l16 = (srcCh == 1) ? sampleAt(0) : sampleAt(0);
-            int r16 = (srcCh == 1) ? l16 : sampleAt(1);
-            if (dstCh == 1) {
-                int m16 = (srcCh == 2) ? ((l16 + r16) / 2) : l16;
-                outp[f] = toFloat32(m16);
-            } else {
-                outp[f * 2] = toFloat32(l16);
-                outp[f * 2 + 1] = toFloat32(r16);
-            }
-        }
-    }
-    return out;
-}
-void VideoDisplayWidget::softRestartSpeakerIfEnabled()
-{
-    if (!m_speakerEnabled) return;
-    if (!m_audioSink) return;
-    m_audioSink->stop();
-    {
-        QMutexLocker locker(&m_ringMutex);
-        m_ringBuffer.clear();
-        int ms = 50;
-        int frames = (m_sinkSampleRate > 0 ? m_sinkSampleRate : 16000) * ms / 1000;
-        int samples = frames * (m_sinkChannels > 0 ? m_sinkChannels : 1);
-        QByteArray zero;
-        zero.resize(samples * m_bytesPerSample);
-        zero.fill(char(0));
-        m_ringBuffer.append(zero);
-    }
-    if (m_audioIO) m_audioSink->start(m_audioIO);
-    m_audioSink->setVolume(qBound(0.0, m_volumePercent / 100.0, 1.0));
-}
-void VideoDisplayWidget::forceRecreateSink()
-{
-    m_audioInitialized = false;
-    m_currentOutputDeviceId.clear();
-    if (m_audioSink) { m_audioSink->stop(); delete m_audioSink; m_audioSink = nullptr; m_audioIO = nullptr; }
-    initAudioSinkIfNeeded(m_lastFrameSampleRate, m_lastFrameChannels, m_lastFrameBitsPerSample);
-    softRestartSpeakerIfEnabled();
-    reconnectAudioSignal();
-    scheduleAutoRecovery();
-}
 
-void VideoDisplayWidget::reconnectAudioSignal()
-{
-    if (m_audioConn) QObject::disconnect(m_audioConn);
-    m_audioConn = connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
-            this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
-                if (!m_isReceiving) return;
-                if (!m_speakerEnabled) return;
-                m_lastFrameSampleRate = sampleRate;
-                m_lastFrameChannels = channels;
-                m_lastFrameBitsPerSample = bitsPerSample;
-                initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
-                if (!m_audioSink) return;
-                QByteArray out = pcmData;
-                bool resampleNeeded = (m_sinkSampleRate > 0 && sampleRate != m_sinkSampleRate) || 
-                                      (m_sinkChannels > 0 && channels != m_sinkChannels);
-                bool formatConvertNeeded = (m_audioSink->format().sampleFormat() != QAudioFormat::Int16);
-                if (resampleNeeded || formatConvertNeeded) out = convertForSink(pcmData, sampleRate, channels);
-                {
-                    QMutexLocker locker(&m_ringMutex);
-                    if (m_ringCapacityBytes > 0) {
-                        int chn = m_audioSink->format().channelCount();
-                        if (chn <= 0) chn = m_sinkChannels > 0 ? m_sinkChannels : 2;
-                        int frameSize = chn * m_bytesPerSample;
-                        int add = out.size() - (out.size() % frameSize);
-                        if (add > 0) {
-                            int future = m_ringBuffer.size() + add;
-                            if (future > m_ringCapacityBytes) {
-                                int drop = future - m_ringCapacityBytes;
-                                drop -= (drop % frameSize);
-                                if (drop > 0 && drop <= m_ringBuffer.size()) m_ringBuffer.remove(0, drop);
-                            }
-                            m_ringBuffer.append(out.constData(), add);
-                            m_lastAudioWriteMs = QDateTime::currentMSecsSinceEpoch();
-                        }
-                    }
-                }
-            });
-}
-
-void VideoDisplayWidget::scheduleAutoRecovery()
-{
-    if (!m_speakerEnabled) return;
-    qint64 checkpoint = QDateTime::currentMSecsSinceEpoch();
-    QTimer::singleShot(800, this, [this, checkpoint]() {
-        if (!m_speakerEnabled) return;
-        qint64 now = QDateTime::currentMSecsSinceEpoch();
-        if (m_lastAudioWriteMs < checkpoint || (now - m_lastAudioWriteMs) > 800) {
-            setSpeakerEnabled(false);
-            QTimer::singleShot(150, this, [this]() { setSpeakerEnabled(true); });
-        }
-    });
-}
-void VideoDisplayWidget::hardSwitchOnSystemChange()
-{
-    if (!m_speakerEnabled) return;
-    applyAudioOutputSelectionRuntime();
-    setSpeakerEnabled(false);
-    QTimer::singleShot(200, this, [this]() { setSpeakerEnabled(true); });
-}

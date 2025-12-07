@@ -57,6 +57,9 @@ public:
     void sendViewerCursor(int x, int y);
     // 暂停推流但保留连接
     void sendStopStreaming();
+    void sendRequestKeyFrame();
+    // 通知采集端：该观众主动退出
+    void sendViewerExit();
     
     // 断开连接
     void disconnectFromServer();

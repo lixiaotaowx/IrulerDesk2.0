@@ -287,6 +287,8 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     } else if (type == "start_streaming") {
         
         startStreaming();
+    } else if (type == "request_keyframe") {
+        emit requestKeyFrame();
     } else if (type == "stop_streaming") {
         
         stopStreaming();

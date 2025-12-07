@@ -261,11 +261,7 @@ void VideoDisplayWidget::stopReceiving()
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
-    // 强制清理以防止黑屏问题
-    if (m_decoder) {
-        m_decoder->cleanup();
-        m_decoderInitialized = false;
-    }
+    // 避免在停止时清理解码器，减少重开延迟；仅在析构时清理
 
     // 停止并清理音频输出，避免残留状态影响下一次播放
     if (m_audioPlayer) {
@@ -1277,8 +1273,21 @@ void VideoDisplayWidget::recreateReceiver()
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
             m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-            sendAudioToggle(m_micSendEnabled);
+            m_receiver->sendRequestKeyFrame();
+            QTimer::singleShot(500, this, [this]() {
+                if (m_receiver && m_receiver->isConnected() && m_stats.framesReceived == 0 && !m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+                    m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+                    m_receiver->sendRequestKeyFrame();
+                }
+            });
+            QTimer::singleShot(1500, this, [this]() {
+                if (m_receiver && m_receiver->isConnected() && m_stats.framesReceived == 0 && !m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+                    m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+                    m_receiver->sendRequestKeyFrame();
+                }
+            });
         }
+        sendAudioToggle(m_micSendEnabled);
     });
 
     connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
@@ -1330,8 +1339,6 @@ void VideoDisplayWidget::pauseReceiving()
     if (m_audioPlayer) {
         m_audioPlayer->stop();
     }
-
-    // 瓦片显示清理已移除
     // 显示等待图并更新状态
     m_videoLabel->clear();
     showWaitingSplash();

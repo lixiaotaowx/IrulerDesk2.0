@@ -219,14 +219,6 @@ void WebSocketReceiver::disconnectFromServer()
         m_audioTimer->stop();
     }
     m_opusQueue.clear();
-    for (auto it = m_peerDecoders.begin(); it != m_peerDecoders.end(); ++it) {
-        if (it.value()) opus_decoder_destroy(it.value());
-    }
-    m_peerDecoders.clear();
-    m_peerQueues.clear();
-    m_peerSampleRates.clear();
-    m_peerChannels.clear();
-    m_peerFrameSamples.clear();
     if (m_opusDecoder) {
         opus_decoder_destroy(m_opusDecoder);
         m_opusDecoder = nullptr;
@@ -279,6 +271,7 @@ void WebSocketReceiver::onConnected()
     // 重连后自动重发观看请求，确保推流立即恢复（避免互斥锁重入造成死锁）
     if (m_autoResendWatchRequest && !viewerIdCopy.isEmpty() && !targetIdCopy.isEmpty()) {
         sendWatchRequest(viewerIdCopy, targetIdCopy);
+        sendRequestKeyFrame();
     }
 }
 
@@ -291,14 +284,6 @@ void WebSocketReceiver::onDisconnected()
         m_audioTimer->stop();
     }
     m_opusQueue.clear();
-    for (auto it = m_peerDecoders.begin(); it != m_peerDecoders.end(); ++it) {
-        if (it.value()) opus_decoder_destroy(it.value());
-    }
-    m_peerDecoders.clear();
-    m_peerQueues.clear();
-    m_peerSampleRates.clear();
-    m_peerChannels.clear();
-    m_peerFrameSamples.clear();
     if (m_opusDecoder) {
         opus_decoder_destroy(m_opusDecoder);
         m_opusDecoder = nullptr;
@@ -341,68 +326,49 @@ void WebSocketReceiver::onDisconnected()
 
 void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
 {
-    // 立即记录收到二进制消息的事实
-    static int binaryMessageCount = 0;
-    binaryMessageCount++;
-    
-    if (message.isEmpty() || message.size() < 4) {
+    if (message.isEmpty() || message.size() < 8) {
         return;
     }
-    
-    // 读取JSON头部长度（前4字节）
-    quint32 headerLength = 0;
-    memcpy(&headerLength, message.data(), 4);
-    
-    if (headerLength == 0 || headerLength > message.size() - 4) {
-        // 如果没有JSON头部，按照旧格式处理（兼容性）
-        if (message.size() >= 8) {
-            // 解析时间戳（前8字节）
-            qint64 captureTimestamp = 0;
-            memcpy(&captureTimestamp, message.data(), 8);
-            
-            // 提取实际的VP9编码数据（跳过前8字节时间戳）
-            QByteArray frameData = message.mid(8);
-            
-            // 使用帧同步机制，防止跳闪
-            static QMutex frameMutex;
-            QMutexLocker frameLocker(&frameMutex);
-            
-            // 更新统计信息
-            {
-                QMutexLocker locker(&m_mutex);
-                m_stats.totalFrames++;
-                m_stats.totalBytes += frameData.size();
-                m_frameSizes.append(frameData.size());
-                
-                // 保持最近100帧的大小用于计算平均值
-                if (m_frameSizes.size() > 100) {
-                    m_frameSizes.removeFirst();
+
+    QByteArray frameData;
+    qint64 captureTimestamp = 0;
+
+    bool handledByHeader = false;
+    if (message.size() > 4) {
+        quint32 headerLength = 0;
+        memcpy(&headerLength, message.constData(), 4);
+        if (headerLength > 0 && (int)headerLength <= message.size() - 4 && headerLength <= 4096) {
+            QByteArray headerData = message.mid(4, headerLength);
+            QJsonParseError error;
+            QJsonDocument doc = QJsonDocument::fromJson(headerData, &error);
+            if (error.error == QJsonParseError::NoError && doc.isObject()) {
+                QJsonObject header = doc.object();
+                QString messageType = header.value("type").toString();
+                if (messageType == "frame" || messageType == "video_frame") {
+                    frameData = message.mid(4 + headerLength);
+                    captureTimestamp = header.value("timestamp").toVariant().toLongLong();
+                    handledByHeader = true;
                 }
             }
-            
-            // 发射传统帧信号
-            emit frameReceivedWithTimestamp(frameData, captureTimestamp);
         }
-        return;
     }
-    
-    // 解析JSON头部
-    QByteArray headerData = message.mid(4, headerLength);
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(headerData, &error);
-    
-    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
-        return;
+
+    if (!handledByHeader) {
+        memcpy(&captureTimestamp, message.constData(), 8);
+        frameData = message.mid(8);
     }
-    
-    QJsonObject header = doc.object();
-    QString messageType = header["type"].toString();
-    
-    // 提取二进制数据部分
-    QByteArray binaryData = message.mid(4 + headerLength);
-    
-    // 根据消息类型处理
-    // 处理其他类型的消息（如传统帧数据）
+
+    {
+        QMutexLocker locker(&m_mutex);
+        m_stats.totalFrames++;
+        m_stats.totalBytes += frameData.size();
+        m_frameSizes.append(frameData.size());
+        if (m_frameSizes.size() > 100) {
+            m_frameSizes.removeFirst();
+        }
+    }
+
+    emit frameReceivedWithTimestamp(frameData, captureTimestamp > 0 ? captureTimestamp : QDateTime::currentMSecsSinceEpoch());
 }
 
 void WebSocketReceiver::onTextMessageReceived(const QString &message)
@@ -690,6 +656,38 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     // 日志清理：移除开始推流提示
     
     m_webSocket->sendTextMessage(startStreamingJsonString);
+}
+
+void WebSocketReceiver::sendRequestKeyFrame()
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+    QJsonObject message;
+    message["type"] = "request_keyframe";
+    QJsonDocument doc(message);
+    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+}
+
+void WebSocketReceiver::sendViewerExit()
+{
+    QString viewerId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+    }
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+    if (viewerId.isEmpty()) {
+        return;
+    }
+    QJsonObject message;
+    message["type"] = "viewer_exit";
+    message["viewer_id"] = viewerId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    QJsonDocument doc(message);
+    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::setViewerName(const QString &name)

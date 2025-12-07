@@ -107,8 +107,7 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
 void MainWindow::startVideoReceiving(const QString& targetDeviceId)
 {
     if (!m_videoWindow) {
-        // 直接在主窗口的VideoDisplayWidget中开始接收视频流
-        startVideoReceiving(targetDeviceId);
+        return;
     }
     
     VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
@@ -139,7 +138,7 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     videoWidget->setTalkEnabled(micEnabled);
     videoWidget->setMicSendEnabled(micEnabled);
 
-    // 记录viewer/target并在连接后即时重发watch请求
+    
     QString viewerId = getDeviceId();
     videoWidget->sendWatchRequest(viewerId, targetDeviceId);
 }

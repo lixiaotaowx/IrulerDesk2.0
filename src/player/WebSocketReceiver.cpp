@@ -474,6 +474,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             }
             return;
         } else if (type == "streaming_ok") {
+            emit streamingStarted();
             return;
         }
     }

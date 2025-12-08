@@ -147,7 +147,9 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
         // }
         
         // 如果启用跳帧且当前帧为静态，则跳过编码
-        if (m_skipStaticFrames && isStatic && m_staticFrameCount > 3) {
+        // [Fix 7] 除非有强制关键帧请求（m_forceNextKeyFrame），否则跳过静态帧
+        // 这解决了新观众加入时如果画面静止无法收到关键帧导致黑屏的问题
+        if (m_skipStaticFrames && isStatic && m_staticFrameCount > 3 && !m_forceNextKeyFrame) {
             // qDebug() << "[VP9Encoder] 跳过静态帧，连续静态帧数:" << m_staticFrameCount;
             return QByteArray(); // 返回空数据表示跳帧
         }

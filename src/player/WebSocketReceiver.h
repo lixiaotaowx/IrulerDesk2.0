@@ -91,6 +91,7 @@ signals:
     void connectionError(const QString &error);
     void connectionStatusChanged(const QString &status);
     void statsUpdated(const ReceiverStats &stats);
+    void streamingStarted(); // Signal when server confirms streaming is OK
     
     // 新增：音频帧信号（PCM）
     void audioFrameReceived(const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 timestamp);

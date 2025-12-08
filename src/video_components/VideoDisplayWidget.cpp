@@ -210,6 +210,9 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
         stopReceiving();
         // 断开后直接重建接收器，避免旧实例残留状态导致卡死
         recreateReceiver();
+    } else {
+        // [Fix 4] 即使当前未接收（如暂停后恢复），也强制重建接收器，确保无状态残留
+        recreateReceiver();
     }
     
     m_serverUrl = serverUrl;
@@ -1269,20 +1272,28 @@ void VideoDisplayWidget::recreateReceiver()
         emit avatarUpdateReceived(userId, iconId);
     });
 
+    connect(m_receiver.get(), &WebSocketReceiver::streamingStarted, this, [this]() {
+        // [Fix 6] Server confirms streaming ready, request keyframe now.
+        // This ensures the subscription is active before we ask for an I-frame.
+        if (m_receiver && m_receiver->isConnected()) {
+             m_receiver->sendRequestKeyFrame();
+        }
+    });
     
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
             m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-            m_receiver->sendRequestKeyFrame();
+            // m_receiver->sendRequestKeyFrame(); // REMOVED: Avoid race condition
+            
+            // -------------------------------------------------------------------------
+            // [Fix 6] 调整请求时序 (Request Timing Adjustment)
+            // -------------------------------------------------------------------------
+            // 移除立即发送关键帧请求，改为等待 streaming_ok 信号。
+            // 保留一个延迟回退机制，防止服务器未发送 streaming_ok 导致死等。
+            
             QTimer::singleShot(500, this, [this]() {
                 if (m_receiver && m_receiver->isConnected() && m_stats.framesReceived == 0 && !m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
-                    m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-                    m_receiver->sendRequestKeyFrame();
-                }
-            });
-            QTimer::singleShot(1500, this, [this]() {
-                if (m_receiver && m_receiver->isConnected() && m_stats.framesReceived == 0 && !m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
-                    m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+                    // Fallback request
                     m_receiver->sendRequestKeyFrame();
                 }
             });

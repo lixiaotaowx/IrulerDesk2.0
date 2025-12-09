@@ -10,7 +10,7 @@
 #include <QtMultimedia/QMediaDevices>
 #include <QUrl>
 #include <QByteArray>
-#include <QMutex>
+#include <QRecursiveMutex>
 #include <QPoint>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -135,7 +135,7 @@ private:
     qint64 m_lastStatsUpdateTime;         // 上次统计更新时间
     qint64 m_totalDowntimeStart;          // 断线开始时间
     
-    QMutex m_mutex;
+    QRecursiveMutex m_mutex;
 
     // 最近一次观看请求信息，用于重连后自动重发
     QString m_lastViewerId;

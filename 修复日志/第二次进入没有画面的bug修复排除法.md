@@ -32,8 +32,21 @@
 **结果**：无效。用户反馈没有任何作用。
 **结论**：时序调整并未解决问题。这进一步证实问题出在服务端。
 
-## 7. 修正静态帧跳过逻辑 (Fix Static Frame Skip Logic) - 进行中
+## 7. 修正静态帧跳过逻辑 (Fix Static Frame Skip Logic) - 已实施
 **分析**：深入分析服务端代码 `VP9Encoder.cpp` 发现，为了节省流量，编码器启用了“静态帧跳过”功能（Static Frame Skipping）。当画面静止时，`encode` 函数会直接返回空数据，根本不进行编码。
 虽然 `WebSocketSender` 收到了 `request_keyframe` 并调用了 `encoder->forceKeyFrame()` 设置了 `m_forceNextKeyFrame = true`，但在 `encode` 函数中，**静态检测的判断先于强制关键帧的判断**。
 导致的结果是：如果新观众进入时，屏幕内容正好是静止的（这很常见），编码器会判定为“静态”，直接丢弃该帧，从而忽略了“强制关键帧”的请求。直到屏幕发生变化（变为动态），编码器才会继续工作，此时 `m_forceNextKeyFrame` 依然有效，关键帧才会被发送。这就解释了为什么“有时候秒开（刚好屏幕在动），有时候黑屏很久（屏幕静止直到用户操作）”。
-**计划操作**：修改 `VP9Encoder.cpp`，在判断是否跳过静态帧时，增加 `&& !m_forceNextKeyFrame` 条件。确保当有强制关键帧请求时，即使画面静止，也必须进行编码并发送。
+**实施操作**：修改 `VP9Encoder.cpp`，在判断是否跳过静态帧时，增加 `&& !m_forceNextKeyFrame` 条件。确保当有强制关键帧请求时，即使画面静止，也必须进行编码并发送。
+
+## 8. 解决子进程残留 (Fix Zombie Processes) - 已实施
+**问题**：程序崩溃或非正常退出时，子进程（CaptureProcess/PlayerProcess）未被清理，导致“幽灵用户”在线。
+**实施操作**：在 `MainWindow.cpp` 中引入 Windows Job Objects 机制。创建一个作业对象，将主进程及所有启动的子进程关联到该作业，并设置 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 标志。这样，当主进程（作业句柄持有者）关闭或崩溃时，操作系统会自动终止作业内的所有子进程。
+
+## 9. 修复关闭窗口冻结与缺失DLL (Fix Window Freeze & Missing DLL) - 已实施
+**问题**：在部分电脑上关闭窗口时程序冻结；怀疑缺失DLL。
+**分析**：
+1. **死锁风险**：`VideoDisplayWidget` 在析构或 `closeEvent` 中清理资源时，可能因为缺乏互斥保护或不当的清理顺序导致死锁（尤其是与 `WebSocketReceiver` 和 `DxvaVP9Decoder` 交互时）。
+2. **DLL缺失**：Qt 6 RHI (Rendering Hardware Interface) 在 Windows 上默认可能尝试使用 Direct3D。如果系统中缺少 `d3dcompiler_47.dll`（常见于 Win7 或精简版 Win10），初始化或清理 D3D 上下文时可能卡死或崩溃。
+**实施操作**：
+1. **互斥保护**：在 `VideoDisplayWidget::closeEvent` 和析构函数中增加 `QMutexLocker`，并优化 `stopReceiving` 逻辑，避免在析构期间尝试重建接收器。
+2. **DLL部署**：修改 `CMakeLists.txt`，添加手动复制 `d3dcompiler_47.dll` 到构建目录的命令，确保部署完整。

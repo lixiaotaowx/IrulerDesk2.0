@@ -137,7 +137,10 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
 
 VideoDisplayWidget::~VideoDisplayWidget()
 {
-    stopReceiving();
+    {
+        QMutexLocker locker(&m_mutex);
+        stopReceiving(false);
+    }
     if (m_audioPlayer) {
         m_audioPlayer->stop();
     }
@@ -255,9 +258,14 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     }
 }
 
-void VideoDisplayWidget::stopReceiving()
+void VideoDisplayWidget::stopReceiving(bool recreate)
 {
     if (!m_isReceiving) {
+        if (!recreate && m_receiver) {
+            // Force cleanup if destroying
+            m_receiver->disconnectFromServer();
+            m_receiver.reset();
+        }
         return;
     }
     
@@ -296,7 +304,12 @@ void VideoDisplayWidget::stopReceiving()
     if (m_promptDialog) {
         m_promptDialog->hide();
     }
-    recreateReceiver();
+    
+    if (recreate) {
+        recreateReceiver();
+    } else {
+        m_receiver.reset();
+    }
 }
 
 void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString &targetId)
@@ -1075,8 +1088,12 @@ QImage VideoDisplayWidget::captureToImage() const
 
 void VideoDisplayWidget::closeEvent(QCloseEvent *event)
 {
-    // 关闭窗口时，主动停止接收并断开连接（会发送 stop_streaming）
-    stopReceiving();
+    {
+        QMutexLocker locker(&m_mutex);
+        // 关闭窗口时，主动停止接收并断开连接（会发送 stop_streaming）
+        // 传递 false 防止重建接收器，避免析构时重复销毁
+        stopReceiving(false);
+    }
     QWidget::closeEvent(event);
 }
 

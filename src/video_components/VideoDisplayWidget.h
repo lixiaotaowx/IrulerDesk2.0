@@ -50,7 +50,7 @@ public:
     
     // 控制接口
     void startReceiving(const QString &serverUrl = "");
-    void stopReceiving();
+    void stopReceiving(bool recreate = true);
     void pauseReceiving();
     bool isReceiving() const { return m_isReceiving; }
     
@@ -242,6 +242,8 @@ private:
     int m_currentColorId = 0;
     int m_textFontSize = 16;
     QPoint m_lastTextSrcPoint;
+    
+    QMutex m_mutex; // Protect cleanup
 };
 
 #endif // VIDEODISPLAYWIDGET_H

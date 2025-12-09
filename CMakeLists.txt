@@ -258,6 +258,18 @@ if(WIN32)
     )
 
     if(WINDEPLOYQT_EXECUTABLE)
+        get_filename_component(QT_BIN_DIR "${WINDEPLOYQT_EXECUTABLE}" DIRECTORY)
+        if(EXISTS "${QT_BIN_DIR}/d3dcompiler_47.dll")
+            foreach(tgt IN ITEMS ScreenStreamApp CaptureProcess PlayerProcess)
+                add_custom_command(TARGET ${tgt} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${QT_BIN_DIR}/d3dcompiler_47.dll"
+                        "$<TARGET_FILE_DIR:${tgt}>/"
+                    COMMENT "Manually copying d3dcompiler_47.dll to ensure RHI works"
+                )
+            endforeach()
+        endif()
+
         add_custom_command(TARGET ScreenStreamApp POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for ScreenStreamApp..."
             COMMAND ${WINDEPLOYQT_EXECUTABLE}

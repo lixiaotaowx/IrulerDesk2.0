@@ -514,22 +514,22 @@ int main(int argc, char *argv[])
             staticEncoder->setBitrate(200000);
             staticEncoder->setEnableStaticDetection(true);
             staticEncoder->setStaticBitrateReduction(0.05);
-            staticEncoder->setStaticThreshold(0.005);
+            staticEncoder->setStaticThreshold(0.0001); // 降低阈值以检测微小变化
         } else if (q == "medium") {
             staticEncoder->setBitrate(400000);
             staticEncoder->setEnableStaticDetection(true);
             staticEncoder->setStaticBitrateReduction(0.10);
-            staticEncoder->setStaticThreshold(0.005);
+            staticEncoder->setStaticThreshold(0.0001); // 降低阈值以检测微小变化
         } else if (q == "high") {
             staticEncoder->setBitrate(500000);
             staticEncoder->setEnableStaticDetection(true);
             staticEncoder->setStaticBitrateReduction(0.15);
-            staticEncoder->setStaticThreshold(0.005);
+            staticEncoder->setStaticThreshold(0.0001); // 降低阈值以检测微小变化
         } else if (q == "extreme") {
             staticEncoder->setBitrate(3000000);
             staticEncoder->setEnableStaticDetection(true);
             staticEncoder->setStaticBitrateReduction(0.20);
-            staticEncoder->setStaticThreshold(0.005);
+            staticEncoder->setStaticThreshold(0.0001); // 降低阈值以检测微小变化
         }
 
         // 强制关键帧以快速稳定画面

@@ -538,33 +538,51 @@ void VP9Encoder::setQualityPreset(const QString &q)
 double VP9Encoder::calculateFrameDifference(const QByteArray &currentFrame, const QByteArray &previousFrame)
 {
     if (currentFrame.size() != previousFrame.size() || currentFrame.isEmpty()) {
-        return 1.0; // 完全不同
+        return 1.0;
     }
+
+    const int size = currentFrame.size();
+    const uint8_t *curr = reinterpret_cast<const uint8_t*>(currentFrame.constData());
+    const uint8_t *prev = reinterpret_cast<const uint8_t*>(previousFrame.constData());
+
+    // 1. 极速路径：完全内存比较 (O(N/SIMD))
+    // 对于数字信号的屏幕捕获，大多数时候画面是完全静止的。
+    // memcmp 高度优化（使用 AVX/SSE），比任何手动循环都快。
+    if (memcmp(curr, prev, size) == 0) {
+        return 0.0;
+    }
+
+    // 2. 快速扫描与提前退出算法 (O(N/8))
+    // 如果 memcmp 发现差异，我们需要知道差异的幅度。
+    // 使用 uint64_t 步进（一次比较 2 个像素/8字节），大幅减少循环次数。
     
-    const int frameSize = currentFrame.size();
-    const uint8_t *current = reinterpret_cast<const uint8_t*>(currentFrame.constData());
-    const uint8_t *previous = reinterpret_cast<const uint8_t*>(previousFrame.constData());
+    const int stride = sizeof(uint64_t);
+    const int steps = size / stride;
+    const uint64_t *curr64 = reinterpret_cast<const uint64_t*>(curr);
+    const uint64_t *prev64 = reinterpret_cast<const uint64_t*>(prev);
     
-    // 采样检测以提高性能 - 每16个像素检测一个
-    const int sampleStep = 16 * 4; // RGBA格式，每个像素4字节，每16个像素采样
-    int totalSamples = 0;
-    int differentSamples = 0;
+    int differentBlocks = 0;
     
-    for (int i = 0; i < frameSize; i += sampleStep) {
-        totalSamples++;
-        
-        // 计算RGB差异（忽略Alpha通道）
-        int rDiff = abs(current[i] - previous[i]);
-        int gDiff = abs(current[i + 1] - previous[i + 1]);
-        int bDiff = abs(current[i + 2] - previous[i + 2]);
-        
-        // 如果任何颜色通道差异超过阈值，认为像素发生变化
-        if (rDiff > 8 || gDiff > 8 || bDiff > 8) {
-            differentSamples++;
+    // 计算提前退出阈值：一旦差异超过此限制，立即判定为动态。
+    // 这避免了在明显动态的画面上浪费时间遍历整个缓冲区。
+    // m_staticThreshold 是比例 (如 0.0001)，steps 是总块数。
+    int diffLimit = static_cast<int>(steps * m_staticThreshold);
+    if (diffLimit < 1) diffLimit = 1; // 保持极高敏感度
+
+    for (int i = 0; i < steps; ++i) {
+        // 严格比较：任何位变化都被视为差异（符合“捕捉微小变化”的需求）
+        if (curr64[i] != prev64[i]) {
+            differentBlocks++;
+            
+            // 提前退出策略
+            if (differentBlocks > diffLimit) {
+                return 1.0; // 确认为动态，返回 > threshold 的值
+            }
         }
     }
     
-    return totalSamples > 0 ? (double)differentSamples / totalSamples : 0.0;
+    // 如果循环结束且未超过阈值，返回实际差异比例
+    return (double)differentBlocks / steps;
 }
 
 bool VP9Encoder::isFrameStatic(const QByteArray &frameData)

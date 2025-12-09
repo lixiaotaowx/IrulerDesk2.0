@@ -20,6 +20,30 @@
 #include <cstdlib>
 #include <ctime>
 
+#ifdef _WIN32
+#include <windows.h>
+namespace {
+    static HANDLE g_hJob = NULL;
+    void AddProcessToJob(qint64 pid) {
+        if (g_hJob == NULL) {
+            g_hJob = CreateJobObject(NULL, NULL);
+            if (g_hJob) {
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = { 0 };
+                jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                SetInformationJobObject(g_hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+            }
+        }
+        if (g_hJob && pid) {
+            HANDLE hProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, (DWORD)pid);
+            if (hProcess) {
+                AssignProcessToJobObject(g_hJob, hProcess);
+                CloseHandle(hProcess);
+            }
+        }
+    }
+}
+#endif
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_centralWidget(nullptr)
@@ -162,7 +186,15 @@ void MainWindow::startPlayerProcess(const QString& targetDeviceId)
     QStringList arguments;
     arguments << targetDeviceId;  // 传递目标设备ID作为参数
     
-    
+#ifdef _WIN32
+    // Windows下将播放进程加入Job Object，确保主进程崩溃时播放进程自动退出
+    connect(m_playerProcess, &QProcess::started, this, [this]() {
+        if (m_playerProcess) {
+             AddProcessToJob(m_playerProcess->processId());
+        }
+    });
+#endif
+
     m_playerProcess->start(playerPath, arguments);
     
     if (!m_playerProcess->waitForStarted(5000)) {
@@ -525,6 +557,15 @@ void MainWindow::startProcesses()
         QMessageBox::warning(this, "错误", "捕获进程文件不存在: " + captureExe);
         return;
     }
+
+#ifdef _WIN32
+    // Windows下将子进程加入Job Object，确保主进程崩溃时子进程自动退出
+    connect(m_captureProcess, &QProcess::started, this, [this]() {
+        if (m_captureProcess) {
+             AddProcessToJob(m_captureProcess->processId());
+        }
+    });
+#endif
     
     m_captureProcess->start(captureExe);
     

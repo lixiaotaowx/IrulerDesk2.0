@@ -23,9 +23,11 @@ VP9Encoder::VP9Encoder(QObject *parent)
     // 静态检测参数初始化 - 更激进的流量节省
     , m_enableStaticDetection(true)      // 启用静态检测
     , m_staticThreshold(0.01)            // 降低到1%变化阈值，更敏感
+    , m_lowMotionThreshold(0.05)         // 低动态阈值初始化为5%
     , m_staticBitrateReduction(0.15)     // 静态内容码率减少85%，更激进
     , m_skipStaticFrames(false)          // 不跳帧，只降码率
     , m_lastFrameWasStatic(false)
+    , m_lastFrameDifference(0.0)
     , m_staticFrameCount(0)
     , m_originalBitrate(300000)
 {
@@ -239,10 +241,14 @@ bool VP9Encoder::initializeEncoder()
     m_config.g_error_resilient = 1; // 启用错误恢复
     m_config.g_pass = VPX_RC_ONE_PASS; // 单遍编码
     m_config.g_lag_in_frames = 0; // 零延迟
-    m_config.rc_end_usage = VPX_CBR;
+    // [Fix 12] 切换到 VBR (Variable Bit Rate) 模式
+    // 原因：CBR 模式会为了维持码率而填充无用数据，导致微小变化也产生大数据包。
+    // VBR 模式允许编码器根据画面复杂度动态调整码率，实现“画面变动小，数据就小”。
+    m_config.rc_end_usage = VPX_VBR; 
     m_config.rc_min_quantizer = m_minQuantizer;
     m_config.rc_max_quantizer = m_maxQuantizer;
-    m_config.rc_undershoot_pct = m_undershootPct;
+    // VBR模式下，undershoot/overshoot 并不强制限制，而是作为指导
+    m_config.rc_undershoot_pct = m_undershootPct; 
     m_config.rc_overshoot_pct = m_overshootPct;
     m_config.rc_buf_initial_sz = m_bufInitial;
     m_config.rc_buf_optimal_sz = m_bufOptimal;
@@ -564,10 +570,14 @@ double VP9Encoder::calculateFrameDifference(const QByteArray &currentFrame, cons
     int differentBlocks = 0;
     
     // 计算提前退出阈值：一旦差异超过此限制，立即判定为动态。
-    // 这避免了在明显动态的画面上浪费时间遍历整个缓冲区。
-    // m_staticThreshold 是比例 (如 0.0001)，steps 是总块数。
-    int diffLimit = static_cast<int>(steps * m_staticThreshold);
-    if (diffLimit < 1) diffLimit = 1; // 保持极高敏感度
+    // 使用 max(static, lowMotion) 确保我们能捕捉到“低动态”范围的准确差异值
+    // 而不是一超过 static 阈值就直接返回 1.0
+    double exitThreshold = std::max(m_staticThreshold, m_lowMotionThreshold);
+    // 增加一点缓冲，防止边界抖动
+    exitThreshold = std::min(exitThreshold * 1.5, 1.0);
+
+    int diffLimit = static_cast<int>(steps * exitThreshold);
+    if (diffLimit < 1) diffLimit = 1; 
 
     for (int i = 0; i < steps; ++i) {
         // 严格比较：任何位变化都被视为差异（符合“捕捉微小变化”的需求）
@@ -576,7 +586,7 @@ double VP9Encoder::calculateFrameDifference(const QByteArray &currentFrame, cons
             
             // 提前退出策略
             if (differentBlocks > diffLimit) {
-                return 1.0; // 确认为动态，返回 > threshold 的值
+                return 1.0; // 确认为高动态，返回 1.0
             }
         }
     }
@@ -594,8 +604,8 @@ bool VP9Encoder::isFrameStatic(const QByteArray &frameData)
         return false;
     }
     
-    double difference = calculateFrameDifference(frameData, m_previousFrameData);
-    bool isStatic = difference < m_staticThreshold;
+    m_lastFrameDifference = calculateFrameDifference(frameData, m_previousFrameData);
+    bool isStatic = m_lastFrameDifference < m_staticThreshold;
     
     if (isStatic) {
         if (m_lastFrameWasStatic) {
@@ -632,6 +642,13 @@ void VP9Encoder::adjustBitrateForStaticContent(bool isStatic)
     if (isStatic && m_staticFrameCount > 3) { // 降低触发阈值，更快响应
         // 静态内容使用更低的码率 - 85%减少
         targetBitrate = static_cast<int>(m_originalBitrate * m_staticBitrateReduction);
+        
+    } else if (m_lastFrameDifference < m_lowMotionThreshold) {
+        // 低动态内容（如光标闪烁、时钟跳动）：使用5%的码率 (更激进的降低)
+        // 0.7Mbps对于微小变动确实太高了，通常100-200kbps足以清晰传输光标
+        targetBitrate = static_cast<int>(m_originalBitrate * 0.05); 
+        // 确保至少有50kbps，避免画面糊成马赛克
+        if (targetBitrate < 50000) targetBitrate = 50000;
         
     } else {
         // 动态内容使用原始码率

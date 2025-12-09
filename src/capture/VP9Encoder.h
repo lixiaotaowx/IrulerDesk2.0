@@ -77,9 +77,11 @@ private:
     // 静态检测参数
     bool m_enableStaticDetection;
     double m_staticThreshold;           // 静态检测阈值 (0.0-1.0)
+    double m_lowMotionThreshold;        // 低动态阈值 (0.0-1.0)
     double m_staticBitrateReduction;    // 静态内容码率减少比例 (0.0-1.0)
     bool m_skipStaticFrames;            // 是否跳过静态帧
     QByteArray m_previousFrameData;     // 上一帧数据用于比较
+    double m_lastFrameDifference;       // 上一帧差异比例
     bool m_lastFrameWasStatic;          // 上一帧是否为静态
     int m_staticFrameCount;             // 连续静态帧计数
     int m_originalBitrate;              // 原始码率备份

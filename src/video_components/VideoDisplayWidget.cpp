@@ -96,14 +96,23 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 连接鼠标位置信号
     connect(m_receiver.get(), &WebSocketReceiver::mousePositionReceived,
             this, &VideoDisplayWidget::onMousePositionReceived);
+            
+    // 收到推流成功信号后，自动开启麦克风 (实现双工通话)
+    connect(m_receiver.get(), &WebSocketReceiver::streamingStarted, this, [this]() {
+        qDebug() << "[VideoDisplayWidget] Streaming started (Full Duplex), enabling microphone...";
+        // 延迟一点开启，避免瞬间负载
+        QTimer::singleShot(500, this, [this](){
+             setTalkEnabled(true);
+        });
+    });
+
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
             // WebSocketReceiver已内置自动重发机制(m_autoResendWatchRequest)，
             // 此处移除重复发送，防止双重请求导致目标端推流服务冻结
             // m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-            
-            sendAudioToggle(m_micSendEnabled);
         }
+        sendAudioToggle(m_micSendEnabled);
     });
     
 

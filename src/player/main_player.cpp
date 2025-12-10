@@ -90,12 +90,16 @@ int main(int argc, char *argv[])
             }
         });
         
-        // 连接到WebSocket服务器
-        receiver.connectToServer(serverUrl);
+        // 连接到WebSocket服务器 - 使用订阅URL
+        QString subscribeUrl = QString("%1/subscribe/%2").arg(serverUrl).arg(targetDeviceId);
+        // 如果serverUrl不包含ws://，添加它 (这里假设serverUrl是完整的ws://...，如果不是需要处理)
+        // 现有的serverUrl处理逻辑比较简单，这里假设serverUrl是 "ws://ip:port"
         
-        // 发送观看请求
-        QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
-        receiver.sendWatchRequest(viewerId, targetDeviceId);
+        receiver.connectToServer(subscribeUrl);
+        
+        // 移除观看请求发送，因为连接本身就是订阅请求
+        // QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
+        // receiver.sendWatchRequest(viewerId, targetDeviceId);
         
         
         
@@ -110,16 +114,17 @@ int main(int argc, char *argv[])
         videoWidget->resize(800, 600);
         videoWidget->show();
         
-        // 自动开始接收
-        videoWidget->startReceiving(serverUrl);
+        // 自动开始接收 - 使用订阅URL
+        QString subscribeUrl = QString("%1/subscribe/%2").arg(serverUrl).arg(targetDeviceId);
+        videoWidget->startReceiving(subscribeUrl);
         
-        // 发送观看请求（独立窗口模式也需要）
-        QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
+        // 移除观看请求发送
+        // QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
         // 延迟发送观看请求，确保连接已建立
-        QTimer::singleShot(2000, [videoWidget, viewerId, targetDeviceId]() {
-            videoWidget->sendWatchRequest(viewerId, targetDeviceId);
-            
-        });
+        // QTimer::singleShot(2000, [videoWidget, viewerId, targetDeviceId]() {
+        //     videoWidget->sendWatchRequest(viewerId, targetDeviceId);
+        //     
+        // });
         
         
         

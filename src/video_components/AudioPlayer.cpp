@@ -5,38 +5,8 @@
 #include <cmath>
 #include <cstring>
 
-class RingAudioIODevice : public QIODevice {
-public:
-    explicit RingAudioIODevice(AudioPlayer *owner) : QIODevice(owner), m_owner(owner) {}
-    bool isSequential() const override { return true; }
-protected:
-    qint64 readData(char *data, qint64 maxSize) override {
-        if (!m_owner) return 0;
-        QMutexLocker locker(&m_owner->m_ringMutex);
-        int ch = m_owner->m_sinkChannels > 0 ? m_owner->m_sinkChannels : 2;
-        int bps = m_owner->m_bytesPerSample > 0 ? m_owner->m_bytesPerSample : 2;
-        int frameSize = ch * bps;
-        qint64 bytesToProvide = maxSize - (maxSize % frameSize);
-        if (bytesToProvide <= 0) return 0;
-        qint64 available = m_owner->m_ringBuffer.size();
-        qint64 provide = qMin(bytesToProvide, available - (available % frameSize));
-        qint64 pos = 0;
-        if (provide > 0) {
-            memcpy(data, m_owner->m_ringBuffer.constData(), size_t(provide));
-            m_owner->m_ringBuffer.remove(0, int(provide));
-            pos += provide;
-        }
-        qint64 remain = bytesToProvide - pos;
-        if (remain > 0) {
-            memset(data + pos, 0, size_t(remain));
-            pos += remain;
-        }
-        return pos;
-    }
-    qint64 writeData(const char *, qint64) override { return -1; }
-private:
-    AudioPlayer *m_owner;
-};
+// RingAudioIODevice removed - switching to Push mode
+// AudioPlayer manages writing to the sink's IO device directly
 
 AudioPlayer::AudioPlayer(QObject *parent) : QObject(parent)
 {
@@ -68,14 +38,19 @@ void AudioPlayer::stop()
         delete m_audioSink;
         m_audioSink = nullptr;
     }
-    if (m_audioIO) {
-        delete m_audioIO;
-        m_audioIO = nullptr;
-    }
+    // In Push mode, m_audioIO is managed by m_audioSink (created by start())
+    // but checking docs: start() returns a pointer to internal QIODevice.
+    // We do NOT delete it manually usually, QAudioSink manages it?
+    // Actually, start() returns a pointer to a QIODevice that the sink uses.
+    // We should not delete it if we don't own it.
+    // But wait, QAudioSink::start() returns a QIODevice* that we write to.
+    // The sink owns it. We just set m_audioIO to nullptr.
+    m_audioIO = nullptr;
+    
     m_audioInitialized = false;
     
-    QMutexLocker locker(&m_ringMutex);
-    m_ringBuffer.clear();
+    // QMutexLocker locker(&m_ringMutex); // No longer needed
+    // m_ringBuffer.clear();
 }
 
 void AudioPlayer::setSpeakerEnabled(bool enabled)
@@ -147,6 +122,12 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
 {
     if (pcmData.isEmpty()) return;
 
+    static int procCount = 0;
+    procCount++;
+    if (procCount % 100 == 0) {
+        qDebug() << "[Player] Process Audio Data #" << procCount << " Size:" << pcmData.size() << " SR:" << sampleRate;
+    }
+
     // 更新最后一次帧参数
     m_lastFrameSampleRate = sampleRate;
     m_lastFrameChannels = channels;
@@ -156,9 +137,15 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
 
     initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
 
-    if (!m_audioSink || m_audioSink->state() == QAudio::StoppedState) {
-        // 如果Sink异常停止，尝试重启
-        // 注意：这里可能需要防抖动
+    if (m_audioSink) {
+        // 如果Sink处于停止状态，尝试重启
+        if (m_audioSink->state() == QAudio::StoppedState) {
+             qDebug() << "[Player] AudioSink stopped unexpectedly. State:" << m_audioSink->state() 
+                      << " Error:" << m_audioSink->error() << " -> Restarting...";
+             // Push mode restart
+             m_audioIO = m_audioSink->start();
+        }
+        // 如果是挂起状态（Idle），通常是因为数据不足，不需要干预
     }
 
     QByteArray finalData;
@@ -169,12 +156,19 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
     }
 
     if (!finalData.isEmpty()) {
-        QMutexLocker locker(&m_ringMutex);
-        // 限制缓冲区大小，防止延迟过大
-        if (m_ringBuffer.size() > 48000 * 4 * 2) { // 约2秒
-             m_ringBuffer.remove(0, finalData.size());
+        if (m_audioSink && m_audioIO) {
+            // Push mode: Write directly to the IO device
+            qint64 written = m_audioIO->write(finalData);
+            if (written < finalData.size()) {
+                static int fullCount = 0;
+                if (++fullCount % 20 == 0) {
+                     qDebug() << "[Player] Buffer full/Sink slow. Written:" << written 
+                              << " Total:" << finalData.size()
+                              << " SinkState:" << m_audioSink->state()
+                              << " Error:" << m_audioSink->error();
+                }
+            }
         }
-        m_ringBuffer.append(finalData);
     }
 }
 
@@ -246,6 +240,10 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
         default: m_bytesPerSample = 2; break;
     }
     
+    qDebug() << "[Player] Initializing AudioSink. Device:" << device.description() 
+             << " Format:" << m_audioFormat 
+             << " Preferred:" << preferred;
+
     // 判断是否需要重采样
     if (sampleRate != m_sinkSampleRate || channels != m_sinkChannels || bitsPerSample != 16) {
         m_needResample = true;
@@ -258,10 +256,9 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
     m_audioSink->setBufferSize(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample / 5); // 200ms buffer
     m_audioSink->setVolume(qreal(m_volumePercent) / 100.0);
 
-    m_audioIO = new RingAudioIODevice(this);
-    m_audioIO->open(QIODevice::ReadOnly);
+    // Push Mode: start() returns the QIODevice we write to
+    m_audioIO = m_audioSink->start();
     
-    m_audioSink->start(m_audioIO);
     m_audioInitialized = true;
 }
 
@@ -347,11 +344,12 @@ void AudioPlayer::softRestartSpeakerIfEnabled()
     if (!m_speakerEnabled) {
         if (m_audioSink) {
             m_audioSink->stop();
-            // 不要delete，复用资源
+            // In Push mode, start() device is invalid after stop
+            m_audioIO = nullptr; 
         }
     } else {
         if (m_audioInitialized && m_audioSink && m_audioSink->state() != QAudio::ActiveState) {
-            m_audioSink->start(m_audioIO);
+            m_audioIO = m_audioSink->start();
         } else if (!m_audioInitialized) {
             // 将在下一次数据到来时初始化
         }

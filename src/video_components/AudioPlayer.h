@@ -11,13 +11,10 @@
 #include <QByteArray>
 #include <memory>
 
-class RingAudioIODevice;
-
 class AudioPlayer : public QObject
 {
     Q_OBJECT
-    friend class RingAudioIODevice;
-
+    
 public:
     explicit AudioPlayer(QObject *parent = nullptr);
     ~AudioPlayer();

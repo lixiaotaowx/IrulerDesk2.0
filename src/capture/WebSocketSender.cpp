@@ -71,7 +71,7 @@ bool WebSocketSender::connectToServer(const QString &url)
     }
     
     m_serverUrl = url;
-    
+    qDebug() << "[Sender] Connecting to URL:" << url;
     
     m_webSocket->open(QUrl(url));
     return true;
@@ -101,15 +101,21 @@ void WebSocketSender::sendFrame(const QByteArray &frameData)
             
             emit frameSent(frameData.size());
             
-            // 移除频繁的帧发送统计输出以提升性能
-            // if (m_totalFramesSent % 100 == 0) {
-            //     qDebug() << "[WebSocketSender] 已发送" << m_totalFramesSent << "帧，总字节数:" << m_totalBytesSent;
-            // }
+            // 恢复帧发送日志以调试生产者是否有数据发出
+            if (m_totalFramesSent % 50 == 0) {
+                qDebug() << "[WebSocketSender] Sent frames:" << m_totalFramesSent << "Total bytes:" << m_totalBytesSent;
+            }
         } else {
-            // qDebug() << "[WebSocketSender] 发送帧数据失败"; // 已禁用以提升性能
+            qDebug() << "[WebSocketSender] Send frame failed. Connected:" << m_connected << "Streaming:" << m_isStreaming;
         }
     } else {
-        // qDebug() << "[WebSocketSender] WebSocket未连接，无法发送帧数据"; // 已禁用以提升性能
+         // 增加详细的未发送原因日志 (仅当尝试发送但条件不满足时)
+         static int skipLogCount = 0;
+         if (++skipLogCount % 100 == 0) {
+             qDebug() << "[WebSocketSender] Cannot send frame. Connected:" << m_connected 
+                      << "WebSocket:" << (m_webSocket != nullptr) 
+                      << "Streaming:" << m_isStreaming;
+         }
     }
 }
 
@@ -126,24 +132,50 @@ void WebSocketSender::sendTextMessage(const QString &message)
             if (textMessageCount % 100 == 0) {
                 // qDebug() << "[WebSocketSender] 已发送" << textMessageCount << "条文本消息"; // 已禁用以提升性能
             }
+
+            // 调试：验证音频消息是否发送
+            if (message.contains("audio_opus")) {
+                 static int audioMsgCount = 0;
+                 if (++audioMsgCount % 50 == 0) {
+                     qDebug() << "[WebSocketSender] Sent audio_opus message #" << audioMsgCount << " Size:" << message.size();
+                 }
+            }
         } else {
-            // qDebug() << "[WebSocketSender] 发送文本消息失败:" << message.left(50); // 已禁用以提升性能
+            // 仅对非高频消息启用错误日志
+            if (!message.contains("mouse_position")) {
+                 qDebug() << "[WebSocketSender] 发送文本消息失败:" << message.left(50);
+            }
         }
     } else {
-        // qDebug() << "[WebSocketSender] WebSocket未连接，无法发送文本消息"; // 已禁用以提升性能
+        static int connErrCount = 0;
+        if (++connErrCount % 100 == 0) {
+             qDebug() << "[WebSocketSender] WebSocket未连接，无法发送文本消息 (Count:" << connErrCount << ")";
+        }
     }
 }
 
 void WebSocketSender::onConnected()
 {
-    QMutexLocker locker(&m_mutex);
-    
-    m_connected = true;
-    m_reconnectAttempts = 0;
-    stopReconnectTimer();
-    
+    bool isPublisher = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        
+        m_connected = true;
+        m_reconnectAttempts = 0;
+        stopReconnectTimer();
+        
+        isPublisher = m_serverUrl.contains("/publish/");
+    }
     
     emit connected();
+
+    // 强制自动开始推流，不等待服务器的 start_streaming 消息
+    // 这可以解决服务器版本不一致或消息丢失导致的推流不启动问题
+    if (isPublisher) {
+        qDebug() << "[Sender] Publisher connected, auto-starting streaming (bypassing server trigger)";
+        startStreaming();
+        emit requestKeyFrame();
+    }
 }
 
 void WebSocketSender::onDisconnected()
@@ -284,9 +316,11 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         QJsonDocument responseDoc(response);
         sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
         
-    } else if (type == "start_streaming") {
-        
+    } else if (type == "start_streaming" || type == "start_streaming_request") {
+        qDebug() << "[Sender] Received start_streaming request. Type:" << type;
         startStreaming();
+        // 收到推流请求时，强制生成关键帧以确保观看端能立即看到画面
+        emit requestKeyFrame();
     } else if (type == "request_keyframe") {
         emit requestKeyFrame();
     } else if (type == "stop_streaming") {

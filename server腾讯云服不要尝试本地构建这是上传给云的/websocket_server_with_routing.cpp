@@ -168,9 +168,27 @@ private slots:
         if (action == "publish") {
             room->setPublisher(socket);
             m_clientRoles[socket] = QPair<QString, QString>(roomId, "publisher");
+            
+            // 自动触发推流：如果有订阅者加入且推流端在线，发送start_streaming
+            if (!room->subscribers.isEmpty()) {
+                QJsonObject startStreamingMsg;
+                startStreamingMsg["type"] = "start_streaming";
+                QJsonDocument startDoc(startStreamingMsg);
+                socket->sendTextMessage(startDoc.toJson(QJsonDocument::Compact));
+                qDebug() << "推流端加入，已有订阅者，自动触发推流" << roomId;
+            }
         } else { // subscribe
             room->addSubscriber(socket);
             m_clientRoles[socket] = QPair<QString, QString>(roomId, "subscriber");
+            
+            // 自动触发推流：如果有订阅者加入且推流端在线，发送start_streaming
+            if (room->publisher && room->publisher->state() == QAbstractSocket::ConnectedState) {
+                QJsonObject startStreamingMsg;
+                startStreamingMsg["type"] = "start_streaming";
+                QJsonDocument startDoc(startStreamingMsg);
+                room->publisher->sendTextMessage(startDoc.toJson(QJsonDocument::Compact));
+                qDebug() << "订阅者加入，自动触发推流端" << roomId;
+            }
         }
         
         // 连接信号槽
@@ -380,12 +398,12 @@ private slots:
                 }
             }
             
-            // 其他登录系统消息广播给所有登录客户端
-            for (QWebSocket *client : m_loginClients) {
-                if (client != sender && client->state() == QAbstractSocket::ConnectedState) {
-                    client->sendTextMessage(message);
-                }
-            }
+            // 其他登录系统消息广播给所有登录客户端 - 已禁用以防止全员广播干扰
+            // for (QWebSocket *client : m_loginClients) {
+            //     if (client != sender && client->state() == QAbstractSocket::ConnectedState) {
+            //         client->sendTextMessage(message);
+            //     }
+            // }
             return;
         }
         
@@ -396,8 +414,9 @@ private slots:
         QString roomId = roleInfo.first;
         QString role = roleInfo.second;
         
-        qDebug() << QDateTime::currentDateTime().toString()
-                 << "房间" << roomId << role << "发送文本消息:" << message.left(100);
+        // 减少日志输出：仅在非鼠标位置消息时打印
+        // qDebug() << QDateTime::currentDateTime().toString()
+        //          << "房间" << roomId << role << "发送文本消息:" << message.left(100);
         
         // 解析JSON消息以处理特定类型
         QJsonParseError error;
@@ -420,16 +439,34 @@ private slots:
                         }
                     }
                     
-                    // 每100条鼠标消息输出一次统计（避免日志过多）
+                    // 每1000条鼠标消息输出一次统计（避免日志过多）
                     static int mouseMessageCount = 0;
                     mouseMessageCount++;
-                    if (mouseMessageCount % 100 == 0) {
-                        qDebug() << QDateTime::currentDateTime().toString()
-                                 << "房间" << roomId << "已转发" << mouseMessageCount 
-                                 << "条鼠标位置消息给" << sentCount << "个订阅者";
+                    if (mouseMessageCount % 1000 == 0) {
+                        // qDebug() << QDateTime::currentDateTime().toString()
+                        //          << "房间" << roomId << "已转发" << mouseMessageCount 
+                        //          << "条鼠标位置消息给" << sentCount << "个订阅者";
                     }
                 }
                 return; // 鼠标消息处理完毕，不再进行通用转发
+            } else if (type == "audio_opus") {
+                // 降低日志频率：每100个包打印一次，或者每秒一次
+                static int audioCount = 0;
+                if (++audioCount % 100 == 0) {
+                    qDebug() << "转发音频包 序号:" << audioCount << " 来源:" << sender->peerAddress().toString();
+                }
+                // 转发给房间内的所有订阅者
+                // 假设 audio_opus 消息包含房间号或目标ID，这里简化为广播给房间内所有人
+                // 注意：通常 audio_opus 不带 target_id，而是依赖 socket 所在的房间
+                if (m_rooms.contains(roomId)) {
+                    Room *room = m_rooms[roomId];
+                    for (QWebSocket *subscriber : room->subscribers) {
+                        if (subscriber->state() == QAbstractSocket::ConnectedState) {
+                            subscriber->sendTextMessage(message);
+                        }
+                    }
+                }
+                return;
             }
         }
         

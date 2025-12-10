@@ -42,6 +42,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     m_audioTimer = new QTimer(this);
     m_audioTimer->setInterval(20);
     connect(m_audioTimer, &QTimer::timeout, [this]() {
+        static int timerCount = 0;
+        timerCount++;
+
         int baseSr = m_opusInitialized ? m_opusSampleRate : 16000;
         int outCh = 1;
         int frameSamples = m_audioFrameSamples > 0 ? m_audioFrameSamples : (baseSr / 50);
@@ -52,7 +55,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
 
         if (m_opusInitialized && m_opusDecoder) {
             QByteArray opusData;
-            if (!m_opusQueue.isEmpty()) opusData = m_opusQueue.dequeue();
+            bool isPLC = m_opusQueue.isEmpty();
+            if (!isPLC) opusData = m_opusQueue.dequeue();
+            
             QByteArray pcm;
             pcm.resize(frameSamples * m_opusChannels * sizeof(opus_int16));
             int decoded = opus_decode(m_opusDecoder,
@@ -62,6 +67,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                                       frameSamples,
                                       0);
             if (decoded > 0) {
+                if (timerCount % 50 == 0) {
+                     qDebug() << "[Receiver] Decoded frame #" << timerCount << " Bytes:" << decoded * m_opusChannels * sizeof(opus_int16) << " PLC:" << isPLC;
+                }
                 pcm.resize(decoded * m_opusChannels * sizeof(opus_int16));
                 const opus_int16* src = reinterpret_cast<const opus_int16*>(pcm.constData());
                 opus_int16* dst = reinterpret_cast<opus_int16*>(mixOut.data());
@@ -71,6 +79,8 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                     dst[i] = static_cast<opus_int16>(s);
                 }
                 anySource = true;
+            } else {
+                 if (timerCount % 50 == 0) qDebug() << "[Receiver] Opus decode failed! Err:" << decoded;
             }
         }
 
@@ -108,12 +118,20 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         } else {
             m_audioLastTimestamp += 20000;
         }
+        
+        if (timerCount % 50 == 0 && anySource) {
+            qDebug() << "[Receiver] Emitting audio frame. Size:" << mixOut.size() << " TS:" << m_audioLastTimestamp;
+        }
         emit audioFrameReceived(mixOut, baseSr, outCh, 16, m_audioLastTimestamp);
+        
         if (!anySource) {
             int readyPeers = 0;
             for (auto itq = m_peerQueues.begin(); itq != m_peerQueues.end(); ++itq) { if (!itq.value().isEmpty()) { readyPeers++; break; } }
             if (!readyPeers && m_opusQueue.isEmpty()) {
-                if (m_audioTimer->isActive()) m_audioTimer->stop();
+                if (m_audioTimer->isActive()) {
+                    m_audioTimer->stop();
+                    qDebug() << "[Receiver] Audio timer stopped (no data & no PLC).";
+                }
             }
         }
     });
@@ -164,6 +182,7 @@ void WebSocketReceiver::setupWebSocket()
     connect(m_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
             this, &WebSocketReceiver::onError);
     connect(m_webSocket, &QWebSocket::sslErrors, this, &WebSocketReceiver::onSslErrors);
+    connect(m_webSocket, &QWebSocket::stateChanged, this, &WebSocketReceiver::onStateChanged);
 }
 
 bool WebSocketReceiver::connectToServer(const QString &url)
@@ -193,6 +212,7 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     m_serverUrl = url;
     m_reconnectEnabled = true;
 
+    qDebug() << "[Receiver] Connecting to URL:" << url;
     m_webSocket->open(QUrl(url));
     return true;
 }
@@ -265,6 +285,7 @@ void WebSocketReceiver::onConnected()
 
     emit connected();
     emit connectionStatusChanged("已连接");
+        qDebug() << "[Receiver] Connected successfully to:" << m_serverUrl;
 
     // 日志清理：移除冗余连接状态输出
 
@@ -413,6 +434,8 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             emit audioFrameReceived(pcm, sampleRate, channels, bitsPerSample, timestamp);
             return;
         } else if (type == "audio_opus") {
+            // Remove target_id filtering as we now use precise room routing on server
+            
             int sampleRate = obj.value("sample_rate").toInt(16000);
             int channels = obj.value("channels").toInt(1);
             int frameSamples = obj.value("frame_samples").toInt(sampleRate / 50);
@@ -420,8 +443,19 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             QString base64 = obj.value("data_base64").toString();
             QByteArray opusData = QByteArray::fromBase64(base64.toUtf8());
 
+            // 调试日志：接收统计
+            static int rxCount = 0;
+            static qint64 lastRxTime = 0;
+            rxCount++;
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if (rxCount % 100 == 0 || (now - lastRxTime > 2000)) {
+                 qDebug() << "[Receiver] Rx audio_opus #" << rxCount << " SR:" << sampleRate << " CH:" << channels << " Bytes:" << opusData.size();
+                 lastRxTime = now;
+            }
+
             initOpusDecoderIfNeeded(sampleRate, channels);
             if (!m_opusInitialized || !m_opusDecoder) {
+                qDebug() << "[Receiver] Opus decoder init failed!";
                 return; // 解码器不可用
             }
             // 入队以按固定20ms节拍解码，降低颤抖
@@ -433,6 +467,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 if (m_opusQueue.size() >= m_audioPrebufferFrames) {
                     m_audioLastTimestamp = timestamp;
                     m_audioTimer->start();
+                    qDebug() << "[Receiver] Audio timer started. Prebuffer:" << m_opusQueue.size();
                 }
             }
             return;
@@ -503,21 +538,30 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
         errorString = "网络错误";
         break;
     default:
-        errorString = QString("未知错误 (%1)").arg(static_cast<int>(error));
+        errorString = "未知错误";
         break;
     }
+    qDebug() << "[Receiver] WebSocket Error:" << error << " String:" << errorString << " URL:" << m_serverUrl;
+    emit connectionStatusChanged(QString("连接错误: %1").arg(errorString));
     
-    emit connectionError(errorString);
+    // 如果是网络错误或连接被拒绝，尝试重连
+    if (m_reconnectEnabled && m_reconnectAttempts < m_maxReconnectAttempts) {
+        startReconnectTimer();
+    }
 }
 
 void WebSocketReceiver::onSslErrors(const QList<QSslError> &errors)
 {
-    for (const QSslError &error : errors) {
+    qDebug() << "[Receiver] SSL Errors:";
+    for (const auto &error : errors) {
+        qDebug() << "  " << error.errorString();
     }
-    
-    // 在生产环境中，应该验证SSL证书
-    // 这里为了简化，忽略SSL错误
     m_webSocket->ignoreSslErrors();
+}
+
+void WebSocketReceiver::onStateChanged(QAbstractSocket::SocketState state)
+{
+    qDebug() << "[Receiver] WebSocket State Changed:" << state;
 }
 
 void WebSocketReceiver::attemptReconnect()
@@ -957,16 +1001,11 @@ void WebSocketReceiver::sendAudioToggle(bool enabled)
         targetId = m_lastTargetId;
     }
 
-    if (viewerId.isEmpty() || targetId.isEmpty()) {
-        // 没有观看会话信息则不发送
-        return;
-    }
-
     QJsonObject message;
     message["type"] = "audio_toggle";
     message["enabled"] = enabled;
-    message["viewer_id"] = viewerId;
-    message["target_id"] = targetId;
+    if (!viewerId.isEmpty()) message["viewer_id"] = viewerId;
+    if (!targetId.isEmpty()) message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
 
     QJsonDocument doc(message);
@@ -988,15 +1027,11 @@ void WebSocketReceiver::sendViewerListenMute(bool mute)
         targetId = m_lastTargetId;
     }
 
-    if (viewerId.isEmpty() || targetId.isEmpty()) {
-        return;
-    }
-
     QJsonObject message;
     message["type"] = "viewer_listen_mute";
     message["mute"] = mute;
-    message["viewer_id"] = viewerId;
-    message["target_id"] = targetId;
+    if (!viewerId.isEmpty()) message["viewer_id"] = viewerId;
+    if (!targetId.isEmpty()) message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
 
     QJsonDocument doc(message);
@@ -1018,10 +1053,6 @@ void WebSocketReceiver::sendAudioGain(int percent)
         targetId = m_lastTargetId;
     }
 
-    if (viewerId.isEmpty() || targetId.isEmpty()) {
-        return;
-    }
-
     int p = percent;
     if (p < 0) p = 0;
     if (p > 100) p = 100;
@@ -1029,8 +1060,8 @@ void WebSocketReceiver::sendAudioGain(int percent)
     QJsonObject message;
     message["type"] = "audio_gain";
     message["percent"] = p;
-    message["viewer_id"] = viewerId;
-    message["target_id"] = targetId;
+    if (!viewerId.isEmpty()) message["viewer_id"] = viewerId;
+    if (!targetId.isEmpty()) message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
 
     QJsonDocument doc(message);

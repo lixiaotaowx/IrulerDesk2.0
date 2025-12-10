@@ -105,9 +105,10 @@ private slots:
     void onTextMessageReceived(const QString &message);
     void onError(QAbstractSocket::SocketError error);
     void onSslErrors(const QList<QSslError> &errors);
+    void onStateChanged(QAbstractSocket::SocketState state);
     void attemptReconnect();
     void updateStats();
-
+    
 private:
     void setupWebSocket();
     void startReconnectTimer();

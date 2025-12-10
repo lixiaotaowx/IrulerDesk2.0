@@ -8,7 +8,11 @@
 #include <QDir>
 #include <QCoreApplication>
 #include <iostream>
+#include <cmath>
 #include <chrono>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+#include <QPermissions>
+#endif
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <algorithm>
@@ -236,6 +240,30 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
     
+    // 尝试申请麦克风权限 (Qt 6.5+)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    qDebug() << "[Audio] Checking microphone permission...";
+    QMicrophonePermission micPermission;
+    switch (app.checkPermission(micPermission)) {
+    case Qt::PermissionStatus::Undetermined:
+        qDebug() << "[Audio] Permission: Undetermined. Requesting...";
+        app.requestPermission(micPermission, [](const QPermission &permission) {
+            if (permission.status() == Qt::PermissionStatus::Granted) {
+                qDebug() << "[Audio] Permission: Granted by user.";
+            } else {
+                qDebug() << "[Audio] Permission: Denied by user.";
+            }
+        });
+        break;
+    case Qt::PermissionStatus::Denied:
+        qDebug() << "[Audio] Permission: Denied (System). Please check Privacy Settings!";
+        break;
+    case Qt::PermissionStatus::Granted:
+        qDebug() << "[Audio] Permission: Granted (System).";
+        break;
+    }
+#endif
+    
     
     
     // 创建屏幕捕获对象
@@ -291,17 +319,8 @@ int main(int argc, char *argv[])
         }
     }
     
-    // 连接到WebSocket服务器 - 使用推流URL格式
-    // 从配置文件读取设备ID和服务器地址，如果没有则使用默认值
-    QString deviceId = getDeviceIdFromConfig(); // 从配置文件读取设备ID
-    QString serverAddress = getServerAddressFromConfig(); // 从配置文件读取服务器地址
-    // qDebug() << "[CaptureProcess] 使用设备ID:" << deviceId;
-    // qDebug() << "[CaptureProcess] 使用服务器地址:" << serverAddress;
-    QString serverUrl = QString("ws://%1/publish/%2").arg(serverAddress, deviceId);
-    if (!sender->connectToServer(serverUrl)) {
-        return -1;
-    }
-    // qDebug() << "[CaptureProcess] 正在连接到WebSocket服务器:" << serverUrl;
+    // WebSocket连接逻辑已移动到main函数末尾，确保信号连接完成后再启动连接
+
     
     // 已禁用性能监控，减少CPU开销
     // 连接信号槽
@@ -345,6 +364,18 @@ int main(int argc, char *argv[])
     static int audioSampleRate = 16000; // 目标：16kHz 单声道 16bit PCM
     static const int audioChannels = 1;
     static const int audioBitsPerSample = 16;
+    static bool remoteAudioEnabled = true; // 默认开启音频发送，不依赖观看端麦克风状态
+    static int audioFrameSendCount = 0; // 发送帧计数
+    
+    // 远程音频播放相关变量
+    static QAudioSink *remoteSink = nullptr;
+    static QIODevice *remoteOutIO = nullptr;
+    static QAudioFormat remoteFmt;
+    static OpusDecoder *remoteOpusDec = nullptr;
+    static int remoteSampleRate = 16000;
+    static int remoteChannels = 1;
+    static bool remoteListenEnabled = true;
+
     static OpusEncoder *opusEnc = nullptr;
     static int opusSampleRate = audioSampleRate;
     static int opusFrameSize = 0; // samples per 20ms
@@ -360,29 +391,62 @@ int main(int argc, char *argv[])
 
     // 麦克风采集初始化
     QAudioFormat micFormat;
-    micFormat.setSampleRate(audioSampleRate);
-    micFormat.setChannelCount(audioChannels);
-    micFormat.setSampleFormat(QAudioFormat::Int16);
+    // Opus 支持的采样率列表 (优先高采样率)
+    const QList<int> opusRates = {48000, 24000, 16000, 12000, 8000};
+    bool formatFound = false;
 
     QAudioDevice inDev = QMediaDevices::defaultAudioInput();
-    if (!inDev.isFormatSupported(micFormat)) {
-        QAudioFormat preferred = inDev.preferredFormat();
-        if (preferred.sampleFormat() == QAudioFormat::Int16) {
-            micFormat = preferred;
-            audioSampleRate = micFormat.sampleRate();
-        } else {
-            // 如果不支持 Int16，则仍使用首选格式，但可能与播放器不匹配
-            micFormat = preferred;
-            audioSampleRate = micFormat.sampleRate();
+    
+    // 1. 尝试直接匹配 Opus 支持的采样率
+    for (int rate : opusRates) {
+        QAudioFormat fmt;
+        fmt.setSampleRate(rate);
+        fmt.setChannelCount(1); // 单声道
+        fmt.setSampleFormat(QAudioFormat::Int16);
+        
+        if (inDev.isFormatSupported(fmt)) {
+            micFormat = fmt;
+            formatFound = true;
+            qDebug() << "[Audio] Found supported Opus format:" << rate << "Hz";
+            break;
         }
     }
 
+    // 2. 如果不支持标准 Opus 采样率，回退到设备首选格式
+    if (!formatFound) {
+        qDebug() << "[Audio] No standard Opus format supported. Finding preferred...";
+        QAudioFormat preferred = inDev.preferredFormat();
+        qDebug() << "[Audio] Preferred format:" << preferred;
+        
+        // 尽量保持 Int16 和单声道，如果设备支持的话
+        QAudioFormat tryFmt = preferred;
+        tryFmt.setChannelCount(1);
+        tryFmt.setSampleFormat(QAudioFormat::Int16);
+        if (inDev.isFormatSupported(tryFmt)) {
+            micFormat = tryFmt;
+        } else {
+            micFormat = preferred;
+        }
+    }
+
+    audioSampleRate = micFormat.sampleRate();
+    qDebug() << "[Audio] Selected Device:" << inDev.description();
+    qDebug() << "[Audio] Selected Mic Format:" << micFormat << " SampleRate:" << audioSampleRate;
+
     QAudioSource *audioSource = new QAudioSource(inDev, micFormat, &app);
+    audioSource->setVolume(1.0); // 确保音量最大
     QIODevice *audioInput = nullptr;
     int currentMicGainPercent = 100;
-    // 同步 Opus 编码器所用的采样率与帧长（20ms）
-    opusSampleRate = micFormat.sampleRate();
-    opusFrameSize = opusSampleRate / 50;
+    
+    // 确定 Opus 编码器使用的采样率
+    // 如果采集率在 Opus 列表中，直接使用；否则强制使用 48000 (需要重采样)
+    if (opusRates.contains(audioSampleRate)) {
+        opusSampleRate = audioSampleRate;
+    } else {
+        opusSampleRate = 48000; // 默认重采样目标
+        qDebug() << "[Audio] Mismatch sample rate. Will resample" << audioSampleRate << "->" << opusSampleRate;
+    }
+    opusFrameSize = opusSampleRate / 50; // 20ms
 
     QObject::connect(audioTimer, &QTimer::timeout, [&]() {
         if (!audioInput) return;
@@ -398,81 +462,217 @@ int main(int argc, char *argv[])
         }
 
         const int srcChannels = micFormat.channelCount();
-        const int frameSamples = micFormat.sampleRate() / 50; // 20ms 帧
-        const int needBytes = frameSamples * srcChannels * srcBytesPerSample;
-        QByteArray pcmSrc = audioInput->read(needBytes);
-        if (pcmSrc.size() < needBytes) {
-            return; // 数据不足，下一次再试
+        // 计算当前需要读取多少源数据才能凑够一个 Opus 帧 (20ms)
+        const int srcFrameSamples = micFormat.sampleRate() / 50; 
+        const int needBytes = srcFrameSamples * srcChannels * srcBytesPerSample;
+        
+        static int noDataCount = 0;
+        
+        // 检查音频源状态
+        // 允许 ActiveState 和 IdleState (Idle 可能只是暂时没数据)
+        bool isRunning = (audioSource && (audioSource->state() == QAudio::ActiveState || audioSource->state() == QAudio::IdleState));
+        
+        if (!isRunning) {
+             static int errorLogCount = 0;
+             if (++errorLogCount % 100 == 0) {
+                 qDebug() << "[Audio] Audio source not running. State:" << (audioSource ? audioSource->state() : -1) 
+                          << " Error:" << (audioSource ? audioSource->error() : -1);
+                 if (audioSource && audioSource->error() == QAudio::OpenError) {
+                     qDebug() << "[Audio] CRITICAL: Failed to open microphone! Possible permission denied or device occupied.";
+                 }
+             }
+             // 尝试恢复
+             if (audioSource && audioSource->state() == QAudio::StoppedState) {
+                 audioInput = audioSource->start();
+             }
+             // 不要直接返回，允许进入下方的测试音注入逻辑
         }
 
-        // 统一转换为 Int16 单声道（取第一个声道），保证观看端一致播放/编码
-        QByteArray pcm;
-        pcm.resize(frameSamples * sizeof(int16_t));
-        int16_t *dst = reinterpret_cast<int16_t*>(pcm.data());
+        // 读取所有可用数据到累积缓冲区
+        QByteArray incoming;
+        if (isRunning && audioInput) {
+            incoming = audioInput->readAll();
+        }
 
-        if (micFormat.sampleFormat() == QAudioFormat::Int16) {
-            // 源就是 Int16，按通道取第一个声道
-            const int16_t *src = reinterpret_cast<const int16_t*>(pcmSrc.constData());
-            for (int i = 0; i < frameSamples; ++i) {
-                dst[i] = src[i * srcChannels];
+        if (!incoming.isEmpty()) {
+            // 调试日志：验证麦克风是否真的采集到了数据
+            static int micDataLogCount = 0;
+            if (++micDataLogCount % 20 == 0) {
+                 qDebug() << "[Audio] Microphone captured bytes:" << incoming.size() 
+                          << "Accumulated:" << pcmAccum.size();
             }
-        } else if (micFormat.sampleFormat() == QAudioFormat::Float) {
-            const float *src = reinterpret_cast<const float*>(pcmSrc.constData());
-            for (int i = 0; i < frameSamples; ++i) {
-                float s = src[i * srcChannels];
-                if (s > 1.0f) s = 1.0f; if (s < -1.0f) s = -1.0f;
-                dst[i] = static_cast<int16_t>(s * 32767.0f);
-            }
-        } else if (micFormat.sampleFormat() == QAudioFormat::UInt8) {
-            const uint8_t *src = reinterpret_cast<const uint8_t*>(pcmSrc.constData());
-            for (int i = 0; i < frameSamples; ++i) {
-                // UInt8 无符号，中心点 128
-                int v = static_cast<int>(src[i * srcChannels]) - 128;
-                dst[i] = static_cast<int16_t>(v << 8);
-            }
-        } else if (micFormat.sampleFormat() == QAudioFormat::Int32) {
-            const int32_t *src = reinterpret_cast<const int32_t*>(pcmSrc.constData());
-            for (int i = 0; i < frameSamples; ++i) {
-                dst[i] = static_cast<int16_t>(src[i * srcChannels] >> 16);
-            }
+            
+            pcmAccum.append(incoming);
+            noDataCount = 0;
         } else {
-            // 未知格式，直接丢弃本次
-            return;
+            noDataCount++;
+            if (noDataCount % 100 == 0) {
+                 qDebug() << "[Audio] No data available for" << (noDataCount * 20 / 1000) << "seconds. State:" << (audioSource ? audioSource->state() : -1);
+            }
+
+            // 自动重启逻辑: 如果超过 10 秒无数据，尝试重启音频源
+            if (noDataCount > 500) {
+                 static int restartCount = 0;
+                 if (++restartCount % 50 == 0) {
+                     qDebug() << "[Audio] No data for 10s. Restarting audio source...";
+                     if (audioSource) {
+                         audioSource->stop();
+                         audioInput = audioSource->start();
+                     }
+                 }
+            }
+
+            // 尝试 13: 注入测试音 (当麦克风无数据超过 5 秒)
+            if (noDataCount > 250) { 
+                static int tonePhase = 0;
+                static int toneLogCount = 0;
+                if (++toneLogCount % 50 == 0) {
+                    qDebug() << "[Audio] Injecting 440Hz test tone (Mic dead/muted)...";
+                }
+                
+                // 生成 20ms 的 440Hz 正弦波
+                int samples = micFormat.sampleRate() / 50; 
+                QByteArray toneBytes;
+                toneBytes.resize(samples * srcChannels * srcBytesPerSample);
+                
+                // 简单的 PCM 生成 (仅支持 Int16 和 Float，其他格式忽略)
+                if (micFormat.sampleFormat() == QAudioFormat::Int16) {
+                    int16_t *ptr = reinterpret_cast<int16_t*>(toneBytes.data());
+                    for (int i = 0; i < samples; ++i) {
+                        double t = static_cast<double>(tonePhase++) / micFormat.sampleRate();
+                        int16_t val = static_cast<int16_t>(10000.0 * std::sin(2.0 * 3.1415926535 * 440.0 * t)); // 音量调小一点
+                        for (int c = 0; c < srcChannels; ++c) {
+                            ptr[i * srcChannels + c] = val;
+                        }
+                    }
+                    pcmAccum.append(toneBytes);
+                } else if (micFormat.sampleFormat() == QAudioFormat::Float) {
+                    float *ptr = reinterpret_cast<float*>(toneBytes.data());
+                    for (int i = 0; i < samples; ++i) {
+                        double t = static_cast<double>(tonePhase++) / micFormat.sampleRate();
+                        float val = static_cast<float>(0.3 * std::sin(2.0 * 3.1415926535 * 440.0 * t));
+                        for (int c = 0; c < srcChannels; ++c) {
+                            ptr[i * srcChannels + c] = val;
+                        }
+                    }
+                    pcmAccum.append(toneBytes);
+                }
+            }
         }
 
-        auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        // 处理累积缓冲区中的完整帧
+        while (pcmAccum.size() >= needBytes) {
+            // 日志输出读取到的字节数 (每100次输出一次)
+            static int readLogCount = 0;
+            if (++readLogCount % 100 == 0) {
+                 qDebug() << "[Audio] Buffer size:" << pcmAccum.size() << " Need:" << needBytes;
+            }
 
-        if (!opusEnc) {
-            return; // 编码器未初始化（音频未启用）
+            // 提取一帧数据
+            QByteArray pcmSrc = pcmAccum.left(needBytes);
+            pcmAccum.remove(0, needBytes);
+
+            // 第一步：统一转换为 Int16 单声道
+            // 此时采样率仍为 micFormat.sampleRate()
+            QVector<int16_t> tempPcm(srcFrameSamples);
+            int16_t *dst = tempPcm.data();
+
+            if (micFormat.sampleFormat() == QAudioFormat::Int16) {
+                // 源就是 Int16，按通道取第一个声道
+                const int16_t *src = reinterpret_cast<const int16_t*>(pcmSrc.constData());
+                for (int i = 0; i < srcFrameSamples; ++i) {
+                    dst[i] = src[i * srcChannels];
+                }
+            } else if (micFormat.sampleFormat() == QAudioFormat::Float) {
+                const float *src = reinterpret_cast<const float*>(pcmSrc.constData());
+                for (int i = 0; i < srcFrameSamples; ++i) {
+                    float s = src[i * srcChannels];
+                    if (s > 1.0f) s = 1.0f; if (s < -1.0f) s = -1.0f;
+                    dst[i] = static_cast<int16_t>(s * 32767.0f);
+                }
+            } else if (micFormat.sampleFormat() == QAudioFormat::UInt8) {
+                const uint8_t *src = reinterpret_cast<const uint8_t*>(pcmSrc.constData());
+                for (int i = 0; i < srcFrameSamples; ++i) {
+                    int v = static_cast<int>(src[i * srcChannels]) - 128;
+                    dst[i] = static_cast<int16_t>(v << 8);
+                }
+            } else if (micFormat.sampleFormat() == QAudioFormat::Int32) {
+                const int32_t *src = reinterpret_cast<const int32_t*>(pcmSrc.constData());
+                for (int i = 0; i < srcFrameSamples; ++i) {
+                    dst[i] = static_cast<int16_t>(src[i * srcChannels] >> 16);
+                }
+            } else {
+                // 未知格式，直接丢弃本次
+                continue;
+            }
+
+            // 第二步：重采样 (如果需要)
+            // 从 srcFrameSamples (audioSampleRate) -> opusFrameSize (opusSampleRate)
+            QByteArray finalPcm;
+            finalPcm.resize(opusFrameSize * sizeof(int16_t));
+            int16_t *finalDst = reinterpret_cast<int16_t*>(finalPcm.data());
+
+            if (audioSampleRate == opusSampleRate) {
+                // 无需重采样
+                memcpy(finalDst, dst, opusFrameSize * sizeof(int16_t));
+            } else {
+                // 简单线性插值重采样
+                double ratio = static_cast<double>(srcFrameSamples) / static_cast<double>(opusFrameSize);
+                for (int i = 0; i < opusFrameSize; ++i) {
+                    double pos = i * ratio;
+                    int idx = static_cast<int>(pos);
+                    if (idx >= srcFrameSamples - 1) {
+                        finalDst[i] = dst[srcFrameSamples - 1];
+                    } else {
+                        double frac = pos - idx;
+                        finalDst[i] = static_cast<int16_t>(dst[idx] * (1.0 - frac) + dst[idx + 1] * frac);
+                    }
+                }
+            }
+
+            auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+            if (!isCapturing) {
+                continue; // 未开始推流时不发送音频
+            }
+
+            if (!opusEnc) {
+                continue; // 编码器未初始化
+            }
+
+            // Opus 编码（20ms 帧）
+            QByteArray opusOut;
+            opusOut.resize(4096); // 足够容纳单帧 Opus 数据
+            int nbytes = opus_encode(opusEnc,
+                                     reinterpret_cast<const opus_int16*>(finalDst),
+                                     opusFrameSize,
+                                     reinterpret_cast<unsigned char*>(opusOut.data()),
+                                     opusOut.size());
+            if (nbytes < 0) {
+                // 编码失败，跳过本帧
+                qDebug() << "[Audio] Opus encode failed:" << nbytes;
+                continue;
+            }
+            opusOut.resize(nbytes);
+
+            QJsonObject msg;
+            msg["type"] = "audio_opus";
+            msg["sample_rate"] = opusSampleRate;
+            msg["channels"] = 1; // 单声道
+            msg["timestamp"] = static_cast<qint64>(timestamp);
+            msg["frame_samples"] = opusFrameSize; // 每帧采样数（20ms）
+            static quint32 audioSeq = 0;
+            msg["seq"] = static_cast<qint64>(audioSeq++);
+            msg["data_base64"] = QString::fromUtf8(opusOut.toBase64());
+            
+            QJsonDocument doc(msg);
+            staticSender->sendTextMessage(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+            audioFrameSendCount++;
+            if (audioFrameSendCount % 100 == 0) {
+                qDebug() << "[Audio] Sent Opus frame #" << audioFrameSendCount << " Bytes:" << nbytes;
+            }
         }
-
-        // Opus 编码（20ms 帧）
-        QByteArray opusOut;
-        opusOut.resize(4096); // 足够容纳单帧 Opus 数据
-        int nbytes = opus_encode(opusEnc,
-                                 reinterpret_cast<const opus_int16*>(dst),
-                                 opusFrameSize,
-                                 reinterpret_cast<unsigned char*>(opusOut.data()),
-                                 opusOut.size());
-        if (nbytes < 0) {
-            // 编码失败，跳过本帧
-            return;
-        }
-        opusOut.resize(nbytes);
-
-        QJsonObject msg;
-        msg["type"] = "audio_opus";
-        msg["sample_rate"] = opusSampleRate;
-        msg["channels"] = 1; // 单声道
-        msg["timestamp"] = static_cast<qint64>(timestamp);
-        msg["frame_samples"] = opusFrameSize; // 每帧采样数（20ms）
-        static quint32 audioSeq = 0;
-        msg["seq"] = static_cast<qint64>(audioSeq++);
-        msg["data_base64"] = QString::fromUtf8(opusOut.toBase64());
-        QJsonDocument doc(msg);
-        staticSender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
-        // 日志清理：移除音频发送打印
     });
 
     // 新增：质量应用方法
@@ -541,7 +741,137 @@ int main(int argc, char *argv[])
     // 启动时应用默认质量（来自配置）
     applyQualitySetting(currentQuality);
     
+    // 安全启动定时器：如果连接成功后3秒仍未收到start_streaming信号，则强制启动
+    // 这可以解决服务器未发送指令或指令丢失导致的问题
+    QTimer *safetyStartTimer = new QTimer(&app);
+    safetyStartTimer->setInterval(3000);
+    safetyStartTimer->setSingleShot(true);
     
+    QObject::connect(sender, &WebSocketSender::connected, [safetyStartTimer]() {
+        qDebug() << "[CaptureProcess] Connected to server. Starting safety timer (3s)...";
+        safetyStartTimer->start();
+    });
+    
+    QObject::connect(safetyStartTimer, &QTimer::timeout, [&, sender]() {
+        if (!isCapturing && sender->isConnected()) {
+             qDebug() << "[CaptureProcess] Safety Timer Triggered: No start_streaming signal received in 3s. Force starting...";
+             sender->startStreaming(); // 这将触发 streamingStarted 信号，进而调用 startAudio
+        }
+    });
+
+
+
+    // 定义音频启动/停止函数
+    auto startAudio = [&]() {
+        // 使用实际协商的采样率，而不是硬编码 16000
+        // opusSampleRate 在 main 中已根据 micFormat 初始化
+        qDebug() << "[Audio] startAudio called. SampleRate:" << opusSampleRate << " FrameSize:" << opusFrameSize;
+        
+        if (!opusEnc) {
+            int err = OPUS_OK;
+            // Opus 仅支持 8000, 12000, 16000, 24000, 48000
+            opusEnc = opus_encoder_create(opusSampleRate, 1, OPUS_APPLICATION_VOIP, &err);
+            if (err == OPUS_OK && opusEnc) {
+                opus_encoder_ctl(opusEnc, OPUS_SET_BITRATE(24000));
+                opus_encoder_ctl(opusEnc, OPUS_SET_VBR(1));
+                opus_encoder_ctl(opusEnc, OPUS_SET_COMPLEXITY(5));
+                opus_encoder_ctl(opusEnc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+                opus_encoder_ctl(opusEnc, OPUS_SET_INBAND_FEC(1));
+                qDebug() << "[Audio] Opus encoder created successfully.";
+            } else {
+                qDebug() << "[Audio] Opus encoder creation failed. Error:" << err;
+            }
+        }
+        // 回退到麦克风采集
+        if (audioSource) {
+            // 安全重置 audioInput
+            if (audioInput) {
+                 audioSource->stop();
+                 audioInput = nullptr; 
+            }
+            audioInput = audioSource->start();
+            if (!audioInput) {
+                qDebug() << "[Audio] Failed to start audio source! Error:" << audioSource->error();
+            } else {
+                audioSource->setVolume(currentMicGainPercent / 100.0);
+                qDebug() << "[Audio] Microphone started. AudioInput:" << audioInput << " State:" << audioSource->state();
+            }
+        } else {
+            qDebug() << "[Audio] AudioSource is null!";
+        }
+        if (!audioTimer->isActive()) {
+            audioTimer->start();
+            qDebug() << "[Audio] Audio timer started.";
+        }
+    };
+
+    auto stopAudio = [&]() {
+        audioTimer->stop();
+        qDebug() << "[Audio] Audio timer stopped.";
+        if (audioSource) { 
+            audioSource->stop(); 
+            audioInput = nullptr; 
+            qDebug() << "[Audio] Audio source stopped.";
+        }
+        if (mp3Decoder) { mp3Decoder->stop(); }
+        if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
+        // 注意：不要停止远程接收（remoteSink），因为这会导致消费者说话生产者听不到
+        // if (remoteSink) { remoteSink->stop(); delete remoteSink; remoteSink = nullptr; remoteOutIO = nullptr; }
+        // if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
+    };
+
+    // 状态监控定时器：每3秒输出一次音频发送状态
+    QTimer *statusTimer = new QTimer(&app);
+    QObject::connect(statusTimer, &QTimer::timeout, [&]() {
+        if (isCapturing) {
+            qDebug() << "[CaptureProcess] Status - Capturing: Yes | Audio Frames Sent:" << audioFrameSendCount 
+                     << "| Audio Source State:" << (audioSource ? audioSource->state() : -1)
+                     << "| Opus Enc:" << (opusEnc ? "Ready" : "Null")
+                     << "| Audio Buffer:" << pcmAccum.size()
+                     << "| Audio Input:" << (audioInput ? "Valid" : "Null")
+                     << "| Bytes Avail:" << (audioInput ? audioInput->bytesAvailable() : -1)
+                     << "| Sender Connected:" << sender->isConnected();
+                     
+            // 自动故障恢复：如果音频源停止了，或者长时间没有发送数据，尝试重启
+            bool needsRestart = false;
+            if (audioSource && audioSource->state() == QAudio::StoppedState) {
+                 qDebug() << "[CaptureProcess] Audio source stopped unexpectedly.";
+                 needsRestart = true;
+            }
+            if (!opusEnc) {
+                 qDebug() << "[CaptureProcess] Opus encoder missing.";
+                 needsRestart = true;
+            }
+            
+            // 检查是否长时间没有发送音频帧 (例如超过5秒)
+            static int lastFrameCount = 0;
+            static int noFrameTimer = 0;
+            if (audioFrameSendCount == lastFrameCount) {
+                noFrameTimer++;
+                if (noFrameTimer >= 2) { // 2 * 3s = 6秒无数据
+                    qDebug() << "[CaptureProcess] No audio frames sent for 6 seconds. Audio stuck?";
+                    // 尝试重启音频
+                    needsRestart = true;
+                }
+            } else {
+                noFrameTimer = 0;
+                lastFrameCount = audioFrameSendCount;
+            }
+
+            if (needsRestart && remoteAudioEnabled) {
+                 qDebug() << "[CaptureProcess] Attempting audio restart...";
+                 stopAudio();
+                 QTimer::singleShot(100, [&](){ startAudio(); });
+                 // 重置计数器防止循环重启
+                 noFrameTimer = 0; 
+            }
+        } else {
+            qDebug() << "[CaptureProcess] Status - Capturing: No | Connected:" << sender->isConnected()
+                     << "| Waiting for start_streaming signal...";
+        }
+    });
+    statusTimer->start(3000); // 3秒一次
+
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
                      [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
         int idx = currentScreenIndex;
@@ -587,8 +917,16 @@ int main(int argc, char *argv[])
         targetScreen = QApplication::primaryScreen();
     }
 
+    // 列出所有可用音频输入设备
+    const auto availableDevices = QMediaDevices::audioInputs();
+    qDebug() << "[Audio] Available input devices:";
+    for (const auto &dev : availableDevices) {
+        qDebug() << "  -" << dev.description();
+    }
+
     // 连接推流控制信号
-    QObject::connect(sender, &WebSocketSender::streamingStarted, [captureTimer]() {
+    QObject::connect(sender, &WebSocketSender::streamingStarted, [&, startAudio]() {
+        qDebug() << "[CaptureProcess] Streaming started signal received. isCapturing:" << isCapturing;
         if (!isCapturing) {
             isCapturing = true;
             captureTimer->start(33); // 30fps
@@ -597,8 +935,13 @@ int main(int argc, char *argv[])
                 s_overlays[currentScreenIndex]->raise();
                 s_cursorOverlays[currentScreenIndex]->raise();
             }
-            // qDebug() << "[CaptureProcess] 开始屏幕捕获和鼠标捕获";
-            // 注意：音频测试发送不再在推流开始时自动启动，改为由音频开关控制
+        }
+        
+        // 无论是否已经在捕获，只要收到推流信号，都强制检查并启动音频
+        // 这是为了防止 isCapturing 为 true 但音频未启动的情况 (例如之前的故障恢复)
+        if (remoteAudioEnabled) {
+            qDebug() << "[CaptureProcess] Enforcing audio start on streamingStarted...";
+            startAudio();
         }
     });
     
@@ -757,148 +1100,14 @@ int main(int argc, char *argv[])
     });
 
     // 新增：处理音频开关请求（麦克风采集）
-    QAudioSink *remoteSink = nullptr;
-    QIODevice *remoteOutIO = nullptr;
-    QAudioFormat remoteFmt;
-    OpusDecoder *remoteOpusDec = nullptr;
-    int remoteSampleRate = 16000;
-    int remoteChannels = 1;
-    bool remoteListenEnabled = true;
-    QObject::connect(sender, &WebSocketSender::audioToggleRequested, [&, audioTimer, sender, audioSource](bool enabled) {
+    // 变量已移至上方作为静态变量声明
+    QObject::connect(sender, &WebSocketSender::audioToggleRequested, [&, startAudio, stopAudio](bool enabled) {
+        remoteAudioEnabled = enabled;
         if (enabled) {
-            // std::cout << "[Sender] audio_toggle enabled" << std::endl;
             if (!sender->isStreaming()) return;
-            // 懒加载创建 Opus 编码器
-            opusSampleRate = 16000;
-            opusFrameSize = opusSampleRate / 50;
-            if (!opusEnc) {
-                int err = OPUS_OK;
-                opusEnc = opus_encoder_create(opusSampleRate, 1, OPUS_APPLICATION_VOIP, &err);
-                if (err == OPUS_OK && opusEnc) {
-                    opus_encoder_ctl(opusEnc, OPUS_SET_BITRATE(24000));
-                    opus_encoder_ctl(opusEnc, OPUS_SET_VBR(1));
-                    opus_encoder_ctl(opusEnc, OPUS_SET_COMPLEXITY(5));
-                    opus_encoder_ctl(opusEnc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
-                    opus_encoder_ctl(opusEnc, OPUS_SET_INBAND_FEC(1));
-                    // std::cout << "[Sender] opus encoder init ok sr=16000" << std::endl;
-                } else {
-                    // std::cout << "[Sender] opus encoder init failed" << std::endl;
-                }
-            }
-            if (false && QFile::exists(testMp3Path)) {
-                // std::cout << "[Sender] using mp3 file: " << testMp3Path.toStdString() << std::endl;
-                if (!mp3Decoder) {
-                    mp3Decoder = new QAudioDecoder(&app);
-                    QObject::connect(mp3Decoder, &QAudioDecoder::formatChanged, [&](const QAudioFormat &fmt){
-                        // std::cout << "[Sender] mp3 decoder format sr=" << fmt.sampleRate() << " ch=" << fmt.channelCount() << std::endl;
-                    });
-                    QObject::connect(mp3Decoder, &QAudioDecoder::bufferReady, [&]() {
-                        if (!opusEnc) return;
-                        QAudioBuffer buffer = mp3Decoder->read();
-                        if (!buffer.isValid()) return;
-                        const QAudioFormat &fmt = buffer.format();
-                        int sr = fmt.sampleRate();
-                        int ch = fmt.channelCount();
-                        if (sr <= 0 || ch <= 0) return;
-                        const int frames = buffer.frameCount();
-                        // std::cout << "[Sender] mp3 buffer sr=" << sr << " ch=" << ch << " frames=" << frames << std::endl;
-                        QByteArray mono;
-                        mono.resize(frames * sizeof(int16_t));
-                        int16_t *dst = reinterpret_cast<int16_t*>(mono.data());
-                        if (fmt.sampleFormat() == QAudioFormat::Int16) {
-                            const int16_t *src = buffer.data<const int16_t>();
-                            for (int i = 0; i < frames; ++i) dst[i] = src[i * ch];
-                        } else if (fmt.sampleFormat() == QAudioFormat::Float) {
-                            const float *src = buffer.data<const float>();
-                            for (int i = 0; i < frames; ++i) {
-                                float s = src[i * ch];
-                                if (s > 1.0f) s = 1.0f; if (s < -1.0f) s = -1.0f;
-                                dst[i] = static_cast<int16_t>(s * 32767.0f);
-                            }
-                        } else if (fmt.sampleFormat() == QAudioFormat::Int32) {
-                            const int32_t *src = buffer.data<const int32_t>();
-                            for (int i = 0; i < frames; ++i) dst[i] = static_cast<int16_t>(src[i * ch] >> 16);
-                        } else if (fmt.sampleFormat() == QAudioFormat::UInt8) {
-                            const uint8_t *src = buffer.data<const uint8_t>();
-                            for (int i = 0; i < frames; ++i) { int v = static_cast<int>(src[i * ch]) - 128; dst[i] = static_cast<int16_t>(v << 8); }
-                        } else {
-                            return;
-                        }
-                        QByteArray monoUse = mono;
-                        if (sr != opusSampleRate) {
-                            int outFrames = (frames * opusSampleRate) / sr;
-                            QByteArray res;
-                            res.resize(outFrames * sizeof(int16_t));
-                            const int16_t *msrc = reinterpret_cast<const int16_t*>(monoUse.constData());
-                            int16_t *mdst = reinterpret_cast<int16_t*>(res.data());
-                            for (int i = 0; i < outFrames; ++i) {
-                                int idx = (i * sr) / opusSampleRate;
-                                if (idx < frames) mdst[i] = msrc[idx]; else mdst[i] = 0;
-                            }
-                            monoUse = res;
-                            // std::cout << "[Sender] resampled to 16k frames=" << outFrames << std::endl;
-                        }
-                        pcmAccum.append(monoUse);
-                        // std::cout << "[Sender] pcmAccum bytes=" << pcmAccum.size() << std::endl;
-                        while (pcmAccum.size() >= opusFrameSize * sizeof(int16_t)) {
-                            QByteArray one = pcmAccum.left(opusFrameSize * sizeof(int16_t));
-                            pcmAccum.remove(0, opusFrameSize * sizeof(int16_t));
-                            QByteArray opusOut;
-                            opusOut.resize(4096);
-                            int nbytes = opus_encode(opusEnc,
-                                                     reinterpret_cast<const opus_int16*>(one.constData()),
-                                                     opusFrameSize,
-                                                     reinterpret_cast<unsigned char*>(opusOut.data()),
-                                                     opusOut.size());
-                            if (nbytes < 0) continue;
-                            opusOut.resize(nbytes);
-                            auto ts = std::chrono::duration_cast<std::chrono::microseconds>(
-                                std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-                            QJsonObject msg;
-                            msg["type"] = "audio_opus";
-                            msg["sample_rate"] = opusSampleRate;
-                            msg["channels"] = 1;
-                            msg["timestamp"] = static_cast<qint64>(ts);
-                            msg["frame_samples"] = opusFrameSize;
-                            static quint32 audioSeq = 0;
-                            msg["seq"] = static_cast<qint64>(audioSeq++);
-                            msg["data_base64"] = QString::fromUtf8(opusOut.toBase64());
-                            QJsonDocument doc(msg);
-                            staticSender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
-                            // std::cout << "[Sender] opus frame sent bytes=" << nbytes << " seq=" << (audioSeq-1) << std::endl;
-                        }
-                    });
-                    QObject::connect(mp3Decoder, QOverload<QAudioDecoder::Error>::of(&QAudioDecoder::error), [&](QAudioDecoder::Error){
-                        // std::cout << "[Sender] mp3 decode error" << std::endl;
-                    });
-                    QObject::connect(mp3Decoder, &QAudioDecoder::finished, [&]() {
-                        mp3Decoder->stop();
-                        mp3Decoder->setSource(QUrl::fromLocalFile(testMp3Path));
-                        mp3Decoder->start();
-                        // std::cout << "[Sender] mp3 finished, restart" << std::endl;
-                    });
-                }
-                mp3Decoder->setSource(QUrl::fromLocalFile(testMp3Path));
-                // std::cout << "[Sender] mp3 decoder start" << std::endl;
-                mp3Decoder->start();
-                audioTimer->stop();
-            } else {
-                // std::cout << "[Sender] mp3 file not found, fallback mic" << std::endl;
-                // 回退到麦克风采集
-                if (audioSource) {
-                    audioInput = audioSource->start();
-                    audioSource->setVolume(currentMicGainPercent / 100.0);
-                }
-                audioTimer->start();
-            }
+            startAudio();
         } else {
-            // std::cout << "[Sender] audio_toggle disabled" << std::endl;
-            audioTimer->stop();
-            if (audioSource) { audioSource->stop(); audioInput = nullptr; }
-            if (mp3Decoder) { mp3Decoder->stop(); }
-            if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
-            if (remoteSink) { remoteSink->stop(); delete remoteSink; remoteSink = nullptr; remoteOutIO = nullptr; }
-            if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
+            stopAudio();
         }
     });
 
@@ -999,5 +1208,21 @@ int main(int argc, char *argv[])
     
     
     
+    
+    // 连接到WebSocket服务器 - 使用推流URL格式
+    // 移至此处以确保所有信号槽（特别是streamingStarted）都已连接
+    QString deviceId = getDeviceIdFromConfig(); // 从配置文件读取设备ID
+    QString serverAddress = getServerAddressFromConfig(); // 从配置文件读取服务器地址
+    QString serverUrl = QString("ws://%1/publish/%2").arg(serverAddress, deviceId);
+    
+    // 显示设备ID
+    qDebug() << "[CaptureProcess] Current Device ID:" << deviceId;
+    qDebug() << "[CaptureProcess] Target Server URL:" << serverUrl;
+    
+    if (!sender->connectToServer(serverUrl)) {
+        return -1;
+    }
+    // qDebug() << "[CaptureProcess] 正在连接到WebSocket服务器:" << serverUrl;
+
     return app.exec();
 }

@@ -165,6 +165,8 @@ private:
     QMap<QString, int> m_peerSampleRates;
     QMap<QString, int> m_peerChannels;
     QMap<QString, int> m_peerFrameSamples;
+    QMap<QString, int> m_peerSilenceCounts;
+    QMap<QString, qint64> m_peerLastActiveTimes;
     QAudioSource *m_localAudioSource = nullptr;
     QIODevice *m_localAudioInput = nullptr;
     QTimer *m_localAudioTimer = nullptr;

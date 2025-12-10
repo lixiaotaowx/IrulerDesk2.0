@@ -2,6 +2,9 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QVector>
+#include <QMap>
+#include <QQueue>
+#include <QMutex>
 #include <QFile>
 #include <QTextStream>
 #include <QStandardPaths>
@@ -368,12 +371,18 @@ int main(int argc, char *argv[])
     static int audioFrameSendCount = 0; // 发送帧计数
     
     // 远程音频播放相关变量
-    static QAudioSink *remoteSink = nullptr;
-    static QIODevice *remoteOutIO = nullptr;
-    static QAudioFormat remoteFmt;
-    static OpusDecoder *remoteOpusDec = nullptr;
-    static int remoteSampleRate = 16000;
-    static int remoteChannels = 1;
+    // 多人混音支持
+    static QMap<QString, OpusDecoder*> peerDecoders;
+    static QMap<QString, QQueue<QByteArray>> peerQueues;
+    static QMap<QString, int> peerSilenceCounts;
+    static QMap<QString, qint64> peerLastActiveTimes;
+    static QMutex mixMutex;
+    static QByteArray mixBuffer;
+    
+    static QAudioSink *mixSink = nullptr;
+    static QIODevice *mixIO = nullptr;
+    static QTimer *mixTimer = nullptr;
+    
     static bool remoteListenEnabled = true;
 
     static OpusEncoder *opusEnc = nullptr;
@@ -1121,44 +1130,139 @@ int main(int argc, char *argv[])
         }
     });
 
-    QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
+    // --- Audio Mixing Initialization ---
+    QAudioFormat mixFmt;
+    mixFmt.setSampleRate(48000); // Fixed mixing rate
+    mixFmt.setChannelCount(1);
+    mixFmt.setSampleFormat(QAudioFormat::Int16);
+    
+    mixSink = new QAudioSink(QMediaDevices::defaultAudioOutput(), mixFmt, &app);
+    mixSink->setBufferSize(8192); // ~170ms
+    mixIO = mixSink->start();
+    
+    mixTimer = new QTimer(&app);
+    mixTimer->setInterval(20); // 20ms mixing cycle
+    
+    QObject::connect(mixTimer, &QTimer::timeout, [&]() {
         if (!remoteListenEnabled) return;
-        if (!remoteOpusDec || remoteSampleRate != sr || remoteChannels != ch) {
-            if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
-            remoteSampleRate = sr; remoteChannels = ch;
-            int err = OPUS_OK;
-            remoteOpusDec = opus_decoder_create(sr, ch, &err);
-            if (remoteSink) { remoteSink->stop(); delete remoteSink; remoteSink = nullptr; remoteOutIO = nullptr; }
-            remoteFmt = QAudioFormat();
-            remoteFmt.setSampleRate(sr);
-            remoteFmt.setChannelCount(ch);
-            remoteFmt.setSampleFormat(QAudioFormat::Int16);
-            QAudioDevice outDev = QMediaDevices::defaultAudioOutput();
-            remoteSink = new QAudioSink(outDev, remoteFmt, &app);
-            remoteSink->setBufferSize(4096);
-            remoteOutIO = remoteSink->start();
+        
+        QMutexLocker locker(&mixMutex);
+        
+        // Cleanup zombies (>30s inactive)
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        auto it = peerDecoders.begin();
+        while (it != peerDecoders.end()) {
+            QString vid = it.key();
+            if (now - peerLastActiveTimes.value(vid, 0) > 30000) {
+                if (it.value()) opus_decoder_destroy(it.value());
+                peerQueues.remove(vid);
+                peerSilenceCounts.remove(vid);
+                peerLastActiveTimes.remove(vid);
+                it = peerDecoders.erase(it);
+                qDebug() << "[AudioMixer] Removed zombie peer:" << vid;
+            } else {
+                ++it;
+            }
         }
-        if (!remoteOpusDec || !remoteSink) return;
-        QByteArray pcm;
-        pcm.resize(frameSamples * ch * sizeof(opus_int16));
-        int decodedSamples = opus_decode(remoteOpusDec,
-                                        reinterpret_cast<const unsigned char*>(opus.constData()),
-                                        opus.size(),
-                                        reinterpret_cast<opus_int16*>(pcm.data()),
-                                        frameSamples,
-                                        0);
-        if (decodedSamples <= 0) return;
-        pcm.resize(decodedSamples * ch * sizeof(opus_int16));
-        if (remoteSink->state() == QAudio::StoppedState) { remoteOutIO = remoteSink->start(); }
-        if (remoteSink->state() == QAudio::SuspendedState) { remoteSink->resume(); }
-        if (remoteOutIO) remoteOutIO->write(pcm);
+        
+        if (peerDecoders.isEmpty()) return;
+
+        // Prepare mix buffer
+        int frameSamples = 48000 * 20 / 1000; // 960 samples for 20ms
+        int mixSize = frameSamples * sizeof(opus_int16);
+        if (mixBuffer.size() != mixSize) {
+            mixBuffer.resize(mixSize);
+        }
+        std::memset(mixBuffer.data(), 0, mixSize);
+        opus_int16 *mixPtr = reinterpret_cast<opus_int16*>(mixBuffer.data());
+        
+        bool anyAudio = false;
+        
+        for (auto it = peerDecoders.begin(); it != peerDecoders.end(); ++it) {
+            QString vid = it.key();
+            OpusDecoder *dec = it.value();
+            QQueue<QByteArray> &q = peerQueues[vid];
+            
+            QByteArray opusData;
+            bool isSilence = false;
+            
+            if (!q.isEmpty()) {
+                opusData = q.dequeue();
+                peerSilenceCounts[vid] = 0;
+            } else {
+                peerSilenceCounts[vid]++;
+                if (peerSilenceCounts[vid] > 5) { // > 100ms silence
+                    isSilence = true;
+                }
+            }
+            
+            if (isSilence) continue;
+            
+            QByteArray pcm(frameSamples * sizeof(opus_int16), 0);
+            int decoded = opus_decode(dec, 
+                opusData.isEmpty() ? nullptr : reinterpret_cast<const unsigned char*>(opusData.constData()),
+                opusData.isEmpty() ? 0 : opusData.size(),
+                reinterpret_cast<opus_int16*>(pcm.data()),
+                frameSamples, 
+                0); // FEC disabled for now
+                
+            if (decoded > 0) {
+                const opus_int16 *src = reinterpret_cast<const opus_int16*>(pcm.constData());
+                for (int i = 0; i < decoded; ++i) {
+                    int s = mixPtr[i] + src[i];
+                    if (s > 32767) s = 32767;
+                    if (s < -32768) s = -32768;
+                    mixPtr[i] = static_cast<opus_int16>(s);
+                }
+                anyAudio = true;
+            }
+        }
+        
+        if (anyAudio && mixIO) {
+             if (mixSink->state() != QAudio::ActiveState) {
+                 if (mixSink->state() == QAudio::StoppedState) mixIO = mixSink->start();
+                 if (mixSink->state() == QAudio::SuspendedState) mixSink->resume();
+             }
+             mixIO->write(mixBuffer);
+        }
+    });
+    
+    mixTimer->start();
+
+    QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QString &viewerId, const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
+        if (!remoteListenEnabled) return;
+        
+        QMutexLocker locker(&mixMutex);
+        QString vid = viewerId;
+        if (vid.isEmpty()) vid = "unknown";
+        
+        if (!peerDecoders.contains(vid)) {
+            int err;
+            OpusDecoder *dec = opus_decoder_create(48000, 1, &err);
+            if (err == OPUS_OK) {
+                peerDecoders[vid] = dec;
+                qDebug() << "[AudioMixer] Added new peer:" << vid;
+            } else {
+                return;
+            }
+        }
+        
+        // 简单缓冲，如果堆积过多则丢弃旧帧 (Latency control)
+        if (peerQueues[vid].size() < 10) {
+            peerQueues[vid].enqueue(opus);
+        }
+        peerLastActiveTimes[vid] = QDateTime::currentMSecsSinceEpoch();
     });
 
     QObject::connect(sender, &WebSocketSender::viewerListenMuteRequested, [&](bool mute) {
         remoteListenEnabled = !mute;
         if (mute) {
-            if (remoteSink) { remoteSink->stop(); delete remoteSink; remoteSink = nullptr; remoteOutIO = nullptr; }
-            if (remoteOpusDec) { opus_decoder_destroy(remoteOpusDec); remoteOpusDec = nullptr; }
+             QMutexLocker locker(&mixMutex);
+             for(auto dec : peerDecoders) opus_decoder_destroy(dec);
+             peerDecoders.clear();
+             peerQueues.clear();
+             peerSilenceCounts.clear();
+             peerLastActiveTimes.clear();
         }
     });
     

@@ -124,7 +124,7 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
 
     static int procCount = 0;
     procCount++;
-    if (procCount % 100 == 0) {
+    if (procCount % 500 == 0) {
         qDebug() << "[Player] Process Audio Data #" << procCount << " Size:" << pcmData.size() << " SR:" << sampleRate;
     }
 

@@ -67,7 +67,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                                       frameSamples,
                                       0);
             if (decoded > 0) {
-                if (timerCount % 50 == 0) {
+                if (timerCount % 500 == 0) {
                      qDebug() << "[Receiver] Decoded frame #" << timerCount << " Bytes:" << decoded * m_opusChannels * sizeof(opus_int16) << " PLC:" << isPLC;
                 }
                 pcm.resize(decoded * m_opusChannels * sizeof(opus_int16));
@@ -80,17 +80,51 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                 }
                 anySource = true;
             } else {
-                 if (timerCount % 50 == 0) qDebug() << "[Receiver] Opus decode failed! Err:" << decoded;
+                 if (timerCount % 500 == 0) qDebug() << "[Receiver] Opus decode failed! Err:" << decoded;
             }
         }
 
-        for (auto it = m_peerDecoders.begin(); it != m_peerDecoders.end(); ++it) {
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        auto it = m_peerDecoders.begin();
+        while (it != m_peerDecoders.end()) {
+            QString pid = it.key();
             OpusDecoder* dec = it.value();
-            if (!dec) continue;
-            int ps = m_peerFrameSamples.value(it.key(), frameSamples);
+            
+            // 清理非活跃 Peer (> 30s 无数据)
+            if (now - m_peerLastActiveTimes.value(pid, 0) > 30000) {
+                if (dec) opus_decoder_destroy(dec);
+                m_peerQueues.remove(pid);
+                m_peerSampleRates.remove(pid);
+                m_peerChannels.remove(pid);
+                m_peerFrameSamples.remove(pid);
+                m_peerSilenceCounts.remove(pid);
+                m_peerLastActiveTimes.remove(pid);
+                it = m_peerDecoders.erase(it);
+                continue;
+            }
+
+            if (!dec) { ++it; continue; }
+            
+            int ps = m_peerFrameSamples.value(pid, frameSamples);
+            QQueue<QByteArray>& q = m_peerQueues[pid];
             QByteArray qd;
-            QQueue<QByteArray>& q = m_peerQueues[it.key()];
-            if (!q.isEmpty()) qd = q.dequeue();
+            
+            bool isSilence = false;
+            if (q.isEmpty()) {
+                m_peerSilenceCounts[pid]++;
+                if (m_peerSilenceCounts[pid] > 5) { // > 100ms silence (5 * 20ms)
+                    isSilence = true;
+                }
+            } else {
+                qd = q.dequeue();
+                m_peerSilenceCounts[pid] = 0;
+            }
+
+            if (isSilence) {
+                ++it;
+                continue; // 跳过静音 Peer 的解码和混音，避免 PLC 噪音
+            }
+
             QByteArray pcm;
             pcm.resize(ps * outCh * sizeof(opus_int16));
             int decoded = opus_decode(dec,
@@ -111,6 +145,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                 }
                 anySource = true;
             }
+            ++it;
         }
 
         if (m_audioLastTimestamp == 0) {
@@ -119,7 +154,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             m_audioLastTimestamp += 20000;
         }
         
-        if (timerCount % 50 == 0 && anySource) {
+        if (timerCount % 500 == 0 && anySource) {
             qDebug() << "[Receiver] Emitting audio frame. Size:" << mixOut.size() << " TS:" << m_audioLastTimestamp;
         }
         emit audioFrameReceived(mixOut, baseSr, outCh, 16, m_audioLastTimestamp);
@@ -207,6 +242,8 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     // 清理缓存数据，确保切换设备时没有残留
     memset(&m_stats, 0, sizeof(m_stats));
     m_frameSizes.clear();
+    m_peerSilenceCounts.clear();
+    m_peerLastActiveTimes.clear();
     m_connectionStartTime = 0;
     m_reconnectAttempts = 0; // 主动连接归零重连计数，确保首次尝试立即进行
     m_serverUrl = url;
@@ -448,23 +485,45 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             static qint64 lastRxTime = 0;
             rxCount++;
             qint64 now = QDateTime::currentMSecsSinceEpoch();
-            if (rxCount % 100 == 0 || (now - lastRxTime > 2000)) {
+            if (rxCount % 500 == 0 || (now - lastRxTime > 5000)) {
                  qDebug() << "[Receiver] Rx audio_opus #" << rxCount << " SR:" << sampleRate << " CH:" << channels << " Bytes:" << opusData.size();
                  lastRxTime = now;
             }
 
-            initOpusDecoderIfNeeded(sampleRate, channels);
+            // Force 48kHz for mixing to avoid "alien" sounds when mixing 16k and 48k streams
+            int mixSampleRate = 48000;
+            
+            initOpusDecoderIfNeeded(mixSampleRate, channels);
             if (!m_opusInitialized || !m_opusDecoder) {
                 qDebug() << "[Receiver] Opus decoder init failed!";
                 return; // 解码器不可用
             }
             // 入队以按固定20ms节拍解码，降低颤抖
-            m_opusSampleRate = sampleRate;
+            m_opusSampleRate = mixSampleRate;
             m_opusChannels = channels;
-            m_audioFrameSamples = frameSamples;
+            // Always use 20ms frame size for 48kHz (960 samples)
+            m_audioFrameSamples = mixSampleRate / 50; 
+            
+            // 延迟控制：如果队列过长，丢弃旧帧以追赶实时
+            // 目标：保持队列在 200ms (10帧) 以内
+            const int MAX_QUEUE_SIZE = 10; 
+            if (m_opusQueue.size() >= MAX_QUEUE_SIZE) {
+                int dropCount = 0;
+                while (m_opusQueue.size() >= MAX_QUEUE_SIZE - 2) { // 丢弃直到留出一点空间
+                    m_opusQueue.dequeue();
+                    dropCount++;
+                }
+                static int dropLogCount = 0;
+                if (++dropLogCount % 10 == 0) {
+                     qDebug() << "[Receiver] Latency control: dropped" << dropCount << "frames. Queue size:" << m_opusQueue.size();
+                }
+            }
+
             m_opusQueue.enqueue(opusData);
+            
             if (!m_audioTimer->isActive()) {
-                if (m_opusQueue.size() >= m_audioPrebufferFrames) {
+                // 降低预缓冲阈值到 4 帧 (80ms)，加快起播
+                if (m_opusQueue.size() >= 4) {
                     m_audioLastTimestamp = timestamp;
                     m_audioTimer->start();
                     qDebug() << "[Receiver] Audio timer started. Prebuffer:" << m_opusQueue.size();
@@ -481,28 +540,44 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             }
             int sampleRate = obj.value("sample_rate").toInt(16000);
             int channels = obj.value("channels").toInt(1);
-            int frameSamples = obj.value("frame_samples").toInt(sampleRate / 50);
+            // Force 48kHz mixing for peers
+            int mixSampleRate = 48000;
+            int frameSamples = mixSampleRate / 50; // 960 samples
+            
             qint64 timestamp = obj.value("timestamp").toVariant().toLongLong();
             QByteArray opusData = QByteArray::fromBase64(obj.value("data_base64").toString().toUtf8());
             OpusDecoder* dec = m_peerDecoders.value(fromId, nullptr);
-            if (!dec || m_peerSampleRates.value(fromId) != sampleRate || m_peerChannels.value(fromId) != channels) {
+            // Check if decoder exists and matches mix rate (not source rate)
+            if (!dec || m_peerSampleRates.value(fromId) != mixSampleRate || m_peerChannels.value(fromId) != channels) {
                 if (dec) { opus_decoder_destroy(dec); }
                 int err = OPUS_OK;
-                dec = opus_decoder_create(sampleRate, channels, &err);
+                dec = opus_decoder_create(mixSampleRate, channels, &err);
                 if (err != OPUS_OK || !dec) {
                     return;
                 }
                 m_peerDecoders[fromId] = dec;
-                m_peerSampleRates[fromId] = sampleRate;
+                m_peerSampleRates[fromId] = mixSampleRate;
                 m_peerChannels[fromId] = channels;
             }
             m_peerFrameSamples[fromId] = frameSamples;
-            m_peerQueues[fromId].enqueue(opusData);
+            m_peerSilenceCounts[fromId] = 0;
+            m_peerLastActiveTimes[fromId] = QDateTime::currentMSecsSinceEpoch();
+            
+            // 延迟控制 (Peer)
+            const int MAX_PEER_QUEUE = 10;
+            QQueue<QByteArray>& q = m_peerQueues[fromId];
+            if (q.size() >= MAX_PEER_QUEUE) {
+                while (q.size() >= MAX_PEER_QUEUE - 2) {
+                    q.dequeue();
+                }
+            }
+            
+            q.enqueue(opusData);
             if (!m_audioTimer->isActive()) {
-                bool ready = m_opusQueue.size() >= m_audioPrebufferFrames;
+                bool ready = m_opusQueue.size() >= 4; // 同样降低阈值
                 if (!ready) {
                     for (auto it = m_peerQueues.begin(); it != m_peerQueues.end(); ++it) {
-                        if (it.value().size() >= m_audioPrebufferFrames) { ready = true; break; }
+                        if (it.value().size() >= 4) { ready = true; break; }
                     }
                 }
                 if (ready) { m_audioLastTimestamp = timestamp; m_audioTimer->start(); }

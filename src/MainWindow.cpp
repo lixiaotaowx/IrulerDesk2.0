@@ -4,6 +4,7 @@
 #include "video_components/VideoDisplayWidget.h"
 #include "ui/AvatarSettingsWindow.h"
 #include "ui/SystemSettingsWindow.h"
+#include "ui/FirstLaunchWizard.h"
 #include <QApplication>
 #include <QSystemTrayIcon>
 #include <QMenu>
@@ -69,6 +70,20 @@ MainWindow::MainWindow(QWidget *parent)
     // 初始化随机数种子
     srand(static_cast<unsigned int>(time(nullptr)));
     
+    {
+        QString cfg = getConfigFilePath();
+        QFile f(cfg);
+        if (!f.exists()) {
+            FirstLaunchWizard w(this);
+            if (w.exec() == QDialog::Accepted) {
+                QString n = w.userName().trimmed();
+                if (!n.isEmpty()) { saveUserNameToConfig(n); m_userName = n; }
+                int iid = w.iconId(); if (iid > 0) saveIconIdToConfig(iid);
+                int si = w.screenIndex(); if (si >= 0) saveScreenIndexToConfig(si);
+            }
+        }
+    }
+
     setupUI();
     
     setupStatusBar();
@@ -1061,9 +1076,24 @@ void MainWindow::saveServerAddressToConfig(const QString& serverAddress)
 // 登录系统相关方法实现
 void MainWindow::initializeLoginSystem()
 {
-    // 获取用户ID和名称
+    QString cfg = getConfigFilePath();
+    QFile f(cfg);
+    if (!f.exists()) {
+        FirstLaunchWizard w(this);
+        if (w.exec() == QDialog::Accepted) {
+            QString n = w.userName().trimmed();
+            if (!n.isEmpty()) {
+                saveUserNameToConfig(n);
+                m_userName = n;
+            }
+            int iid = w.iconId();
+            if (iid > 0) saveIconIdToConfig(iid);
+            int si = w.screenIndex();
+            if (si >= 0) saveScreenIndexToConfig(si);
+        }
+    }
     m_userId = getDeviceId();
-    {
+    if (m_userName.isEmpty()) {
         QString name = loadUserNameFromConfig();
         if (name.isEmpty()) {
             name = QString("用户%1").arg(m_userId);
@@ -1071,22 +1101,15 @@ void MainWindow::initializeLoginSystem()
         }
         m_userName = name;
     }
-    
-    // 创建WebSocket连接
     m_loginWebSocket = new QWebSocket();
-    
-    // 连接信号槽
     connect(m_loginWebSocket, &QWebSocket::connected, this, &MainWindow::onLoginWebSocketConnected);
     connect(m_loginWebSocket, &QWebSocket::disconnected, this, &MainWindow::onLoginWebSocketDisconnected);
     connect(m_loginWebSocket, &QWebSocket::textMessageReceived, this, &MainWindow::onLoginWebSocketTextMessageReceived);
-    connect(m_loginWebSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), 
-            this, &MainWindow::onLoginWebSocketError);
+    connect(m_loginWebSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, &MainWindow::onLoginWebSocketError);
     m_heartbeatTimer = new QTimer(this);
     m_heartbeatTimer->setInterval(5000);
     m_heartbeatTimer->setTimerType(Qt::PreciseTimer);
     connect(m_heartbeatTimer, &QTimer::timeout, this, &MainWindow::sendHeartbeat);
-    
-    // 延迟3秒后连接到登录服务器，等待服务器启动
     QTimer::singleShot(3000, this, &MainWindow::connectToLoginServer);
 }
 

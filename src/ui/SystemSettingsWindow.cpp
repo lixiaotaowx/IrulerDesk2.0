@@ -4,40 +4,100 @@
 #include <QScreen>
 #include <QFile>
 #include <QTextStream>
+#include <QFrame>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QScrollArea>
+#include <QGridLayout>
+#include <QPixmap>
+#include <QCoreApplication>
+#include <QEvent>
+#include <QMouseEvent>
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     : QDialog(parent), m_list(new QListWidget(this))
 {
-    setWindowTitle("系统设置 - 屏幕切换");
+    setWindowTitle("系统设置");
     setModal(true);
-    resize(380, 420);
+    resize(520, 620);
+    setStyleSheet(
+        "QDialog { background-color: #1a1a1a; }"
+        "QLabel { color: #eaeaea; }"
+        "QFrame#card { background-color: #161616; border: 1px solid #2e2e2e; border-radius: 10px; }"
+        "QGroupBox { border: 1px solid #2e2e2e; border-radius: 10px; margin-top: 16px; color: #9bd28f; }"
+        "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 4px 8px; }"
+        "QPushButton { color: #ffffff; background-color: #2b2b2b; border: 1px solid #444; padding: 6px 14px; border-radius: 6px; }"
+        "QPushButton:hover { background-color: #3a3a3a; }"
+        "QRadioButton { color: #dddddd; }"
+        "QLineEdit { background-color: #121212; color: #f0f0f0; border: 1px solid #333; border-radius: 6px; padding: 6px; }"
+        "QListWidget { background-color: #121212; color: #dddddd; border: 1px solid #2e2e2e; border-radius: 10px; padding: 6px; }"
+        "QListWidget::item { height: 34px; }"
+        "QListWidget::item:selected { background-color: #2a3b2f; color: #ffffff; border: none; }"
+    );
 
-    QVBoxLayout* layout = new QVBoxLayout(this);
+    QVBoxLayout* root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    QScrollArea* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scroll->setStyleSheet(
+        "QScrollArea { border: none; }"
+        "QScrollBar:vertical { background-color: #222; width: 16px; margin: 0; border: none; }"
+        "QScrollBar::handle:vertical { background-color: #555; min-height: 32px; border-radius: 8px; }"
+        "QScrollBar::handle:vertical:hover { background-color: #666; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        "QScrollBar:horizontal { height: 16px; background: #222; }"
+        "QScrollBar::handle:horizontal { background: #555; min-width: 32px; border-radius: 8px; }"
+        "QScrollBar::handle:horizontal:hover { background: #666; }"
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
+    );
+    QWidget* content = new QWidget();
+    QVBoxLayout* layout = new QVBoxLayout(content);
+    layout->setContentsMargins(18, 18, 18, 18);
+    layout->setSpacing(16);
+
+    QLabel* header = new QLabel("系统设置", content);
+    QFont hf = header->font(); hf.setPointSize(16); hf.setBold(true); header->setFont(hf);
+    layout->addWidget(header);
+
     setupUserNameControls();
-    if (m_userNameLabel && m_userNameEdit) {
-        QHBoxLayout* userRow = new QHBoxLayout();
-        userRow->addWidget(m_userNameLabel);
-        userRow->addWidget(m_userNameEdit, 1);
-        if (m_userNameConfirmBtn) userRow->addWidget(m_userNameConfirmBtn);
-        layout->addLayout(userRow);
-    } else {
-        if (m_userNameLabel) layout->addWidget(m_userNameLabel);
-        if (m_userNameEdit) layout->addWidget(m_userNameEdit);
-    }
-    QLabel* tip = new QLabel("选择一个屏幕作为推流源", this);
-    layout->addWidget(tip);
-    layout->addWidget(m_list);
+    QFrame* userCard = new QFrame(this); userCard->setObjectName("card");
+    QVBoxLayout* userBox = new QVBoxLayout(userCard); userBox->setContentsMargins(12, 12, 12, 12); userBox->setSpacing(10);
+    QHBoxLayout* userRow = new QHBoxLayout();
+    if (m_userNameLabel) userRow->addWidget(m_userNameLabel);
+    if (m_userNameEdit) { userRow->addWidget(m_userNameEdit, 1); }
+    if (m_userNameConfirmBtn) userRow->addWidget(m_userNameConfirmBtn);
+    userBox->addLayout(userRow);
+    layout->addWidget(userCard);
 
-    // 在屏幕列表下面添加质量选择控件
+    QLabel* tip = new QLabel("选择一个屏幕作为推流源", this);
+    tip->setStyleSheet("QLabel { color: #9bd28f; }");
+    QFrame* screenCard = new QFrame(this); screenCard->setObjectName("card");
+    QVBoxLayout* screenBox = new QVBoxLayout(screenCard); screenBox->setContentsMargins(12, 12, 12, 12); screenBox->setSpacing(10);
+    screenBox->addWidget(tip);
+    m_list->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    screenBox->addWidget(m_list, 1);
+    layout->addWidget(screenCard, 1);
+
     setupQualityControls();
-    layout->addWidget(m_qualityLabel);
+    QFrame* qualityCard = new QFrame(this); qualityCard->setObjectName("card");
+    QVBoxLayout* qualityBox = new QVBoxLayout(qualityCard); qualityBox->setContentsMargins(12, 12, 12, 12); qualityBox->setSpacing(10);
+    if (m_qualityLabel) qualityBox->addWidget(m_qualityLabel);
     QHBoxLayout* qualityRow = new QHBoxLayout();
     qualityRow->addWidget(m_lowBtn);
     qualityRow->addWidget(m_mediumBtn);
     qualityRow->addWidget(m_highBtn);
     qualityRow->addWidget(m_extremeBtn);
     qualityRow->addStretch();
-    layout->addLayout(qualityRow);
+    qualityBox->addLayout(qualityRow);
+    layout->addWidget(qualityCard);
+
+    QFrame* avatarCard = setupAvatarControls();
+    layout->addWidget(avatarCard);
 
     populateScreens();
 
@@ -94,6 +154,9 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
         // 触发屏幕切换，等待首帧到达后由外部调用notifySwitchSucceeded
         emit screenSelected(idx);
     });
+
+    scroll->setWidget(content);
+    root->addWidget(scroll);
 }
 
 void SystemSettingsWindow::setupUserNameControls()
@@ -144,6 +207,24 @@ void SystemSettingsWindow::populateScreens()
         auto* item = new QListWidgetItem(text, m_list);
         item->setData(Qt::UserRole, i);
         m_list->addItem(item);
+    }
+    QString appDir = QApplication::applicationDirPath();
+    QString configPath = appDir + "/config/app_config.txt";
+    QFile f(configPath);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("screen_index=")) {
+                bool ok = false;
+                int idx = line.mid(QString("screen_index=").length()).trimmed().toInt(&ok);
+                if (ok && idx >= 0 && idx < m_list->count()) {
+                    m_list->setCurrentRow(idx);
+                }
+                break;
+            }
+        }
+        f.close();
     }
 }
 
@@ -203,5 +284,117 @@ void SystemSettingsWindow::notifySwitchSucceeded()
     if (m_progress && m_progress->isVisible()) {
         m_progress->close();
     }
-    accept();
+}
+
+QFrame* SystemSettingsWindow::setupAvatarControls()
+{
+    QFrame* avatarCard = new QFrame(this); avatarCard->setObjectName("card");
+    QVBoxLayout* box = new QVBoxLayout(avatarCard); box->setContentsMargins(12, 12, 12, 12); box->setSpacing(10);
+    QLabel* title = new QLabel("头像设置", avatarCard);
+    box->addWidget(title);
+    QWidget* gridWidget = new QWidget(avatarCard);
+    m_avatarGridLayout = new QGridLayout(gridWidget);
+    m_avatarGridLayout->setSpacing(15);
+    m_avatarGridLayout->setContentsMargins(0, 0, 0, 0);
+    box->addWidget(gridWidget);
+    loadAvatarImages();
+    return avatarCard;
+}
+
+void SystemSettingsWindow::loadAvatarImages()
+{
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString mapsDir = QString("%1/maps/icon").arg(appDir);
+    for (int i = 3; i <= 21; ++i) {
+        QString imagePath = QString("%1/%2.png").arg(mapsDir, QString::number(i));
+        QLabel *avatarLabel = new QLabel();
+        avatarLabel->setFixedSize(80, 80);
+        avatarLabel->setStyleSheet(
+            "QLabel {"
+            "    border: 2px solid transparent;"
+            "    border-radius: 8px;"
+            "    background-color: #3a3a3a;"
+            "}"
+            "QLabel:hover {"
+            "    border-color: #4caf50;"
+            "    background-color: #4a4a4a;"
+            "}"
+        );
+        avatarLabel->setAlignment(Qt::AlignCenter);
+        avatarLabel->setScaledContents(true);
+        QPixmap pixmap(imagePath);
+        if (!pixmap.isNull()) {
+            avatarLabel->setPixmap(pixmap);
+        } else {
+            avatarLabel->setText(QString::number(i));
+            avatarLabel->setStyleSheet(avatarLabel->styleSheet() + "QLabel { color: white; font-size: 16px; font-weight: bold; }");
+        }
+        avatarLabel->setProperty("iconId", i);
+        avatarLabel->installEventFilter(this);
+        avatarLabel->setAttribute(Qt::WA_Hover, true);
+        int row = (i - 3) / 4;
+        int col = (i - 3) % 4;
+        m_avatarGridLayout->addWidget(avatarLabel, row, col);
+        m_avatarLabels.append(avatarLabel);
+    }
+    QString configPath = QApplication::applicationDirPath() + "/config/app_config.txt";
+    QFile f(configPath);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("icon_id=")) {
+                bool ok = false;
+                int id = line.mid(QString("icon_id=").length()).trimmed().toInt(&ok);
+                if (ok) selectAvatar(id);
+                break;
+            }
+        }
+        f.close();
+    }
+}
+
+void SystemSettingsWindow::selectAvatar(int iconId)
+{
+    if (m_selectedAvatarLabel) {
+        m_selectedAvatarLabel->setStyleSheet(
+            "QLabel {"
+            "    border: 2px solid transparent;"
+            "    border-radius: 8px;"
+            "    background-color: #3a3a3a;"
+            "}"
+            "QLabel:hover {"
+            "    border-color: #4caf50;"
+            "    background-color: #4a4a4a;"
+            "}"
+        );
+    }
+    m_selectedIconId = iconId;
+    for (QLabel* label : m_avatarLabels) {
+        if (label->property("iconId").toInt() == iconId) {
+            m_selectedAvatarLabel = label;
+            label->setStyleSheet(
+                "QLabel {"
+                "    border: 3px solid #4caf50;"
+                "    border-radius: 8px;"
+                "    background-color: #4a4a4a;"
+                "}"
+            );
+            break;
+        }
+    }
+}
+
+bool SystemSettingsWindow::eventFilter(QObject* obj, QEvent* event)
+{
+    if (event->type() == QEvent::MouseButtonPress) {
+        QLabel* label = qobject_cast<QLabel*>(obj);
+        if (label && m_avatarLabels.contains(label)) {
+            int iconId = label->property("iconId").toInt();
+            selectAvatar(iconId);
+            emit avatarSelected(iconId);
+            return true;
+        }
+    }
+    return QDialog::eventFilter(obj, event);
 }

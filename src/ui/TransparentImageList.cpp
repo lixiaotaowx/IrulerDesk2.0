@@ -520,8 +520,7 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     QMenu contextMenu(this);
                     QAction *showMainWindowAction = contextMenu.addAction("显示主窗口");
                     connect(showMainWindowAction, &QAction::triggered, this, &TransparentImageList::showMainListRequested);
-                    QAction *setAvatarAction = contextMenu.addAction("设置头像");
-                    connect(setAvatarAction, &QAction::triggered, this, &TransparentImageList::setAvatarRequested);
+                    
                     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
                     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
 
@@ -756,8 +755,7 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
     QAction *showMainWindowAction = contextMenu.addAction("显示主窗口");
     connect(showMainWindowAction, &QAction::triggered, this, &TransparentImageList::showMainListRequested);
     
-    QAction *setAvatarAction = contextMenu.addAction("设置头像");
-    connect(setAvatarAction, &QAction::triggered, this, &TransparentImageList::setAvatarRequested);
+    
 
     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);

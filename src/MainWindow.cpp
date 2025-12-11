@@ -1545,6 +1545,8 @@ void MainWindow::onSystemSettingsRequested()
                 this, &MainWindow::onLocalQualitySelected);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::userNameChanged,
                 this, &MainWindow::onUserNameChanged);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::avatarSelected,
+                this, &MainWindow::onAvatarSelected);
     }
     m_systemSettingsWindow->show();
 }
@@ -1627,35 +1629,42 @@ void MainWindow::onSpeakerToggleRequested(bool enabled)
 
 void MainWindow::onScreenSelected(int index)
 {
-
-    // 改为热切换：通过播放器端WebSocket发送按索引切屏消息，不修改配置、不重启采集进程
+    bool active = false;
     if (m_videoWindow) {
         auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
-        if (videoWidget) {
-            // 视频窗口提示“切换中...”，并发送索引切换请求（会话不断流）
-            videoWidget->sendSwitchScreenIndex(index);
+        if (videoWidget && videoWidget->isReceiving()) {
+            active = true;
         }
     }
-
-    // 等待首帧到达后通知系统设置窗口关闭（沿用原有首帧确认逻辑）
-    if (m_videoWindow) {
-        auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
-        if (videoWidget) {
-            m_isScreenSwitching = true;
-            if (m_switchFrameConn) {
-                QObject::disconnect(m_switchFrameConn);
-            }
-            m_switchFrameConn = connect(videoWidget, &VideoDisplayWidget::frameReceived, this, [this]() {
-                if (m_isScreenSwitching) {
-                    m_isScreenSwitching = false;
-                    if (m_systemSettingsWindow) {
-                        m_systemSettingsWindow->notifySwitchSucceeded();
-                    }
-                    if (m_switchFrameConn) {
-                        QObject::disconnect(m_switchFrameConn);
-                    }
+    if (m_isStreaming) {
+        active = true;
+    }
+    if (active) {
+        if (m_videoWindow) {
+            auto *videoWidget = m_videoWindow->getVideoDisplayWidget();
+            if (videoWidget) {
+                videoWidget->sendSwitchScreenIndex(index);
+                m_isScreenSwitching = true;
+                if (m_switchFrameConn) {
+                    QObject::disconnect(m_switchFrameConn);
                 }
-            });
+                m_switchFrameConn = connect(videoWidget, &VideoDisplayWidget::frameReceived, this, [this]() {
+                    if (m_isScreenSwitching) {
+                        m_isScreenSwitching = false;
+                        if (m_systemSettingsWindow) {
+                            m_systemSettingsWindow->notifySwitchSucceeded();
+                        }
+                        if (m_switchFrameConn) {
+                            QObject::disconnect(m_switchFrameConn);
+                        }
+                    }
+                });
+            }
+        }
+    } else {
+        saveScreenIndexToConfig(index);
+        if (m_systemSettingsWindow) {
+            m_systemSettingsWindow->notifySwitchSucceeded();
         }
     }
 }

@@ -10,12 +10,17 @@
 #include <iostream>
 #ifdef _WIN32
 #include <windows.h>
+#include <timeapi.h>
+#pragma comment(lib, "Winmm.lib")
 #endif
 #include "../common/ConsoleLogger.h"
 #include "../common/CrashGuard.h"
 
 int main(int argc, char *argv[])
 {
+    #ifdef _WIN32
+    timeBeginPeriod(1);
+    #endif
     // 安装崩溃守护与控制台日志重定向
     CrashGuard::install();
     ConsoleLogger::attachToParentConsole();
@@ -103,7 +108,11 @@ int main(int argc, char *argv[])
         
         
         
-        return app.exec();
+        int r = app.exec();
+        #ifdef _WIN32
+        timeEndPeriod(1);
+        #endif
+        return r;
     } else {
         // 独立窗口模式：显示完整的视频播放窗口
         
@@ -129,6 +138,9 @@ int main(int argc, char *argv[])
         
         
         int result = app.exec();
+        #ifdef _WIN32
+        timeEndPeriod(1);
+        #endif
         delete videoWidget;
         return result;
     }

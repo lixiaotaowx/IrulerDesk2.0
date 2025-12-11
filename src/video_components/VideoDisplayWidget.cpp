@@ -112,7 +112,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
             // 此处移除重复发送，防止双重请求导致目标端推流服务冻结
             // m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
         }
-        sendAudioToggle(m_micSendEnabled);
+        // 仅在本端控制本端麦克风；不再在连接阶段下发对端 audio_toggle
     });
     
 

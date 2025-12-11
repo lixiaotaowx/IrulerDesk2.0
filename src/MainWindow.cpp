@@ -1583,7 +1583,6 @@ void MainWindow::onMicToggleRequested(bool enabled)
         m_videoWindow->setMicChecked(enabled);
         auto *vd = m_videoWindow->getVideoDisplayWidget();
         if (vd) {
-            vd->sendAudioToggle(enabled);
             vd->setTalkEnabled(enabled);
             vd->setMicSendEnabled(enabled);
         }

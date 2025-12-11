@@ -376,6 +376,7 @@ int main(int argc, char *argv[])
     static QMap<QString, QQueue<QByteArray>> peerQueues;
     static QMap<QString, int> peerSilenceCounts;
     static QMap<QString, qint64> peerLastActiveTimes;
+    static QMap<QString, bool> peerBuffering; // New: Buffering state for jitter control
     static QMutex mixMutex;
     static QByteArray mixBuffer;
     
@@ -406,36 +407,78 @@ int main(int argc, char *argv[])
 
     QAudioDevice inDev = QMediaDevices::defaultAudioInput();
     
-    // 1. 尝试直接匹配 Opus 支持的采样率
+    // 1. 尝试直接匹配 Opus 支持的采样率 (优先 48kHz)
+    // 检查 Int16 和 Float 格式，因为有些设备（特别是 High Def Audio）在 Shared Mode 下更喜欢 Float
+    // 如果能以 48kHz 采集，就能利用操作系统的高质量重采样（如果硬件本身不是48k），
+    // 从而避免我们自己做低质量的线性插值重采样。
     for (int rate : opusRates) {
+        // 先试 Int16
         QAudioFormat fmt;
         fmt.setSampleRate(rate);
-        fmt.setChannelCount(1); // 单声道
+        fmt.setChannelCount(1); 
         fmt.setSampleFormat(QAudioFormat::Int16);
         
         if (inDev.isFormatSupported(fmt)) {
             micFormat = fmt;
             formatFound = true;
-            qDebug() << "[Audio] Found supported Opus format:" << rate << "Hz";
+            qDebug() << "[Audio] Found supported Opus format (Int16):" << rate << "Hz";
+            break;
+        }
+
+        // 再试 Float
+        fmt.setSampleFormat(QAudioFormat::Float);
+        if (inDev.isFormatSupported(fmt)) {
+            micFormat = fmt;
+            formatFound = true;
+            qDebug() << "[Audio] Found supported Opus format (Float):" << rate << "Hz";
             break;
         }
     }
 
-    // 2. 如果不支持标准 Opus 采样率，回退到设备首选格式
+    // 2. 如果标准检查失败，尝试“强行”请求 48kHz
+    // 因为 isFormatSupported 有时在 Windows WASAPI 下不准确，或者过于保守。
+    // 我们宁愿让 OS 帮我们重采样，也不愿自己做。
     if (!formatFound) {
-        qDebug() << "[Audio] No standard Opus format supported. Finding preferred...";
-        QAudioFormat preferred = inDev.preferredFormat();
-        qDebug() << "[Audio] Preferred format:" << preferred;
-        
-        // 尽量保持 Int16 和单声道，如果设备支持的话
-        QAudioFormat tryFmt = preferred;
+        QAudioFormat tryFmt;
+        tryFmt.setSampleRate(48000);
         tryFmt.setChannelCount(1);
         tryFmt.setSampleFormat(QAudioFormat::Int16);
-        if (inDev.isFormatSupported(tryFmt)) {
-            micFormat = tryFmt;
-        } else {
+        
+        // 我们不检查 isFormatSupported，直接标记为找到，后续尝试打开。
+        // 如果打开失败，我们还有后面的错误处理逻辑吗？
+        // 这里需要谨慎。我们可以先尝试“信任”首选格式，但首选格式往往是 44100。
+        // 让我们修改策略：如果没找到，我们先记录首选格式，但暂时把 micFormat 设为 48000 碰碰运气？
+        // 不，如果不成功会很麻烦。
+        
+        // 还是保守一点：如果上面都没找到，就用首选格式。
+        // 但是！我们可以尝试 Float 的首选格式是否是 48k？
+        // 有些设备首选是 48k Float。
+        
+        qDebug() << "[Audio] No standard Opus format confirmed supported. Checking preferred...";
+        QAudioFormat preferred = inDev.preferredFormat();
+        qDebug() << "[Audio] Device Preferred format:" << preferred;
+        
+        // 如果首选格式本身就是 Opus 友好的 (48k/24k/16k...)，那最好
+        if (opusRates.contains(preferred.sampleRate())) {
             micFormat = preferred;
+             // 强制单声道以节省带宽（如果设备支持单声道切片）
+            QAudioFormat tryMono = preferred;
+            tryMono.setChannelCount(1);
+            if (inDev.isFormatSupported(tryMono)) {
+                micFormat = tryMono;
+            }
+        } else {
+             // 首选格式不是 Opus 标准 (例如 44100)。
+             // 这时我们再做最后一次努力：尝试构造一个 48000 的格式，看设备是否"可能"支持
+             // 有些驱动不报告支持，但其实能跑。
+             // 但为了稳定性，我们还是回退到 preferred，然后让后续逻辑处理重采样。
+             // 这里的关键是：上面的循环已经检查了 Int16 和 Float 的 48k。如果都失败了，说明系统真的不想给 48k。
+             micFormat = preferred;
         }
+        
+        // 确保 micFormat 有效
+        if (micFormat.sampleRate() <= 0) micFormat.setSampleRate(48000);
+        if (micFormat.channelCount() <= 0) micFormat.setChannelCount(1);
     }
 
     audioSampleRate = micFormat.sampleRate();
@@ -1158,6 +1201,7 @@ int main(int argc, char *argv[])
                 peerQueues.remove(vid);
                 peerSilenceCounts.remove(vid);
                 peerLastActiveTimes.remove(vid);
+                peerBuffering.remove(vid);
                 it = peerDecoders.erase(it);
                 qDebug() << "[AudioMixer] Removed zombie peer:" << vid;
             } else {
@@ -1186,13 +1230,30 @@ int main(int argc, char *argv[])
             QByteArray opusData;
             bool isSilence = false;
             
-            if (!q.isEmpty()) {
-                opusData = q.dequeue();
-                peerSilenceCounts[vid] = 0;
-            } else {
-                peerSilenceCounts[vid]++;
-                if (peerSilenceCounts[vid] > 5) { // > 100ms silence
+            // Peer Anti-Jitter Logic
+            bool isBuffering = peerBuffering.value(vid, true);
+            // Threshold increased to 20 frames (400ms) to fix stuttering/pulsed audio
+            // while keeping max latency under 1 second.
+            if (isBuffering) {
+                if (q.size() >= 20) { 
+                    isBuffering = false;
+                    peerBuffering[vid] = false;
+                    qDebug() << "[AudioMixer] Peer" << vid << "buffering done. Queue:" << q.size();
+                } else {
                     isSilence = true;
+                }
+            }
+
+            if (!isSilence) {
+                if (!q.isEmpty()) {
+                    opusData = q.dequeue();
+                    peerSilenceCounts[vid] = 0;
+                } else {
+                    // Underrun: Start buffering again
+                    peerBuffering[vid] = true;
+                    isSilence = true;
+                    peerSilenceCounts[vid]++;
+                    // qDebug() << "[AudioMixer] Peer" << vid << "underrun. Buffering...";
                 }
             }
             
@@ -1241,6 +1302,7 @@ int main(int argc, char *argv[])
             OpusDecoder *dec = opus_decoder_create(48000, 1, &err);
             if (err == OPUS_OK) {
                 peerDecoders[vid] = dec;
+                peerBuffering[vid] = true; // Initialize buffering
                 qDebug() << "[AudioMixer] Added new peer:" << vid;
             } else {
                 return;
@@ -1248,9 +1310,17 @@ int main(int argc, char *argv[])
         }
         
         // 简单缓冲，如果堆积过多则丢弃旧帧 (Latency control)
-        if (peerQueues[vid].size() < 10) {
-            peerQueues[vid].enqueue(opus);
+        // Previous 200 (4s) was too high, causing ~2s latency.
+        // Adjusted to 50 frames (1000ms) to balance jitter resistance and latency.
+        const int MAX_PEER_QUEUE = 50; 
+        if (peerQueues[vid].size() >= MAX_PEER_QUEUE) {
+             // Drop oldest frames to catch up, but leave enough to avoid immediate underrun
+             while (peerQueues[vid].size() >= MAX_PEER_QUEUE - 10) {
+                 peerQueues[vid].dequeue(); 
+             }
+             qDebug() << "[AudioMixer] Peer" << vid << "latency high. Dropped 10 frames. Queue:" << peerQueues[vid].size();
         }
+        peerQueues[vid].enqueue(opus);
         peerLastActiveTimes[vid] = QDateTime::currentMSecsSinceEpoch();
     });
 

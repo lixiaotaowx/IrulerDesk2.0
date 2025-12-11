@@ -14,6 +14,20 @@
 #include <QtMultimedia/QAudioFormat>
 #include <QVector>
 
+static int pickBestOpusSampleRate(const QAudioDevice &inDev) {
+    const int candidates[] = {48000, 24000, 16000, 12000, 8000};
+    for (int sr : candidates) {
+        QAudioFormat f;
+        f.setSampleRate(sr);
+        f.setChannelCount(1);
+        f.setSampleFormat(QAudioFormat::Int16);
+        if (inDev.isFormatSupported(f)) return sr;
+    }
+    // Fallback to device preferred if none of the Opus-supported rates are reported as supported
+    // We will resample in produceOpusFrame, but try to stay close to preferred
+    return inDev.preferredFormat().sampleRate();
+}
+
 WebSocketReceiver::WebSocketReceiver(QObject *parent)
     : QObject(parent)
     , m_webSocket(nullptr)
@@ -27,6 +41,10 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     , m_connectionStartTime(0)
     , m_lastStatsUpdateTime(0)
     , m_totalDowntimeStart(0)
+    , m_producerSilenceCount(0)
+    , m_hasAudioStarted(false)
+    , m_consecutiveUnderruns(0)
+    , m_producerBuffering(true)
 {
     setupWebSocket();
     
@@ -40,12 +58,31 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     
     // 音频：初始化20ms节拍的抖动缓冲定时器
     m_audioTimer = new QTimer(this);
-    m_audioTimer->setInterval(20);
+    m_audioTimer->setTimerType(Qt::PreciseTimer);
+    m_audioTimer->setInterval(5); // 提高检查频率以支持BurstCatch-up
     connect(m_audioTimer, &QTimer::timeout, [this]() {
-        static int timerCount = 0;
-        timerCount++;
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (m_nextAudioTick == 0) m_nextAudioTick = now;
+        
+        // Safety: relax reset threshold from 500ms to 3000ms to avoid rhythmic dropouts
+        // if we are just slightly behind due to clock drift.
+        // Update: 3000ms is too large for burst catch-up. Reduce to 200ms to prefer jumping over blocking.
+        // Update 2: "Quality is most important". Reverting to relaxed threshold (5000ms) to prevent ANY skips.
+        // If we are behind, we are behind. Smoothness > Realtime.
+        if (now - m_nextAudioTick > 5000) {
+             qDebug() << "[Receiver] Audio clock drift > 5000ms, resetting tick. Delta:" << (now - m_nextAudioTick);
+             m_nextAudioTick = now;
+        }
 
-        int baseSr = m_opusInitialized ? m_opusSampleRate : 16000;
+        int processedFrames = 0;
+        // 恢复 Burst 能力：如果定时器晚了，允许一次处理多帧以追赶时间轴。
+        // 之前的限制导致了“喂数据速度 < 播放速度”，从而引发了断断续续。
+        // 我们设置上限为 10 帧 (200ms)，既能追赶又防止阻塞太久。
+        while (m_nextAudioTick <= now && processedFrames < 10) {
+            static int timerCount = 0;
+            timerCount++;
+
+            int baseSr = m_opusInitialized ? m_opusSampleRate : 16000;
         int outCh = 1;
         int frameSamples = m_audioFrameSamples > 0 ? m_audioFrameSamples : (baseSr / 50);
         QByteArray mixOut;
@@ -55,32 +92,82 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
 
         if (m_opusInitialized && m_opusDecoder) {
             QByteArray opusData;
-            bool isPLC = m_opusQueue.isEmpty();
-            if (!isPLC) opusData = m_opusQueue.dequeue();
+            int curSeq = -1;
             
-            QByteArray pcm;
-            pcm.resize(frameSamples * m_opusChannels * sizeof(opus_int16));
-            int decoded = opus_decode(m_opusDecoder,
-                                      opusData.isEmpty() ? nullptr : reinterpret_cast<const unsigned char*>(opusData.constData()),
-                                      opusData.isEmpty() ? 0 : opusData.size(),
-                                      reinterpret_cast<opus_int16*>(pcm.data()),
-                                      frameSamples,
-                                      0);
-            if (decoded > 0) {
-                if (timerCount % 500 == 0) {
-                     qDebug() << "[Receiver] Decoded frame #" << timerCount << " Bytes:" << decoded * m_opusChannels * sizeof(opus_int16) << " PLC:" << isPLC;
+            // Producer Anti-Jitter Logic
+            if (m_producerBuffering) {
+                if (m_opusQueue.size() >= 12) {
+                    m_producerBuffering = false;
+                    qDebug() << "[Receiver] Producer buffering done. Queue:" << m_opusQueue.size();
                 }
-                pcm.resize(decoded * m_opusChannels * sizeof(opus_int16));
-                const opus_int16* src = reinterpret_cast<const opus_int16*>(pcm.constData());
-                opus_int16* dst = reinterpret_cast<opus_int16*>(mixOut.data());
-                for (int i = 0; i < decoded; ++i) {
-                    int s = dst[i] + src[i];
-                    if (s > 32767) s = 32767; else if (s < -32768) s = -32768;
-                    dst[i] = static_cast<opus_int16>(s);
+            }
+            
+            bool hasFrame = !m_producerBuffering && !m_opusQueue.isEmpty();
+            
+            bool doDecode = true;
+            if (!hasFrame) {
+                if (!m_producerBuffering && m_opusQueue.isEmpty()) {
+                     m_producerBuffering = true;
+                     // qDebug() << "[Receiver] Producer underrun. Buffering...";
                 }
-                anySource = true;
+                
+                m_producerSilenceCount++;
+                // Increase PLC limit to 25 frames (500ms) to bridge longer network gaps
+                // Update: Reduced to 15 frames (300ms) to avoid over-buffering/latency accumulation
+                if (m_producerSilenceCount > 15) doDecode = false;
             } else {
-                 if (timerCount % 500 == 0) qDebug() << "[Receiver] Opus decode failed! Err:" << decoded;
+                m_producerSilenceCount = 0;
+                opusData = m_opusQueue.dequeue();
+                if (!m_opusSeqQueue.isEmpty()) curSeq = m_opusSeqQueue.dequeue();
+            }
+
+            if (doDecode) {
+                QByteArray pcm;
+                pcm.resize(frameSamples * m_opusChannels * sizeof(opus_int16));
+                int decoded = opus_decode(m_opusDecoder,
+                                          opusData.isEmpty() ? nullptr : reinterpret_cast<const unsigned char*>(opusData.constData()),
+                                          opusData.isEmpty() ? 0 : opusData.size(),
+                                          reinterpret_cast<opus_int16*>(pcm.data()),
+                                          frameSamples,
+                                          0);
+                if (curSeq >= 0 && m_lastOpusSeq >= 0 && curSeq >= m_lastOpusSeq + 2 && !opusData.isEmpty()) {
+                    QByteArray fecPcm;
+                    fecPcm.resize(frameSamples * m_opusChannels * sizeof(opus_int16));
+                    int fecDecoded = opus_decode(m_opusDecoder,
+                        reinterpret_cast<const unsigned char*>(opusData.constData()),
+                        opusData.size(),
+                        reinterpret_cast<opus_int16*>(fecPcm.data()),
+                        frameSamples,
+                        1);
+                    if (fecDecoded > 0) {
+                        const opus_int16* src = reinterpret_cast<const opus_int16*>(fecPcm.constData());
+                        opus_int16* dst = reinterpret_cast<opus_int16*>(mixOut.data());
+                        int n = std::min(fecDecoded, frameSamples);
+                        for (int i = 0; i < n; ++i) {
+                            int s = dst[i] + src[i];
+                            if (s > 32767) s = 32767; else if (s < -32768) s = -32768;
+                            dst[i] = static_cast<opus_int16>(s);
+                        }
+                        anySource = true;
+                    }
+                }
+                if (decoded > 0) {
+                    if (timerCount % 500 == 0) {
+                         qDebug() << "[Receiver] Decoded frame #" << timerCount << " Bytes:" << decoded * m_opusChannels * sizeof(opus_int16) << " PLC:" << !hasFrame;
+                    }
+                    pcm.resize(decoded * m_opusChannels * sizeof(opus_int16));
+                    const opus_int16* src = reinterpret_cast<const opus_int16*>(pcm.constData());
+                    opus_int16* dst = reinterpret_cast<opus_int16*>(mixOut.data());
+                    for (int i = 0; i < decoded; ++i) {
+                        int s = dst[i] + src[i];
+                        if (s > 32767) s = 32767; else if (s < -32768) s = -32768;
+                        dst[i] = static_cast<opus_int16>(s);
+                    }
+                    anySource = true;
+                    if (curSeq >= 0) m_lastOpusSeq = curSeq;
+                } else {
+                     if (timerCount % 500 == 0) qDebug() << "[Receiver] Opus decode failed! Err:" << decoded;
+                }
             }
         }
 
@@ -99,6 +186,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                 m_peerFrameSamples.remove(pid);
                 m_peerSilenceCounts.remove(pid);
                 m_peerLastActiveTimes.remove(pid);
+                m_peerBuffering.remove(pid);
                 it = m_peerDecoders.erase(it);
                 continue;
             }
@@ -109,20 +197,37 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             QQueue<QByteArray>& q = m_peerQueues[pid];
             QByteArray qd;
             
-            bool isSilence = false;
-            if (q.isEmpty()) {
-                m_peerSilenceCounts[pid]++;
-                if (m_peerSilenceCounts[pid] > 5) { // > 100ms silence (5 * 20ms)
-                    isSilence = true;
+            // Peer Anti-Jitter Logic
+            bool isBuffering = m_peerBuffering.value(pid, true);
+            if (isBuffering) {
+                if (q.size() >= 12) {
+                    isBuffering = false;
+                    m_peerBuffering[pid] = false;
+                    // Debug only occasionally
+                    if (timerCount % 100 == 0) qDebug() << "[Receiver] Peer" << pid << "buffering done. Queue:" << q.size();
                 }
+            }
+
+            bool isSilence = false;
+            if (isBuffering) {
+                isSilence = true;
+            } else if (q.isEmpty()) {
+                m_peerBuffering[pid] = true; // Enter buffering state
+                isSilence = true;
+                // Debug only occasionally
+                if (timerCount % 100 == 0) qDebug() << "[Receiver] Peer" << pid << "underrun. Entering buffering state.";
             } else {
                 qd = q.dequeue();
                 m_peerSilenceCounts[pid] = 0;
             }
 
             if (isSilence) {
+                // 如果处于缓冲状态，我们不增加 silence count，因为这是有意为之
+                // 如果是空队列且未缓冲（实际上上面的逻辑已经涵盖了），则可能需要 PLC
+                
+                // 简单的静音处理，不进行 PLC，以免产生怪声
                 ++it;
-                continue; // 跳过静音 Peer 的解码和混音，避免 PLC 噪音
+                continue; 
             }
 
             QByteArray pcm;
@@ -163,12 +268,34 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             int readyPeers = 0;
             for (auto itq = m_peerQueues.begin(); itq != m_peerQueues.end(); ++itq) { if (!itq.value().isEmpty()) { readyPeers++; break; } }
             if (!readyPeers && m_opusQueue.isEmpty()) {
-                if (m_audioTimer->isActive()) {
-                    m_audioTimer->stop();
-                    qDebug() << "[Receiver] Audio timer stopped (no data & no PLC).";
+                m_consecutiveUnderruns++;
+                // Allow 20 frames (400ms) of soft underrun (keep timer running)
+                if (m_consecutiveUnderruns < 20) {
+                     // Generate silence frame to keep AudioSink fed
+                     QByteArray silence;
+                     silence.resize(frameSamples * outCh * sizeof(opus_int16)); 
+                     memset(silence.data(), 0, silence.size());
+                     // Emit silence with incremented timestamp
+                     emit audioFrameReceived(silence, baseSr, outCh, 16, m_audioLastTimestamp);
+                     
+                     if (m_consecutiveUnderruns % 10 == 0)
+                        qDebug() << "[Receiver] Soft Underrun #" << m_consecutiveUnderruns << " - Inserting Silence";
+                } else {
+                    if (m_audioTimer->isActive()) {
+                        m_audioTimer->stop();
+                        qDebug() << "[Receiver] Audio timer stopped (Hard Underrun).";
+                    }
                 }
+            } else {
+                m_consecutiveUnderruns = 0;
             }
+        } else {
+            m_consecutiveUnderruns = 0;
         }
+        
+        m_nextAudioTick += 20;
+        processedFrames++;
+        } // End while
     });
     // 定时器按需在收到第一帧后启动
     
@@ -307,6 +434,11 @@ void WebSocketReceiver::onConnected()
         m_reconnectAttempts = 0;
         m_connectionStartTime = QDateTime::currentMSecsSinceEpoch();
         stopReconnectTimer();
+
+        // Reset audio state on new connection
+        m_hasAudioStarted = false;
+        m_consecutiveUnderruns = 0;
+        m_producerSilenceCount = 0;
 
         // 性能监控：更新重连和断线统计
         if (m_totalDowntimeStart > 0) {
@@ -479,6 +611,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             qint64 timestamp = obj.value("timestamp").toVariant().toLongLong();
             QString base64 = obj.value("data_base64").toString();
             QByteArray opusData = QByteArray::fromBase64(base64.toUtf8());
+            int seq = obj.value("seq").toInt(-1);
 
             // 调试日志：接收统计
             static int rxCount = 0;
@@ -505,12 +638,14 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             m_audioFrameSamples = mixSampleRate / 50; 
             
             // 延迟控制：如果队列过长，丢弃旧帧以追赶实时
-            // 目标：保持队列在 200ms (10帧) 以内
-            const int MAX_QUEUE_SIZE = 10; 
+            // 目标：保持队列在 2000ms (100帧) 以内，以抵抗极端网络抖动
+            // Update: Reduced to 100 frames (2s) for better latency
+            const int MAX_QUEUE_SIZE = 100; 
             if (m_opusQueue.size() >= MAX_QUEUE_SIZE) {
                 int dropCount = 0;
-                while (m_opusQueue.size() >= MAX_QUEUE_SIZE - 2) { // 丢弃直到留出一点空间
+                while (m_opusQueue.size() >= MAX_QUEUE_SIZE - 2) {
                     m_opusQueue.dequeue();
+                    if (!m_opusSeqQueue.isEmpty()) m_opusSeqQueue.dequeue();
                     dropCount++;
                 }
                 static int dropLogCount = 0;
@@ -520,13 +655,17 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             }
 
             m_opusQueue.enqueue(opusData);
+            m_opusSeqQueue.enqueue(seq);
             
             if (!m_audioTimer->isActive()) {
-                // 降低预缓冲阈值到 4 帧 (80ms)，加快起播
-                if (m_opusQueue.size() >= 4) {
+                int threshold = 12;
+                if (m_opusQueue.size() >= threshold) {
+                    m_hasAudioStarted = true;
+                    m_producerBuffering = true;
                     m_audioLastTimestamp = timestamp;
+                    m_nextAudioTick = QDateTime::currentMSecsSinceEpoch();
                     m_audioTimer->start();
-                    qDebug() << "[Receiver] Audio timer started. Prebuffer:" << m_opusQueue.size();
+                    qDebug() << "[Receiver] Audio timer started. Prebuffer:" << m_opusQueue.size() << " Threshold:" << threshold;
                 }
             }
             return;
@@ -535,6 +674,11 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             if (!fromId.isEmpty()) {
                 QMutexLocker locker(&m_mutex);
                 if (fromId == m_lastViewerId) {
+                    // Debug: Filtered own echo
+                    static int echoFilterCount = 0;
+                    if (++echoFilterCount % 100 == 0) {
+                        qDebug() << "[Receiver] Filtered own echo from viewer_id:" << fromId;
+                    }
                     return;
                 }
             }
@@ -558,29 +702,37 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 m_peerDecoders[fromId] = dec;
                 m_peerSampleRates[fromId] = mixSampleRate;
                 m_peerChannels[fromId] = channels;
+                m_peerBuffering[fromId] = true; // Initialize buffering state
             }
             m_peerFrameSamples[fromId] = frameSamples;
             m_peerSilenceCounts[fromId] = 0;
             m_peerLastActiveTimes[fromId] = QDateTime::currentMSecsSinceEpoch();
             
             // 延迟控制 (Peer)
-            const int MAX_PEER_QUEUE = 10;
+            const int MAX_PEER_QUEUE = 50; // Reduced to 50 (1000ms) for better latency
             QQueue<QByteArray>& q = m_peerQueues[fromId];
             if (q.size() >= MAX_PEER_QUEUE) {
-                while (q.size() >= MAX_PEER_QUEUE - 2) {
+                while (q.size() >= MAX_PEER_QUEUE - 10) {
                     q.dequeue();
                 }
             }
             
             q.enqueue(opusData);
             if (!m_audioTimer->isActive()) {
-                bool ready = m_opusQueue.size() >= 4; // 同样降低阈值
+                int threshold = 12;
+                bool ready = m_opusQueue.size() >= threshold;
                 if (!ready) {
                     for (auto it = m_peerQueues.begin(); it != m_peerQueues.end(); ++it) {
-                        if (it.value().size() >= 4) { ready = true; break; }
+                        if (it.value().size() >= threshold) { ready = true; break; }
                     }
                 }
-                if (ready) { m_audioLastTimestamp = timestamp; m_audioTimer->start(); }
+                if (ready) { 
+                    m_hasAudioStarted = true;
+                    m_audioLastTimestamp = timestamp; 
+                    m_nextAudioTick = QDateTime::currentMSecsSinceEpoch();
+                    m_audioTimer->start(); 
+                    qDebug() << "[Receiver] Audio timer started (Peer trigger). Prebuffer:" << q.size() << " Threshold:" << threshold;
+                }
             }
             return;
         } else if (type == "streaming_ok") {
@@ -1154,6 +1306,12 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
                 const auto devs = QMediaDevices::audioInputs();
                 for (const auto &d : devs) { if (d.id() == m_localInputDeviceId) { inDev = d; break; } }
             }
+            int chosenSr = pickBestOpusSampleRate(inDev);
+            if (chosenSr == 0) chosenSr = m_localOpusSampleRate;
+            if (chosenSr != m_localOpusSampleRate) {
+                m_localOpusSampleRate = chosenSr;
+                m_localOpusFrameSize = m_localOpusSampleRate / 50;
+            }
             QAudioFormat fmt;
             fmt.setSampleRate(m_localOpusSampleRate);
             fmt.setChannelCount(1);
@@ -1181,44 +1339,109 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
         }
         if (!m_localAudioTimer) {
             m_localAudioTimer = new QTimer(this);
+            m_localAudioTimer->setTimerType(Qt::PreciseTimer);
             m_localAudioTimer->setInterval(20);
             connect(m_localAudioTimer, &QTimer::timeout, this, [this]() {
                 if (!m_localOpusEnc || !m_localAudioSource) return;
                 if (!m_localAudioInput) return;
-                QByteArray pcm;
-                if (!produceOpusFrame(pcm)) return;
-                QByteArray opusOut;
-                opusOut.resize(4096);
-                int nbytes = opus_encode(m_localOpusEnc,
-                                         reinterpret_cast<const opus_int16*>(pcm.constData()),
-                                         m_localOpusFrameSize,
-                                         reinterpret_cast<unsigned char*>(opusOut.data()),
-                                         opusOut.size());
-                if (nbytes < 0) return;
-                opusOut.resize(nbytes);
-                QString viewerIdCopy;
-                QString targetIdCopy;
-                {
-                    QMutexLocker locker(&m_mutex);
-                    viewerIdCopy = m_lastViewerId;
-                    targetIdCopy = m_lastTargetId;
+
+                // Loop to process ALL available audio data
+                // This mimics the Producer's logic (main_capture.cpp) to prevent buffer buildup
+                // and "pulsed" audio caused by timer drift.
+                while (true) {
+                    QByteArray pcm;
+                    if (!produceOpusFrame(pcm)) break;
+
+                    QByteArray opusOut;
+                    opusOut.resize(4096);
+                    int nbytes = opus_encode(m_localOpusEnc,
+                                             reinterpret_cast<const opus_int16*>(pcm.constData()),
+                                             m_localOpusFrameSize,
+                                             reinterpret_cast<unsigned char*>(opusOut.data()),
+                                             opusOut.size());
+                    if (nbytes < 0) {
+                        qDebug() << "[Receiver] Opus encode error:" << nbytes;
+                        continue;
+                    }
+                    opusOut.resize(nbytes);
+
+                    QString viewerIdCopy;
+                    QString targetIdCopy;
+                    {
+                        QMutexLocker locker(&m_mutex);
+                        viewerIdCopy = m_lastViewerId;
+                        targetIdCopy = m_lastTargetId;
+                    }
+                    
+                    // If not connected to a peer, maybe we shouldn't send? 
+                    // But we keep sending to server for routing.
+                    
+                    QJsonObject message;
+                    message["type"] = "viewer_audio_opus";
+                    message["sample_rate"] = m_localOpusSampleRate;
+                    message["channels"] = 1;
+                    message["frame_samples"] = m_localOpusFrameSize;
+                    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                    message["data_base64"] = QString::fromUtf8(opusOut.toBase64());
+                    if (!viewerIdCopy.isEmpty()) message["viewer_id"] = viewerIdCopy;
+                    if (!targetIdCopy.isEmpty()) message["target_id"] = targetIdCopy;
+                    QJsonDocument doc(message);
+                    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
                 }
-                QJsonObject message;
-                message["type"] = "viewer_audio_opus";
-                message["sample_rate"] = m_localOpusSampleRate;
-                message["channels"] = 1;
-                message["frame_samples"] = m_localOpusFrameSize;
-                message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-                message["data_base64"] = QString::fromUtf8(opusOut.toBase64());
-                if (!viewerIdCopy.isEmpty()) message["viewer_id"] = viewerIdCopy;
-                if (!targetIdCopy.isEmpty()) message["target_id"] = targetIdCopy;
-                QJsonDocument doc(message);
-                m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
             });
         }
         if (m_localAudioSource->state() != QAudio::ActiveState) {
             m_localAudioInput = m_localAudioSource->start();
             m_localAudioSource->setVolume(m_localMicGainPercent / 100.0);
+            int bps = bytesPerSample(m_localInputFormat.sampleFormat());
+            if (bps > 0) {
+                m_localAudioSource->setBufferSize(m_localOpusFrameSize * bps * m_localInputFormat.channelCount() * 3);
+            }
+            
+            // Connect readyRead for lower latency capture (if driver supports it)
+            if (m_localAudioInput) {
+                connect(m_localAudioInput, &QIODevice::readyRead, this, [this]() {
+                    if (!m_localOpusEnc || !m_localAudioSource) return;
+                    // Reuse the same logic as the timer
+                    while (true) {
+                        QByteArray pcm;
+                        if (!produceOpusFrame(pcm)) break;
+
+                        QByteArray opusOut;
+                        opusOut.resize(4096);
+                        int nbytes = opus_encode(m_localOpusEnc,
+                                                 reinterpret_cast<const opus_int16*>(pcm.constData()),
+                                                 m_localOpusFrameSize,
+                                                 reinterpret_cast<unsigned char*>(opusOut.data()),
+                                                 opusOut.size());
+                        if (nbytes < 0) {
+                            qDebug() << "[Receiver] Opus encode error (readyRead):" << nbytes;
+                            continue;
+                        }
+                        opusOut.resize(nbytes);
+
+                        QString viewerIdCopy;
+                        QString targetIdCopy;
+                        {
+                            QMutexLocker locker(&m_mutex);
+                            viewerIdCopy = m_lastViewerId;
+                            targetIdCopy = m_lastTargetId;
+                        }
+                        
+                        QJsonObject message;
+                        message["type"] = "viewer_audio_opus";
+                        message["sample_rate"] = m_localOpusSampleRate;
+                        message["channels"] = 1;
+                        message["frame_samples"] = m_localOpusFrameSize;
+                        message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                        message["data_base64"] = QString::fromUtf8(opusOut.toBase64());
+                        if (!viewerIdCopy.isEmpty()) message["viewer_id"] = viewerIdCopy;
+                        if (!targetIdCopy.isEmpty()) message["target_id"] = targetIdCopy;
+                        QJsonDocument doc(message);
+                        m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                    }
+                });
+            }
         }
         if (!m_localAudioTimer->isActive()) m_localAudioTimer->start();
     } else {
@@ -1268,6 +1491,12 @@ void WebSocketReceiver::recreateLocalAudioSource()
             const auto devs = QMediaDevices::audioInputs();
             for (const auto &d : devs) { if (d.id() == m_localInputDeviceId) { inDev = d; break; } }
         }
+        int chosenSr = pickBestOpusSampleRate(inDev);
+        if (chosenSr == 0) chosenSr = m_localOpusSampleRate;
+        if (chosenSr != m_localOpusSampleRate) {
+            m_localOpusSampleRate = chosenSr;
+            m_localOpusFrameSize = m_localOpusSampleRate / 50;
+        }
         QAudioFormat fmt;
         fmt.setSampleRate(m_localOpusSampleRate);
         fmt.setChannelCount(1);
@@ -1284,6 +1513,54 @@ void WebSocketReceiver::recreateLocalAudioSource()
         if (active) {
             m_localAudioInput = m_localAudioSource->start();
             m_localAudioSource->setVolume(m_localMicGainPercent / 100.0);
+            int bps = bytesPerSample(m_localInputFormat.sampleFormat());
+            if (bps > 0) {
+                m_localAudioSource->setBufferSize(m_localOpusFrameSize * bps * m_localInputFormat.channelCount() * 3);
+            }
+            
+            // Connect readyRead here as well
+            if (m_localAudioInput) {
+                connect(m_localAudioInput, &QIODevice::readyRead, this, [this]() {
+                    if (!m_localOpusEnc || !m_localAudioSource) return;
+                    while (true) {
+                        QByteArray pcm;
+                        if (!produceOpusFrame(pcm)) break;
+
+                        QByteArray opusOut;
+                        opusOut.resize(4096);
+                        int nbytes = opus_encode(m_localOpusEnc,
+                                                 reinterpret_cast<const opus_int16*>(pcm.constData()),
+                                                 m_localOpusFrameSize,
+                                                 reinterpret_cast<unsigned char*>(opusOut.data()),
+                                                 opusOut.size());
+                        if (nbytes < 0) {
+                            qDebug() << "[Receiver] Opus encode error (readyRead-recreate):" << nbytes;
+                            continue;
+                        }
+                        opusOut.resize(nbytes);
+
+                        QString viewerIdCopy;
+                        QString targetIdCopy;
+                        {
+                            QMutexLocker locker(&m_mutex);
+                            viewerIdCopy = m_lastViewerId;
+                            targetIdCopy = m_lastTargetId;
+                        }
+                        
+                        QJsonObject message;
+                        message["type"] = "viewer_audio_opus";
+                        message["sample_rate"] = m_localOpusSampleRate;
+                        message["channels"] = 1;
+                        message["frame_samples"] = m_localOpusFrameSize;
+                        message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                        message["data_base64"] = QString::fromUtf8(opusOut.toBase64());
+                        if (!viewerIdCopy.isEmpty()) message["viewer_id"] = viewerIdCopy;
+                        if (!targetIdCopy.isEmpty()) message["target_id"] = targetIdCopy;
+                        QJsonDocument doc(message);
+                        m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                    }
+                });
+            }
         }
     }
 }
@@ -1311,57 +1588,87 @@ bool WebSocketReceiver::produceOpusFrame(QByteArray &out)
     int srcCh = m_localInputFormat.channelCount();
     QAudioFormat::SampleFormat sf = m_localInputFormat.sampleFormat();
     int bps = bytesPerSample(sf);
+    
     if (srcRate == m_localOpusSampleRate && srcCh == 1 && sf == QAudioFormat::Int16) {
+        // Direct read + buffer accumulation
+        QByteArray chunk = m_localAudioInput->readAll();
+        if (!chunk.isEmpty()) {
+            m_rawInputBuffer.append(chunk);
+        }
+        
         int needBytes = m_localOpusFrameSize * bps;
-        QByteArray buf;
-        buf.resize(needBytes);
-        qint64 readBytes = m_localAudioInput->read(buf.data(), buf.size());
-        if (readBytes < buf.size()) return false;
-        out = buf;
-        return true;
-    }
-    int needSrcSamples = (m_localOpusFrameSize * srcRate + m_localOpusSampleRate - 1) / m_localOpusSampleRate;
-    int needBytes = needSrcSamples * srcCh * bps;
-    QByteArray tmp;
-    tmp.resize(needBytes);
-    qint64 readBytes = m_localAudioInput->read(tmp.data(), tmp.size());
-    if (readBytes < tmp.size()) return false;
-    int samples = needSrcSamples;
-    QVector<float> mono(samples);
-    if (sf == QAudioFormat::Int16) {
-        const qint16 *p = reinterpret_cast<const qint16*>(tmp.constData());
-        for (int i = 0; i < samples; ++i) {
-            int idx = i * srcCh;
-            float v = 0.f;
-            for (int c = 0; c < srcCh; ++c) v += p[idx + c];
-            v /= srcCh;
-            mono[i] = v / 32768.f;
+        if (m_rawInputBuffer.size() >= needBytes) {
+            out = m_rawInputBuffer.left(needBytes);
+            m_rawInputBuffer.remove(0, needBytes);
+            
+            // Limit buffer growth if something goes wrong (e.g. accumulating faster than consuming)
+            // Increased to 50 frames (1s) to handle large input bursts from audio driver without truncation
+            if (m_rawInputBuffer.size() > needBytes * 50) {
+                 m_rawInputBuffer.remove(0, m_rawInputBuffer.size() - needBytes);
+                 qDebug() << "[Receiver] Input buffer overflow protection triggered. Resized to 1 frame.";
+            }
+            return true;
         }
-    } else if (sf == QAudioFormat::Float) {
-        const float *p = reinterpret_cast<const float*>(tmp.constData());
-        for (int i = 0; i < samples; ++i) {
-            int idx = i * srcCh;
-            float v = 0.f;
-            for (int c = 0; c < srcCh; ++c) v += p[idx + c];
-            v /= srcCh;
-            mono[i] = v;
-        }
-    } else {
         return false;
     }
-    out.resize(m_localOpusFrameSize * 2);
-    qint16 *dst = reinterpret_cast<qint16*>(out.data());
-    for (int i = 0; i < m_localOpusFrameSize; ++i) {
-        double pos = (double)i * srcRate / (double)m_localOpusSampleRate;
-        int j = (int)pos;
-        double frac = pos - j;
-        float s0 = mono[qBound(0, j, samples - 1)];
-        float s1 = mono[qBound(0, j + 1, samples - 1)];
-        float v = s0 + (s1 - s0) * (float)frac;
-        int iv = (int)std::round(qBound(-1.0f, v, 1.0f) * 32767.0f);
-        dst[i] = (qint16)iv;
+    
+    // Fallback for resampling
+    int needSrcSamples = (m_localOpusFrameSize * srcRate + m_localOpusSampleRate - 1) / m_localOpusSampleRate;
+    int needBytes = needSrcSamples * srcCh * bps;
+    
+    QByteArray chunk = m_localAudioInput->readAll();
+    if (!chunk.isEmpty()) {
+        m_rawInputBuffer.append(chunk);
     }
-    return true;
+    
+    if (m_rawInputBuffer.size() >= needBytes) {
+         QByteArray srcData = m_rawInputBuffer.left(needBytes);
+         m_rawInputBuffer.remove(0, needBytes);
+         
+         // Resample logic
+         int samples = needSrcSamples;
+         QVector<float> mono(samples);
+         
+         if (sf == QAudioFormat::Int16) {
+             const qint16 *p = reinterpret_cast<const qint16*>(srcData.constData());
+             for (int i = 0; i < samples; ++i) {
+                 int idx = i * srcCh;
+                 float v = 0.f;
+                 for (int c = 0; c < srcCh; ++c) v += p[idx + c];
+                 v /= srcCh;
+                 mono[i] = v / 32768.f;
+             }
+         } else if (sf == QAudioFormat::Float) {
+             const float *p = reinterpret_cast<const float*>(srcData.constData());
+             for (int i = 0; i < samples; ++i) {
+                 int idx = i * srcCh;
+                 float v = 0.f;
+                 for (int c = 0; c < srcCh; ++c) v += p[idx + c];
+                 v /= srcCh;
+                 mono[i] = v;
+             }
+         } else {
+             // Unsupported format for fallback
+             return false;
+         }
+
+         out.resize(m_localOpusFrameSize * 2);
+         qint16 *dst = reinterpret_cast<qint16*>(out.data());
+         for (int i = 0; i < m_localOpusFrameSize; ++i) {
+             double pos = (double)i * srcRate / (double)m_localOpusSampleRate;
+             int j = (int)pos;
+             double frac = pos - j;
+             float s0 = mono[qBound(0, j, samples - 1)];
+             float s1 = mono[qBound(0, j + 1, samples - 1)];
+             float v = s0 + (s1 - s0) * (float)frac;
+             int iv = (int)std::round(qBound(-1.0f, v, 1.0f) * 32767.0f);
+             dst[i] = (qint16)iv;
+         }
+         return true;
+    }
+    
+    return false;
 }
+
 
 // 瓦片消息处理方法实现已移除

@@ -152,13 +152,20 @@ private:
     // 简易抖动缓冲（20ms节拍定时解码）
     QTimer *m_audioTimer = nullptr;
     QQueue<QByteArray> m_opusQueue;
+    QQueue<int> m_opusSeqQueue;
     int m_audioFrameSamples = 0; // 每帧采样数（20ms）
     qint64 m_audioLastTimestamp = 0;
+    qint64 m_nextAudioTick = 0; // 下一次音频处理的理想时间点
     int m_audioPrebufferFrames = 10;
     int m_audioTargetBufferFrames = 15;
     int m_audioMinBufferFrames = 6;
     int m_audioMaxBufferFrames = 30;
     int m_audioUnderflowCount = 0;
+    int m_producerSilenceCount = 0; // Prevent infinite PLC
+    bool m_hasAudioStarted = false; // Flag for initial vs re-buffer logic
+    int m_consecutiveUnderruns = 0; // Counter for soft stop logic
+    bool m_producerBuffering = true; // Added for jitter buffering
+    int m_lastOpusSeq = -1;
     void initOpusDecoderIfNeeded(int sampleRate, int channels);
     QMap<QString, OpusDecoder*> m_peerDecoders;
     QMap<QString, QQueue<QByteArray>> m_peerQueues;
@@ -167,12 +174,14 @@ private:
     QMap<QString, int> m_peerFrameSamples;
     QMap<QString, int> m_peerSilenceCounts;
     QMap<QString, qint64> m_peerLastActiveTimes;
+    QMap<QString, bool> m_peerBuffering; // New: Per-peer buffering state
+
     QAudioSource *m_localAudioSource = nullptr;
     QIODevice *m_localAudioInput = nullptr;
     QTimer *m_localAudioTimer = nullptr;
     OpusEncoder *m_localOpusEnc = nullptr;
-    int m_localOpusSampleRate = 16000;
-    int m_localOpusFrameSize = 16000 / 50;
+    int m_localOpusSampleRate = 48000;
+    int m_localOpusFrameSize = 48000 / 50;
     int m_localMicGainPercent = 100;
     bool m_followSystemInput = true;
     QString m_localInputDeviceId;

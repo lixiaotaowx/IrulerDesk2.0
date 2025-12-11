@@ -456,11 +456,10 @@ private slots:
                     qDebug() << "转发音频包 序号:" << audioCount << " 来源:" << sender->peerAddress().toString();
                 }
                 // 转发给房间内的所有订阅者
-                // 假设 audio_opus 消息包含房间号或目标ID，这里简化为广播给房间内所有人
-                // 注意：通常 audio_opus 不带 target_id，而是依赖 socket 所在的房间
                 if (m_rooms.contains(roomId)) {
                     Room *room = m_rooms[roomId];
                     for (QWebSocket *subscriber : room->subscribers) {
+                        if (subscriber == sender) continue; // 防止回音：不要发回给发送者
                         if (subscriber->state() == QAbstractSocket::ConnectedState) {
                             subscriber->sendTextMessage(message);
                         }
@@ -483,6 +482,9 @@ private slots:
                 if (room->publisher && room->publisher->state() == QAbstractSocket::ConnectedState) {
                     room->publisher->sendTextMessage(message);
                 }
+                // 恢复转发：允许消费者之间互通 (Consumer -> Consumer)
+                // 之前为了防回音禁用了它，但导致了“岔路”不通。
+                // 现在的策略是：全通路打通，回音问题交给客户端处理或用户配置（如佩戴耳机）。
                 for (QWebSocket *subscriber : room->subscribers) {
                     if (subscriber == sender) continue;
                     if (subscriber->state() == QAbstractSocket::ConnectedState) {

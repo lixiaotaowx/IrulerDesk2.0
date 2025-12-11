@@ -138,14 +138,13 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
     initAudioSinkIfNeeded(sampleRate, channels, bitsPerSample);
 
     if (m_audioSink) {
-        // 如果Sink处于停止状态，尝试重启
         if (m_audioSink->state() == QAudio::StoppedState) {
-             qDebug() << "[Player] AudioSink stopped unexpectedly. State:" << m_audioSink->state() 
-                      << " Error:" << m_audioSink->error() << " -> Restarting...";
-             // Push mode restart
-             m_audioIO = m_audioSink->start();
+            qDebug() << "[Player] AudioSink stopped unexpectedly. State:" << m_audioSink->state()
+                     << " Error:" << m_audioSink->error() << " -> Restarting...";
+            m_audioIO = m_audioSink->start();
+        } else if (m_audioSink->state() == QAudio::SuspendedState) {
+            m_audioSink->resume();
         }
-        // 如果是挂起状态（Idle），通常是因为数据不足，不需要干预
     }
 
     QByteArray finalData;
@@ -157,16 +156,20 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
 
     if (!finalData.isEmpty()) {
         if (m_audioSink && m_audioIO) {
-            // Push mode: Write directly to the IO device
-            qint64 written = m_audioIO->write(finalData);
-            if (written < finalData.size()) {
-                static int fullCount = 0;
-                if (++fullCount % 20 == 0) {
-                     qDebug() << "[Player] Buffer full/Sink slow. Written:" << written 
-                              << " Total:" << finalData.size()
-                              << " SinkState:" << m_audioSink->state()
-                              << " Error:" << m_audioSink->error();
+            {
+                QMutexLocker locker(&m_ringMutex);
+                m_ringBuffer.append(finalData);
+                while (!m_ringBuffer.isEmpty()) {
+                    qint64 w = m_audioIO->write(m_ringBuffer.constData(), m_ringBuffer.size());
+                    if (w <= 0) break;
+                    m_ringBuffer.remove(0, int(w));
                 }
+            }
+            static int fullCount = 0;
+            if (!m_ringBuffer.isEmpty() && ++fullCount % 20 == 0) {
+                qDebug() << "[Player] Sink backlog bytes:" << m_ringBuffer.size()
+                         << " State:" << m_audioSink->state()
+                         << " Error:" << m_audioSink->error();
             }
         }
     }
@@ -216,19 +219,39 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
     }
     m_currentOutputDeviceId = device.id();
 
-    // 格式协商
-    QAudioFormat preferred = device.preferredFormat();
-    
-    m_audioFormat = QAudioFormat();
-    m_audioFormat.setSampleRate(preferred.sampleRate());
-    m_audioFormat.setChannelCount(preferred.channelCount());
-    m_audioFormat.setSampleFormat(QAudioFormat::Int16); // 优先使用 Int16
-    
-    if (m_audioFormat.sampleRate() <= 0) m_audioFormat.setSampleRate(48000);
-    if (m_audioFormat.channelCount() <= 0) m_audioFormat.setChannelCount(2);
+    // 格式协商：优先使用源数据的格式，以避免不必要的重采样
+    // 这对于消除因线性插值重采样导致的“滋滋”噪音至关重要
+    QAudioFormat desiredFormat;
+    desiredFormat.setSampleRate(sampleRate > 0 ? sampleRate : 48000);
+    desiredFormat.setChannelCount(channels > 0 ? channels : 2);
+    desiredFormat.setSampleFormat(QAudioFormat::Int16); // 目前源数据通常是 Int16
 
-    if (!device.isFormatSupported(m_audioFormat)) {
-        m_audioFormat = device.preferredFormat();
+    if (device.isFormatSupported(desiredFormat)) {
+        m_audioFormat = desiredFormat;
+        qDebug() << "[Player] Device supports source format, using:" << m_audioFormat;
+    } else {
+        // 如果不支持源格式，回退到设备首选格式
+        QAudioFormat preferred = device.preferredFormat();
+        qDebug() << "[Player] Device does not support source format:" << desiredFormat 
+                 << " Falling back to preferred:" << preferred;
+        
+        m_audioFormat = preferred;
+        
+        // 尝试保持 Int16 格式，因为我们的重采样算法对 Int16 优化
+        QAudioFormat preferredInt16 = preferred;
+        preferredInt16.setSampleFormat(QAudioFormat::Int16);
+        if (device.isFormatSupported(preferredInt16)) {
+             m_audioFormat = preferredInt16;
+        }
+        
+        // 兜底检查
+        if (m_audioFormat.sampleRate() <= 0) m_audioFormat.setSampleRate(48000);
+        if (m_audioFormat.channelCount() <= 0) m_audioFormat.setChannelCount(2);
+        
+        // 最终检查支持情况
+        if (!device.isFormatSupported(m_audioFormat)) {
+             m_audioFormat = device.preferredFormat();
+        }
     }
 
     m_sinkSampleRate = m_audioFormat.sampleRate();
@@ -242,7 +265,7 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
     
     qDebug() << "[Player] Initializing AudioSink. Device:" << device.description() 
              << " Format:" << m_audioFormat 
-             << " Preferred:" << preferred;
+             << " Preferred:" << device.preferredFormat();
 
     // 判断是否需要重采样
     if (sampleRate != m_sinkSampleRate || channels != m_sinkChannels || bitsPerSample != 16) {
@@ -253,7 +276,7 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
     }
 
     m_audioSink = new QAudioSink(device, m_audioFormat, this);
-    m_audioSink->setBufferSize(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample / 5); // 200ms buffer
+    m_audioSink->setBufferSize(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample / 5);
     m_audioSink->setVolume(qreal(m_volumePercent) / 100.0);
 
     // Push Mode: start() returns the QIODevice we write to

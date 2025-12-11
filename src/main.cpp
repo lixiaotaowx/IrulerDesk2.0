@@ -12,6 +12,9 @@
 #include <QGraphicsOpacityEffect>
 #include <QPropertyAnimation>
 #include <QParallelAnimationGroup>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QByteArray>
 #include <iostream>
 #ifdef _WIN32
 #include <windows.h>
@@ -30,6 +33,18 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     
+    {
+        QLocalSocket probe;
+        probe.connectToServer("IrulerDeskpro_SingleInstance");
+        if (probe.waitForConnected(100)) {
+            QByteArray payload("show_main_window");
+            probe.write(payload);
+            probe.flush();
+            probe.waitForBytesWritten(100);
+            return 0;
+        }
+    }
+
     QString appDir = QCoreApplication::applicationDirPath();
     app.setWindowIcon(QIcon(appDir + "/maps/logo/iruler.ico"));
     
@@ -123,6 +138,21 @@ int main(int argc, char *argv[])
     
     // 创建并显示主窗口
     MainWindow window;
+
+    QLocalServer *instServer = new QLocalServer(&app);
+    QLocalServer::removeServer("IrulerDeskpro_SingleInstance");
+    instServer->listen("IrulerDeskpro_SingleInstance");
+    QObject::connect(instServer, &QLocalServer::newConnection, &app, [&window, instServer]() {
+        QLocalSocket *cli = instServer->nextPendingConnection();
+        if (!cli) return;
+        QObject::connect(cli, &QLocalSocket::readyRead, &window, [cli, &window]() {
+            QByteArray data = cli->readAll();
+            if (data.contains("show_main_window")) {
+                auto *til = window.transparentImageList();
+                if (til) { til->show(); til->raise(); }
+            }
+        });
+    });
     QObject::connect(&window, &MainWindow::appReady, &splash, [&splash, &window, canvas]() {
         QRect startRect = splash.geometry();
         TransparentImageList *target = window.transparentImageList();

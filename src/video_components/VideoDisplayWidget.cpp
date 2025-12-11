@@ -684,16 +684,6 @@ void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
     if (m_audioPlayer) {
         m_audioPlayer->setSpeakerEnabled(enabled);
     }
-    
-    if (!enabled) {
-        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
-            if (m_receiver) m_receiver->sendViewerListenMute(true);
-        }
-    } else {
-        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty() && m_lastViewerId == m_lastTargetId) {
-            if (m_receiver) m_receiver->sendViewerListenMute(false);
-        }
-    }
 }
 
 // 设置批注颜色ID（0:红,1:绿,2:蓝,3:黄），越界归一到有效范围

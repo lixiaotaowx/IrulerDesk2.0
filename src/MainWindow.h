@@ -119,6 +119,7 @@ private:
     void initializeLoginSystem();
     void connectToLoginServer();
     void sendLoginRequest();
+    void sendHeartbeat();
     void updateUserList(const QJsonArray& users);
     void sendWatchRequest(const QString& targetDeviceId);
     void startVideoReceiving(const QString& targetDeviceId);
@@ -158,6 +159,7 @@ private:
     // WebSocket服务器就绪检测
     QTimer *m_serverReadyTimer;
     int m_serverReadyRetryCount;
+    QTimer *m_heartbeatTimer;
     
     // 登录系统相关成员
     QWebSocket *m_loginWebSocket;

@@ -1081,6 +1081,10 @@ void MainWindow::initializeLoginSystem()
     connect(m_loginWebSocket, &QWebSocket::textMessageReceived, this, &MainWindow::onLoginWebSocketTextMessageReceived);
     connect(m_loginWebSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), 
             this, &MainWindow::onLoginWebSocketError);
+    m_heartbeatTimer = new QTimer(this);
+    m_heartbeatTimer->setInterval(5000);
+    m_heartbeatTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_heartbeatTimer, &QTimer::timeout, this, &MainWindow::sendHeartbeat);
     
     // 延迟3秒后连接到登录服务器，等待服务器启动
     QTimer::singleShot(3000, this, &MainWindow::connectToLoginServer);
@@ -1111,6 +1115,23 @@ void MainWindow::sendLoginRequest()
     loginRequest["data"] = userData;
     
     QJsonDocument doc(loginRequest);
+    QString message = doc.toJson(QJsonDocument::Compact);
+    m_loginWebSocket->sendTextMessage(message);
+}
+
+void MainWindow::sendHeartbeat()
+{
+    if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
+        return;
+    }
+    if (!m_isLoggedIn) {
+        return;
+    }
+    QJsonObject heartbeat;
+    heartbeat["type"] = "heartbeat";
+    heartbeat["id"] = m_userId;
+    heartbeat["device_id"] = getDeviceId();
+    QJsonDocument doc(heartbeat);
     QString message = doc.toJson(QJsonDocument::Compact);
     m_loginWebSocket->sendTextMessage(message);
 }
@@ -1197,6 +1218,7 @@ void MainWindow::onLoginWebSocketConnected()
 void MainWindow::onLoginWebSocketDisconnected()
 {
     m_isLoggedIn = false;
+    if (m_heartbeatTimer) { m_heartbeatTimer->stop(); }
     
     m_listWidget->clear();
     m_listWidget->addItem("与服务器断开连接");
@@ -1227,6 +1249,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_listWidget->clear();
             m_listWidget->addItem("登录成功，等待用户列表...");
             if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
+            if (m_heartbeatTimer) { m_heartbeatTimer->start(); }
+            sendHeartbeat();
         } else {
             m_listWidget->clear();
             m_listWidget->addItem("登录失败: " + responseMessage);

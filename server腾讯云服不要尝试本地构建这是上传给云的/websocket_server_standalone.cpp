@@ -20,6 +20,7 @@ struct UserInfo {
     int iconId;  // 添加icon ID字段
     QWebSocket* socket;
     QDateTime loginTime;
+    qint64 lastHeartbeatMs = 0;
     
     UserInfo() : socket(nullptr), iconId(3) {}
     UserInfo(const QString& userId, const QString& userName, int userIconId, QWebSocket* userSocket)
@@ -49,6 +50,9 @@ public:
             QTimer *statsTimer = new QTimer(this);
             connect(statsTimer, &QTimer::timeout, this, &WebSocketServerApp::printStats);
             statsTimer->start(30000); // 每30秒输出一次统计
+            m_heartbeatTimer = new QTimer(this);
+            connect(m_heartbeatTimer, &QTimer::timeout, this, &WebSocketServerApp::checkHeartbeatTimeouts);
+            m_heartbeatTimer->start(5000);
         } else {
             qDebug() << QDateTime::currentDateTime().toString()
                      << "WebSocket服务器启动失败:" << m_server->errorString();
@@ -131,6 +135,17 @@ private slots:
                 return;
             } else if (type == "get_online_users") {
                 sendOnlineUsersList(sender);
+                return;
+            } else if (type == "heartbeat") {
+                QString uid = obj.value("id").toString();
+                if (uid.isEmpty()) {
+                    for (auto it = m_onlineUsers.begin(); it != m_onlineUsers.end(); ++it) {
+                        if (it.value().socket == sender) { uid = it.key(); break; }
+                    }
+                }
+                if (!uid.isEmpty() && m_onlineUsers.contains(uid)) {
+                    m_onlineUsers[uid].lastHeartbeatMs = QDateTime::currentMSecsSinceEpoch();
+                }
                 return;
             }
         }
@@ -224,6 +239,7 @@ private:
         
         // 添加或更新用户信息
         UserInfo userInfo(userId, userName, iconId, socket);
+        userInfo.lastHeartbeatMs = QDateTime::currentMSecsSinceEpoch();
         m_onlineUsers[userId] = userInfo;
         
         qDebug() << QDateTime::currentDateTime().toString()
@@ -369,6 +385,26 @@ private:
         }
     }
 
+    void checkHeartbeatTimeouts()
+    {
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        QList<QString> toRemove;
+        for (auto it = m_onlineUsers.begin(); it != m_onlineUsers.end(); ++it) {
+            if (it.value().lastHeartbeatMs > 0 && now - it.value().lastHeartbeatMs > 15000) {
+                toRemove.append(it.key());
+            }
+        }
+        for (const QString &uid : toRemove) {
+            QWebSocket *sock = m_onlineUsers[uid].socket;
+            if (sock) { sock->close(); }
+            m_onlineUsers.remove(uid);
+        }
+        if (!toRemove.isEmpty()) {
+            saveUserData();
+            broadcastOnlineUsersList();
+        }
+    }
+
 private:
     QWebSocketServer *m_server;
     QList<QWebSocket*> m_clients;
@@ -378,6 +414,7 @@ private:
     quint64 m_totalConnections = 0;
     quint64 m_totalMessages = 0;
     quint64 m_totalBytes = 0;
+    QTimer *m_heartbeatTimer = nullptr;
 };
 
 int main(int argc, char *argv[])

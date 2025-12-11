@@ -105,6 +105,9 @@ public:
             QTimer *cleanupTimer = new QTimer(this);
             connect(cleanupTimer, &QTimer::timeout, this, &WebSocketServerApp::cleanupEmptyRooms);
             cleanupTimer->start(60000); // 每分钟清理一次
+            m_heartbeatTimer = new QTimer(this);
+            connect(m_heartbeatTimer, &QTimer::timeout, this, &WebSocketServerApp::checkHeartbeatTimeouts);
+            m_heartbeatTimer->start(5000);
         } else {
             qDebug() << QDateTime::currentDateTime().toString()
                      << "WebSocket服务器启动失败:" << m_server->errorString();
@@ -276,6 +279,7 @@ private slots:
                     // 存储用户信息
                     m_loginUsers[sender] = QPair<QString, QString>(userId, userName);
                     m_userIcons[userId] = iconId;
+                    m_userLastHeartbeat[userId] = QDateTime::currentMSecsSinceEpoch();
                     
                     // 发送登录成功响应
                     QJsonObject response;
@@ -312,7 +316,15 @@ private slots:
                         }
                     }
                     
+                    bool targetOnline = false;
                     if (targetSocket && targetSocket->state() == QAbstractSocket::ConnectedState) {
+                        qint64 now = QDateTime::currentMSecsSinceEpoch();
+                        qint64 ts = m_userLastHeartbeat.value(targetId, 0);
+                        if (ts > 0 && now - ts <= 15000) {
+                            targetOnline = true;
+                        }
+                    }
+                    if (targetOnline) {
                         // 向目标用户发送推流请求
                         QJsonObject streamRequest;
                         streamRequest["type"] = "start_streaming_request";
@@ -393,6 +405,16 @@ private slots:
                     } else {
                         qDebug() << QDateTime::currentDateTime().toString()
                                  << "房间" << targetId << "不存在";
+                    }
+                    return;
+                } else if (type == "heartbeat") {
+                    QString uid = obj.value("id").toString();
+                    if (uid.isEmpty()) {
+                        QPair<QString, QString> ui = m_loginUsers.value(sender);
+                        uid = ui.first;
+                    }
+                    if (!uid.isEmpty()) {
+                        m_userLastHeartbeat[uid] = QDateTime::currentMSecsSinceEpoch();
                     }
                     return;
                 }
@@ -526,6 +548,7 @@ private slots:
                 m_loginUsers.remove(client);
                 // 同步移除头像记录
                 m_userIcons.remove(userInfo.first);
+                m_userLastHeartbeat.remove(userInfo.first);
                 
                 // 广播更新后的在线用户列表
                 broadcastOnlineUsersList();
@@ -608,6 +631,8 @@ private:
     QList<QWebSocket*> m_loginClients;                      // 登录系统客户端列表
     QMap<QWebSocket*, QPair<QString, QString>> m_loginUsers; // 登录用户信息 (socket -> (userId, userName))
     QMap<QString, int> m_userIcons;                         // 登录用户头像 (userId -> iconId)
+    QMap<QString, qint64> m_userLastHeartbeat;              // 登录用户最近心跳
+    QTimer *m_heartbeatTimer = nullptr;                     // 心跳检查定时器
     int m_port;
     quint64 m_totalConnections = 0;
     quint64 m_totalMessages = 0;
@@ -642,6 +667,32 @@ private:
         
         qDebug() << QDateTime::currentDateTime().toString()
                  << "广播在线用户列表给" << m_loginClients.size() << "个登录客户端，用户数:" << usersArray.size();
+    }
+
+    void checkHeartbeatTimeouts()
+    {
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        QList<QString> toRemove;
+        for (auto it = m_userLastHeartbeat.begin(); it != m_userLastHeartbeat.end(); ++it) {
+            if (it.value() > 0 && now - it.value() > 15000) {
+                toRemove.append(it.key());
+            }
+        }
+        for (const QString &uid : toRemove) {
+            QWebSocket *sock = nullptr;
+            for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                if (it.value().first == uid) { sock = it.key(); break; }
+            }
+            if (sock) {
+                m_loginUsers.remove(sock);
+                sock->close();
+            }
+            m_userIcons.remove(uid);
+            m_userLastHeartbeat.remove(uid);
+        }
+        if (!toRemove.isEmpty()) {
+            broadcastOnlineUsersList();
+        }
     }
 };
 

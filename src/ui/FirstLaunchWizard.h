@@ -16,6 +16,7 @@
 #include <QScreen>
 #include <QGuiApplication>
 #include <QPixmap>
+#include <QCloseEvent>
 
 class FirstLaunchWizard : public QDialog {
     Q_OBJECT
@@ -24,6 +25,9 @@ public:
     QString userName() const;
     int iconId() const;
     int screenIndex() const;
+    bool exitRequested() const;
+protected:
+    void closeEvent(QCloseEvent* e) override;
 
 private:
     void setupStyle();
@@ -55,6 +59,7 @@ private:
     QPushButton* m_nextBtn = nullptr;
     QPushButton* m_finishBtn = nullptr;
     QPushButton* m_skipBtn = nullptr;
+    bool m_exitRequested = false;
 };
 
 #endif // FIRSTLAUNCHWIZARD_H

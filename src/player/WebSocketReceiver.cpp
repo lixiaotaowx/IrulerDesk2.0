@@ -96,9 +96,8 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             
             // Producer Anti-Jitter Logic
             if (m_producerBuffering) {
-                if (m_opusQueue.size() >= 12) {
+                if (m_opusQueue.size() >= 8) {
                     m_producerBuffering = false;
-                    // qDebug() << "[Receiver] Producer buffering done. Queue:" << m_opusQueue.size();
                 }
             }
             
@@ -112,9 +111,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                 }
                 
                 m_producerSilenceCount++;
-                // Increase PLC limit to 25 frames (500ms) to bridge longer network gaps
-                // Update: Reduced to 15 frames (300ms) to avoid over-buffering/latency accumulation
-                if (m_producerSilenceCount > 15) doDecode = false;
+                if (m_producerSilenceCount > 24) doDecode = false;
             } else {
                 m_producerSilenceCount = 0;
                 opusData = m_opusQueue.dequeue();
@@ -203,7 +200,6 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                 if (q.size() >= 12) {
                     isBuffering = false;
                     m_peerBuffering[pid] = false;
-                    // Debug only occasionally
                     if (timerCount % 100 == 0) qDebug() << "[Receiver] Peer" << pid << "buffering done. Queue:" << q.size();
                 }
             }
@@ -222,10 +218,24 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             }
 
             if (isSilence) {
-                // 如果处于缓冲状态，我们不增加 silence count，因为这是有意为之
-                // 如果是空队列且未缓冲（实际上上面的逻辑已经涵盖了），则可能需要 PLC
-                
-                // 简单的静音处理，不进行 PLC，以免产生怪声
+                QByteArray pcm;
+                pcm.resize(ps * outCh * sizeof(opus_int16));
+                int decoded = opus_decode(dec, nullptr, 0,
+                                          reinterpret_cast<opus_int16*>(pcm.data()),
+                                          ps,
+                                          0);
+                if (decoded > 0) {
+                    pcm.resize(decoded * outCh * sizeof(opus_int16));
+                    const opus_int16* src = reinterpret_cast<const opus_int16*>(pcm.constData());
+                    opus_int16* dst = reinterpret_cast<opus_int16*>(mixOut.data());
+                    int n = std::min(decoded, frameSamples);
+                    for (int i = 0; i < n; ++i) {
+                        int s = dst[i] + src[i];
+                        if (s > 32767) s = 32767; else if (s < -32768) s = -32768;
+                        dst[i] = static_cast<opus_int16>(s);
+                    }
+                    anySource = true;
+                }
                 ++it;
                 continue; 
             }
@@ -269,23 +279,12 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             for (auto itq = m_peerQueues.begin(); itq != m_peerQueues.end(); ++itq) { if (!itq.value().isEmpty()) { readyPeers++; break; } }
             if (!readyPeers && m_opusQueue.isEmpty()) {
                 m_consecutiveUnderruns++;
-                // Allow 20 frames (400ms) of soft underrun (keep timer running)
-                if (m_consecutiveUnderruns < 20) {
-                     // Generate silence frame to keep AudioSink fed
-                     QByteArray silence;
-                     silence.resize(frameSamples * outCh * sizeof(opus_int16)); 
-                     memset(silence.data(), 0, silence.size());
-                     // Emit silence with incremented timestamp
-                     emit audioFrameReceived(silence, baseSr, outCh, 16, m_audioLastTimestamp);
-                     
-                     if (m_consecutiveUnderruns % 10 == 0)
-                        qDebug() << "[Receiver] Soft Underrun #" << m_consecutiveUnderruns << " - Inserting Silence";
-                } else {
-                    if (m_audioTimer->isActive()) {
-                        m_audioTimer->stop();
-                        qDebug() << "[Receiver] Audio timer stopped (Hard Underrun).";
-                    }
-                }
+                QByteArray silence;
+                silence.resize(frameSamples * outCh * sizeof(opus_int16));
+                memset(silence.data(), 0, silence.size());
+                emit audioFrameReceived(silence, baseSr, outCh, 16, m_audioLastTimestamp);
+                if (m_consecutiveUnderruns % 10 == 0)
+                    qDebug() << "[Receiver] Soft Underrun #" << m_consecutiveUnderruns << " - Inserting Silence";
             } else {
                 m_consecutiveUnderruns = 0;
             }
@@ -638,13 +637,10 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             // Always use 20ms frame size for 48kHz (960 samples)
             m_audioFrameSamples = mixSampleRate / 50; 
             
-            // 延迟控制：如果队列过长，丢弃旧帧以追赶实时
-            // 目标：保持队列在 500ms (25帧) 以内，以抵抗极端网络抖动
-            // Update: Reduced to 25 frames (0.5s) for better latency
-            const int MAX_QUEUE_SIZE = 25; 
+            const int MAX_QUEUE_SIZE = 30; 
             if (m_opusQueue.size() >= MAX_QUEUE_SIZE) {
                 int dropCount = 0;
-                while (m_opusQueue.size() >= MAX_QUEUE_SIZE - 2) {
+                while (m_opusQueue.size() >= MAX_QUEUE_SIZE - 12) {
                     m_opusQueue.dequeue();
                     if (!m_opusSeqQueue.isEmpty()) m_opusSeqQueue.dequeue();
                     dropCount++;
@@ -659,7 +655,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             m_opusSeqQueue.enqueue(seq);
             
             if (!m_audioTimer->isActive()) {
-                int threshold = 4; // Reduced to 4 frames (80ms) for lower latency
+                int threshold = 7;
                 if (m_opusQueue.size() >= threshold) {
                     m_hasAudioStarted = true;
                     m_producerBuffering = true;
@@ -710,17 +706,17 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             m_peerLastActiveTimes[fromId] = QDateTime::currentMSecsSinceEpoch();
             
             // 延迟控制 (Peer)
-            const int MAX_PEER_QUEUE = 25; // Reduced to 25 (500ms) for better latency
+            const int MAX_PEER_QUEUE = 30;
             QQueue<QByteArray>& q = m_peerQueues[fromId];
             if (q.size() >= MAX_PEER_QUEUE) {
-                while (q.size() >= MAX_PEER_QUEUE - 10) {
+                while (q.size() >= MAX_PEER_QUEUE - 12) {
                     q.dequeue();
                 }
             }
             
             q.enqueue(opusData);
             if (!m_audioTimer->isActive()) {
-                int threshold = 4; // Reduced to 4 frames (80ms)
+                int threshold = 7;
                 bool ready = m_opusQueue.size() >= threshold;
                 if (!ready) {
                     for (auto it = m_peerQueues.begin(); it != m_peerQueues.end(); ++it) {
@@ -1396,7 +1392,7 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
             m_localAudioSource->setVolume(m_localMicGainPercent / 100.0);
             int bps = bytesPerSample(m_localInputFormat.sampleFormat());
             if (bps > 0) {
-                m_localAudioSource->setBufferSize(m_localOpusFrameSize * bps * m_localInputFormat.channelCount() * 3);
+                m_localAudioSource->setBufferSize(m_localOpusFrameSize * bps * m_localInputFormat.channelCount() * 5);
             }
             
             // Connect readyRead for lower latency capture (if driver supports it)
@@ -1516,7 +1512,7 @@ void WebSocketReceiver::recreateLocalAudioSource()
             m_localAudioSource->setVolume(m_localMicGainPercent / 100.0);
             int bps = bytesPerSample(m_localInputFormat.sampleFormat());
             if (bps > 0) {
-                m_localAudioSource->setBufferSize(m_localOpusFrameSize * bps * m_localInputFormat.channelCount() * 3);
+                m_localAudioSource->setBufferSize(m_localOpusFrameSize * bps * m_localInputFormat.channelCount() * 5);
             }
             
             // Connect readyRead here as well

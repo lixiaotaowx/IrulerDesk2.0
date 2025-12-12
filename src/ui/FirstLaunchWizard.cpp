@@ -62,6 +62,7 @@ FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
 QString FirstLaunchWizard::userName() const { return m_nameEdit ? m_nameEdit->text().trimmed() : QString(); }
 int FirstLaunchWizard::iconId() const { return m_selectedIconId; }
 int FirstLaunchWizard::screenIndex() const { return m_selectedScreenIndex; }
+bool FirstLaunchWizard::exitRequested() const { return m_exitRequested; }
 
 void FirstLaunchWizard::setupStyle()
 {
@@ -224,4 +225,15 @@ void FirstLaunchWizard::updateNav()
     m_nextBtn->setVisible(!last);
     m_finishBtn->setVisible(last);
     if (m_skipBtn) m_skipBtn->setVisible(first);
+}
+
+void FirstLaunchWizard::closeEvent(QCloseEvent* e)
+{
+    QMessageBox::StandardButton r = QMessageBox::question(this, QStringLiteral("退出"), QStringLiteral("确定要退出程序吗？"), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (r == QMessageBox::Yes) {
+        m_exitRequested = true;
+        e->accept();
+    } else {
+        e->ignore();
+    }
 }

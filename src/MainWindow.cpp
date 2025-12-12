@@ -122,6 +122,26 @@ MainWindow::MainWindow(QWidget *parent)
     QTimer::singleShot(1000, this, &MainWindow::startStreaming);
 }
 
+#ifdef _WIN32
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+    Q_UNUSED(eventType);
+    MSG *msg = static_cast<MSG*>(message);
+    if (msg) {
+        if (msg->message == WM_POWERBROADCAST) {
+            if (msg->wParam == PBT_APMSUSPEND) {
+                m_inSystemSuspend = true;
+                return true;
+            } else if (msg->wParam == PBT_APMRESUMESUSPEND || msg->wParam == PBT_APMRESUMECRITICAL || msg->wParam == PBT_APMRESUMEAUTOMATIC) {
+                m_inSystemSuspend = false;
+                return true;
+            }
+        }
+    }
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
+#endif
+
 TransparentImageList* MainWindow::transparentImageList() const
 {
     return m_transparentImageList;
@@ -1334,7 +1354,12 @@ void MainWindow::initializeLoginSystem()
     QFile f(cfg);
     if (!f.exists()) {
         FirstLaunchWizard w(this);
-        if (w.exec() == QDialog::Accepted) {
+        int res = w.exec();
+        if (w.exitRequested()) {
+            QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+            return;
+        }
+        if (res == QDialog::Accepted) {
             QString n = w.userName().trimmed();
             if (!n.isEmpty()) {
                 saveUserNameToConfig(n);

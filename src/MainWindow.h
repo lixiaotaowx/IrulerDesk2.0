@@ -80,6 +80,8 @@ private:
     void setupStatusBar();
     void startProcesses();
     void stopProcesses();
+protected:
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     
     // 配置文件相关方法
     QString getConfigFilePath() const;
@@ -191,6 +193,7 @@ private:
     bool m_appReadyEmitted = false;
     class QSystemTrayIcon *m_trayIcon = nullptr;
     QMenu *m_trayMenu = nullptr;
+    bool m_inSystemSuspend = false;
 };
 
 #endif // MAINWINDOW_H

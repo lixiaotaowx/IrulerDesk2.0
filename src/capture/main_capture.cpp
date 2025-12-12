@@ -587,6 +587,18 @@ int main(int argc, char *argv[])
     }
     opusFrameSize = opusSampleRate / 50; // 20ms
 
+    {
+        int srcBytesPerSample = 2;
+        switch (micFormat.sampleFormat()) {
+            case QAudioFormat::UInt8: srcBytesPerSample = 1; break;
+            case QAudioFormat::Int16: srcBytesPerSample = 2; break;
+            case QAudioFormat::Int32: srcBytesPerSample = 4; break;
+            case QAudioFormat::Float: srcBytesPerSample = 4; break;
+            default: srcBytesPerSample = 2; break;
+        }
+        audioSource->setBufferSize(opusFrameSize * srcBytesPerSample * micFormat.channelCount() * 5);
+    }
+
     QObject::connect(audioTimer, &QTimer::timeout, [&]() {
         if (!audioInput) return;
 
@@ -1294,7 +1306,7 @@ int main(int argc, char *argv[])
     mixFmt.setSampleFormat(QAudioFormat::Int16);
     
     mixSink = new QAudioSink(QMediaDevices::defaultAudioOutput(), mixFmt, &app);
-    mixSink->setBufferSize(4096); // ~85ms (reduced from 170ms)
+    mixSink->setBufferSize(16000);
     mixIO = mixSink->start();
     
     mixTimer = new QTimer(&app);
@@ -1346,9 +1358,8 @@ int main(int argc, char *argv[])
             
             // Peer Anti-Jitter Logic
             bool isBuffering = peerBuffering.value(vid, true);
-            // Threshold reduced to 6 frames (120ms) for low latency (was 20 frames / 400ms)
             if (isBuffering) {
-                if (q.size() >= 6) { 
+                if (q.size() >= 12) { 
                     isBuffering = false;
                     peerBuffering[vid] = false;
                     qDebug() << "[AudioMixer] Peer" << vid << "buffering done. Queue:" << q.size();
@@ -1423,15 +1434,12 @@ int main(int argc, char *argv[])
         }
         
         // 简单缓冲，如果堆积过多则丢弃旧帧 (Latency control)
-        // Previous 200 (4s) was too high, causing ~2s latency.
-        // Adjusted to 25 frames (500ms) to balance jitter resistance and latency.
-        const int MAX_PEER_QUEUE = 25; 
+        const int MAX_PEER_QUEUE = 24; 
         if (peerQueues[vid].size() >= MAX_PEER_QUEUE) {
-             // Drop oldest frames to catch up, but leave enough to avoid immediate underrun
-             while (peerQueues[vid].size() >= MAX_PEER_QUEUE - 10) {
+             while (peerQueues[vid].size() >= MAX_PEER_QUEUE - 9) {
                  peerQueues[vid].dequeue(); 
              }
-             qDebug() << "[AudioMixer] Peer" << vid << "latency high. Dropped 10 frames. Queue:" << peerQueues[vid].size();
+             qDebug() << "[AudioMixer] Peer" << vid << "latency high. Dropped frames. Queue:" << peerQueues[vid].size();
         }
         peerQueues[vid].enqueue(opus);
         peerLastActiveTimes[vid] = QDateTime::currentMSecsSinceEpoch();

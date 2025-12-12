@@ -167,9 +167,9 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
             }
             static int fullCount = 0;
             if (!m_ringBuffer.isEmpty() && ++fullCount % 20 == 0) {
-                // qDebug() << "[Player] Sink backlog bytes:" << m_ringBuffer.size()
-                //          << " State:" << m_audioSink->state()
-                //          << " Error:" << m_audioSink->error();
+                qDebug() << "[Player] Sink backlog bytes:" << m_ringBuffer.size()
+                         << " State:" << m_audioSink->state()
+                         << " Error:" << m_audioSink->error();
             }
         }
     }
@@ -276,7 +276,7 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
     }
 
     m_audioSink = new QAudioSink(device, m_audioFormat, this);
-    m_audioSink->setBufferSize(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample / 10); // Reduced to 100ms buffer
+    m_audioSink->setBufferSize(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample / 6);
     m_audioSink->setVolume(qreal(m_volumePercent) / 100.0);
 
     // Push Mode: start() returns the QIODevice we write to
@@ -386,10 +386,7 @@ void AudioPlayer::forceRecreateSink()
         delete m_audioSink;
         m_audioSink = nullptr;
     }
-    if (m_audioIO) {
-        delete m_audioIO;
-        m_audioIO = nullptr;
-    }
+    m_audioIO = nullptr;
     m_audioInitialized = false;
     
     // 使用最后一次的格式参数尝试重建

@@ -46,6 +46,10 @@ namespace {
 }
 #endif
 
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QDateTime>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_centralWidget(nullptr)
@@ -65,6 +69,9 @@ MainWindow::MainWindow(QWidget *parent)
     , m_serverReadyRetryCount(0)
     , m_loginWebSocket(nullptr)
     , m_isLoggedIn(false)
+    , m_watchdogServer(nullptr)
+    , m_watchdogTimer(nullptr)
+    , m_lastHeartbeatTime(0)
 {
     
     
@@ -566,6 +573,40 @@ void MainWindow::startProcesses()
     // 将子进程标准输出/错误直接转发到当前终端
     m_captureProcess->setProcessChannelMode(QProcess::SeparateChannels);
     
+    // -------------------------------------------------------------------------
+    // 看门狗设置 (Watchdog Setup)
+    // -------------------------------------------------------------------------
+    if (m_watchdogServer) {
+        m_watchdogServer->close();
+        m_watchdogServer->deleteLater();
+    }
+    m_watchdogServer = new QLocalServer(this);
+    // 生成唯一管道名称：IrulerWatchdog_{RandomID}_{TimeStamp}
+    QString pipeName = QString("IrulerWatchdog_%1_%2").arg(getDeviceId()).arg(QDateTime::currentMSecsSinceEpoch());
+    
+    // 如果存在旧管道先移除（Windows下通常自动处理，Linux下可能需要）
+    QLocalServer::removeServer(pipeName);
+    
+    if (m_watchdogServer->listen(pipeName)) {
+        connect(m_watchdogServer, &QLocalServer::newConnection, this, &MainWindow::onWatchdogNewConnection);
+        // qDebug() << "[Watchdog] Server started, pipe name:" << pipeName;
+    } else {
+        // qDebug() << "[Watchdog] Failed to start server:" << m_watchdogServer->errorString();
+    }
+    
+    // 初始化心跳时间
+    m_lastHeartbeatTime = QDateTime::currentMSecsSinceEpoch();
+    
+    // 启动看门狗定时器 (每1秒检查一次)
+    if (m_watchdogTimer) {
+        m_watchdogTimer->stop();
+        delete m_watchdogTimer;
+    }
+    m_watchdogTimer = new QTimer(this);
+    connect(m_watchdogTimer, &QTimer::timeout, this, &MainWindow::onWatchdogTimeout);
+    m_watchdogTimer->start(1000); 
+    // -------------------------------------------------------------------------
+
     QString captureExe = appDir + "/CaptureProcess.exe";
     
     
@@ -583,7 +624,10 @@ void MainWindow::startProcesses()
     });
 #endif
     
-    m_captureProcess->start(captureExe);
+    // 传递看门狗管道名称给子进程
+    QStringList args;
+    args << "--watchdog" << pipeName;
+    m_captureProcess->start(captureExe, args);
     
     // 异步启动捕获进程，不等待启动完成
     
@@ -591,7 +635,18 @@ void MainWindow::startProcesses()
 
 void MainWindow::stopProcesses()
 {
-    
+    // 停止看门狗
+    if (m_watchdogTimer) {
+        m_watchdogTimer->stop();
+        delete m_watchdogTimer;
+        m_watchdogTimer = nullptr;
+    }
+    if (m_watchdogServer) {
+        m_watchdogServer->close();
+        m_watchdogServer->deleteLater();
+        m_watchdogServer = nullptr;
+    }
+
     // 停止捕获进程
     if (m_captureProcess) {
         m_captureProcess->terminate();
@@ -652,6 +707,83 @@ void MainWindow::onPlayerProcessFinished(int exitCode, QProcess::ExitStatus exit
         );
     }
 }
+
+// -------------------------------------------------------------------------
+// 看门狗实现 (Watchdog Implementation)
+// -------------------------------------------------------------------------
+
+void MainWindow::onWatchdogNewConnection()
+{
+    if (!m_watchdogServer) return;
+    
+    QLocalSocket *clientConnection = m_watchdogServer->nextPendingConnection();
+    if (!clientConnection) return;
+    
+    // 连接数据读取信号
+    connect(clientConnection, &QLocalSocket::readyRead, this, &MainWindow::onWatchdogDataReady);
+    connect(clientConnection, &QLocalSocket::disconnected, clientConnection, &QLocalSocket::deleteLater);
+    
+    // qDebug() << "[Watchdog] Client connected";
+}
+
+void MainWindow::onWatchdogDataReady()
+{
+    QLocalSocket *socket = qobject_cast<QLocalSocket*>(sender());
+    if (!socket) return;
+    
+    // 读取所有数据并丢弃（只需要知道有数据来即可）
+    // 协议简单约定：子进程每秒发一个字节
+    socket->readAll();
+    
+    // 更新最后心跳时间
+    m_lastHeartbeatTime = QDateTime::currentMSecsSinceEpoch();
+}
+
+void MainWindow::onWatchdogTimeout()
+{
+    // 如果没有在推流，不需要检测
+    if (!m_isStreaming || !m_captureProcess || m_captureProcess->state() == QProcess::NotRunning) {
+        return;
+    }
+
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 diff = now - m_lastHeartbeatTime;
+    
+    // 宽容度设置：
+    // 1. 启动初期允许较长延迟 (前10秒允许10秒超时)
+    // 2. 正常运行允许 5秒 超时 (防止偶发卡顿误杀)
+    
+    // 如果距离启动不足10秒，给予更多宽容
+    qint64 startupGracePeriod = 10000; 
+    bool inGracePeriod = m_startupTimer.isValid() && m_startupTimer.elapsed() < startupGracePeriod;
+    
+    qint64 timeoutThreshold = inGracePeriod ? 10000 : 5000; // 启动期10秒，运行时5秒
+
+    if (diff > timeoutThreshold) {
+        // qDebug() << "[Watchdog] ALERT! CaptureProcess freeze detected! No heartbeat for" << diff << "ms. Killing...";
+        
+        // 强制杀死子进程
+        if (m_captureProcess) {
+            m_captureProcess->kill(); // 直接Kill，不废话
+            // 状态会在 onCaptureProcessFinished 中更新
+            
+            // 更新UI提示用户
+            if (m_statusLabel) {
+                m_statusLabel->setText(QString("错误: 捕获进程无响应 (%1ms)").arg(diff));
+            }
+        }
+        
+        // 重置计时器防止重复触发（直到下一次启动）
+        m_lastHeartbeatTime = now; 
+        
+        // 既然已经kill了，stopProcesses会被自动调用吗？
+        // 不会，kill只会触发 finished 信号。
+        // onCaptureProcessFinished 会被调用，然后更新UI。
+        // 这里不需要额外操作，只要确保 kill 成功即可。
+    }
+}
+
+// -------------------------------------------------------------------------
 
 QString MainWindow::getConfigFilePath() const
 {

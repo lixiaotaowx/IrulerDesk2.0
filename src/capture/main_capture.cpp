@@ -263,6 +263,43 @@ static void saveScreenIndexToConfig(int screenIndex)
     }
 }
 
+#include <QLocalSocket>
+
+// -------------------------------------------------------------------------
+// 看门狗客户端类
+// -------------------------------------------------------------------------
+class WatchdogClient : public QObject {
+    Q_OBJECT
+public:
+    WatchdogClient(const QString& serverName, QObject* parent = nullptr) : QObject(parent) {
+        m_socket = new QLocalSocket(this);
+        m_timer = new QTimer(this);
+        
+        connect(m_timer, &QTimer::timeout, this, &WatchdogClient::sendHeartbeat);
+        
+        // 尝试连接
+        m_socket->connectToServer(serverName);
+        
+        // 每1秒发送一次心跳
+        m_timer->start(1000);
+    }
+
+private slots:
+    void sendHeartbeat() {
+        if (m_socket->state() == QLocalSocket::ConnectedState) {
+            m_socket->write("1"); // 发送任意数据
+            m_socket->flush();
+        } else if (m_socket->state() == QLocalSocket::UnconnectedState) {
+            // 如果连接断开，尝试重连（虽然通常父进程死了也没必要重连，但为了鲁棒性）
+            // 这里不做自动重连，因为如果父进程关闭管道，说明不需要心跳了
+        }
+    }
+
+private:
+    QLocalSocket* m_socket;
+    QTimer* m_timer;
+};
+
 int main(int argc, char *argv[])
 {
     // 安装崩溃守护与控制台日志重定向
@@ -272,6 +309,25 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
+    
+    // -------------------------------------------------------------------------
+    // 启动看门狗客户端
+    // -------------------------------------------------------------------------
+    QString watchdogPipeName;
+    QStringList args = app.arguments();
+    for (int i = 0; i < args.size() - 1; ++i) {
+        if (args[i] == "--watchdog") {
+            watchdogPipeName = args[i + 1];
+            break;
+        }
+    }
+    
+    WatchdogClient *watchdog = nullptr;
+    if (!watchdogPipeName.isEmpty()) {
+        watchdog = new WatchdogClient(watchdogPipeName, &app);
+        // qDebug() << "[CaptureProcess] Watchdog client started, connecting to:" << watchdogPipeName;
+    }
+    // -------------------------------------------------------------------------
     
     // 尝试申请麦克风权限 (Qt 6.5+)
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
@@ -1457,3 +1513,5 @@ int main(int argc, char *argv[])
 
     return app.exec();
 }
+
+#include "main_capture.moc"

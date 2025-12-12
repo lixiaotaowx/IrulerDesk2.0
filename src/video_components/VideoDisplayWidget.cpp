@@ -272,12 +272,18 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
     if (!m_isReceiving) {
         if (!recreate && m_receiver) {
             // Force cleanup if destroying
+            if (m_receiver->isConnected()) {
+                m_receiver->sendViewerExit();
+            }
             m_receiver->disconnectFromServer();
             m_receiver.reset();
         }
         return;
     }
     
+    if (m_receiver && m_receiver->isConnected()) {
+        m_receiver->sendViewerExit();
+    }
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态

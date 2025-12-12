@@ -153,6 +153,14 @@ private:
     // 进程管理
     QProcess *m_captureProcess;
     QProcess *m_playerProcess;
+
+    // 看门狗相关
+    class QLocalServer *m_watchdogServer;
+    QTimer *m_watchdogTimer;
+    qint64 m_lastHeartbeatTime;
+    void onWatchdogNewConnection();
+    void onWatchdogDataReady();
+    void onWatchdogTimeout();
     
     // 启动时间诊断
     QElapsedTimer m_startupTimer;

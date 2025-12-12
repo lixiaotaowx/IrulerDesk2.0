@@ -18,6 +18,7 @@
 #include <QTextStream>
 #include <QNetworkInterface>
 #include <QHostInfo>
+#include <QCryptographicHash>
 #include <cstdlib>
 #include <ctime>
 
@@ -703,7 +704,33 @@ int MainWindow::loadOrGenerateRandomId()
     }
     
     // 如果文件不存在或读取失败，生成新的随机ID
-    int newRandomId = 10000 + (rand() % 90000); // 生成10000-99999之间的随机数
+    // 使用MAC地址生成稳定的ID，确保同一台设备ID固定
+    QString macs;
+    auto interfaces = QNetworkInterface::allInterfaces();
+    for (const auto &netInterface : interfaces) {
+        if (netInterface.flags().testFlag(QNetworkInterface::IsUp) && 
+            !netInterface.flags().testFlag(QNetworkInterface::IsLoopBack)) {
+            macs += netInterface.hardwareAddress();
+        }
+    }
+
+    int newRandomId;
+    if (!macs.isEmpty()) {
+        QByteArray hash = QCryptographicHash::hash(macs.toUtf8(), QCryptographicHash::Md5);
+        quint32 num = 0;
+        if (hash.size() >= 4) {
+            num = (static_cast<quint8>(hash[0]) << 24) |
+                  (static_cast<quint8>(hash[1]) << 16) |
+                  (static_cast<quint8>(hash[2]) << 8)  |
+                  static_cast<quint8>(hash[3]);
+        } else {
+            num = static_cast<quint32>(rand());
+        }
+        newRandomId = 10000 + (num % 90000);
+    } else {
+        newRandomId = 10000 + (rand() % 90000); // 回退到随机
+    }
+    
     saveRandomIdToConfig(newRandomId);
     return newRandomId;
 }
@@ -734,7 +761,37 @@ int MainWindow::loadOrGenerateIconId()
     }
     
     // 如果文件不存在或读取失败，生成新的icon ID
-    int newIconId = 3 + (rand() % 19); // 生成3-21之间的随机数
+    // 使用MAC地址生成稳定的头像ID
+    QString macs;
+    auto interfaces = QNetworkInterface::allInterfaces();
+    for (const auto &netInterface : interfaces) {
+        if (netInterface.flags().testFlag(QNetworkInterface::IsUp) && 
+            !netInterface.flags().testFlag(QNetworkInterface::IsLoopBack)) {
+            macs += netInterface.hardwareAddress();
+        }
+    }
+
+    int newIconId;
+    if (!macs.isEmpty()) {
+        QByteArray hash = QCryptographicHash::hash(macs.toUtf8(), QCryptographicHash::Md5);
+        quint32 num = 0;
+        if (hash.size() >= 4) {
+            // 使用完全不同的哈希计算方式来确保与RandomID差异较大
+            // 将哈希值反向并取中间部分
+            quint32 h1 = static_cast<quint8>(hash[hash.size()-1]);
+            quint32 h2 = static_cast<quint8>(hash[hash.size()-2]);
+            quint32 h3 = static_cast<quint8>(hash[hash.size()-3]);
+            quint32 h4 = static_cast<quint8>(hash[hash.size()-4]);
+            // 混合计算
+            num = (h1 * 16777619) ^ (h2 * 65599) ^ (h3 * 257) ^ h4;
+        } else {
+             num = static_cast<quint32>(rand());
+        }
+        newIconId = 3 + (num % 19); 
+    } else {
+        newIconId = 3 + (rand() % 19); // 生成3-21之间的随机数
+    }
+    
     saveIconIdToConfig(newIconId);
     return newIconId;
 }
@@ -1096,7 +1153,11 @@ void MainWindow::initializeLoginSystem()
     if (m_userName.isEmpty()) {
         QString name = loadUserNameFromConfig();
         if (name.isEmpty()) {
-            name = QString("用户%1").arg(m_userId);
+            // 如果没有配置用户名（跳过了向导），优先使用计算机名
+            name = QHostInfo::localHostName();
+            if (name.isEmpty()) {
+                name = QString("用户%1").arg(m_userId);
+            }
             saveUserNameToConfig(name);
         }
         m_userName = name;
@@ -1107,14 +1168,30 @@ void MainWindow::initializeLoginSystem()
     connect(m_loginWebSocket, &QWebSocket::textMessageReceived, this, &MainWindow::onLoginWebSocketTextMessageReceived);
     connect(m_loginWebSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, &MainWindow::onLoginWebSocketError);
     m_heartbeatTimer = new QTimer(this);
-    m_heartbeatTimer->setInterval(5000);
+    m_heartbeatTimer->setInterval(10000); // 改为10秒
     m_heartbeatTimer->setTimerType(Qt::PreciseTimer);
     connect(m_heartbeatTimer, &QTimer::timeout, this, &MainWindow::sendHeartbeat);
+
+    // 初始化用户列表清理定时器（蓄水池机制）
+    m_userCleanupTimer = new QTimer(this);
+    m_userCleanupTimer->setInterval(30000); // 30秒清理一次
+    connect(m_userCleanupTimer, &QTimer::timeout, this, &MainWindow::onUserCleanupTimerTimeout);
+    m_userCleanupTimer->start();
+
+    // 初始化重连定时器
+    m_reconnectTimer = new QTimer(this);
+    m_reconnectTimer->setSingleShot(true);
+    connect(m_reconnectTimer, &QTimer::timeout, this, &MainWindow::connectToLoginServer);
+
     QTimer::singleShot(3000, this, &MainWindow::connectToLoginServer);
 }
 
 void MainWindow::connectToLoginServer()
 {
+    if (m_loginWebSocket->state() == QAbstractSocket::ConnectedState ||
+        m_loginWebSocket->state() == QAbstractSocket::ConnectingState) {
+        return;
+    }
     QString serverAddress = getServerAddress();
     QString serverUrl = QString("ws://%1/login").arg(serverAddress);  // 使用专门的登录路径
     m_loginWebSocket->open(QUrl(serverUrl));
@@ -1150,10 +1227,9 @@ void MainWindow::sendHeartbeat()
     if (!m_isLoggedIn) {
         return;
     }
+    // 使用轻量级ping
     QJsonObject heartbeat;
-    heartbeat["type"] = "heartbeat";
-    heartbeat["id"] = m_userId;
-    heartbeat["device_id"] = getDeviceId();
+    heartbeat["type"] = "ping";
     QJsonDocument doc(heartbeat);
     QString message = doc.toJson(QJsonDocument::Compact);
     m_loginWebSocket->sendTextMessage(message);
@@ -1161,50 +1237,74 @@ void MainWindow::sendHeartbeat()
 
 void MainWindow::updateUserList(const QJsonArray& users)
 {
-    
-    // 清空现有列表
-    m_listWidget->clear();
-    
-    // 准备透明图片列表的用户ID列表
-    QStringList onlineUserIds;
-    
-    if (users.isEmpty()) {
-        m_listWidget->addItem("暂无在线用户");
-        // 清空透明图片列表
-        m_transparentImageList->updateUserList(onlineUserIds);
-        return;
+    // 更新服务器在线用户蓄水池
+    m_serverOnlineUsers.clear();
+    for (int i = 0; i < users.size(); ++i) {
+        QJsonObject userObj = users[i].toObject();
+        if (!userObj.isEmpty()) {
+            m_serverOnlineUsers.insert(userObj["id"].toString());
+        }
     }
-    
-    // 添加在线用户到列表
+
+    // 如果收到有效用户列表，先清理掉列表中的提示信息（没有UserRole的项）
+    if (!users.isEmpty()) {
+        for (int j = m_listWidget->count() - 1; j >= 0; --j) {
+            if (m_listWidget->item(j)->data(Qt::UserRole).toString().isEmpty()) {
+                delete m_listWidget->takeItem(j);
+            }
+        }
+    } else if (m_listWidget->count() == 0) {
+         // 如果列表空且服务器也没人，显示提示（等到cleanup再处理也行，这里处理更及时）
+         // 但为了遵循"蓄水池"原则，只有在cleanup时才确认真的没人
+    }
+
+    // 增量添加新用户到UI
     for (int i = 0; i < users.size(); ++i) {
         const QJsonValue& userValue = users[i];
-        
-        if (!userValue.isObject()) {
-            // 非对象数据，跳过
-            continue;
-        }
+        if (!userValue.isObject()) continue;
         
         QJsonObject userObj = userValue.toObject();
         QString userId = userObj["id"].toString();
         QString userName = userObj["name"].toString();
         
-        
-        QString displayText = QString("%1 (%2)").arg(userName).arg(userId);
-        m_listWidget->addItem(displayText);
-        
-        // 添加所有用户到透明图片列表（包含自己）
-        onlineUserIds.append(userId);
-        
-        // 检查是否是当前用户
-        if (userId == m_userId) {
-            // 当前用户在列表中
-        } else {
-            // 其他用户
+        // 解析icon_id
+        int iconId = -1;
+        if (userObj.contains("icon_id")) {
+             QJsonValue v = userObj["icon_id"];
+             iconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
+        } else if (userObj.contains("viewer_icon_id")) {
+             QJsonValue v = userObj["viewer_icon_id"];
+             iconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
         }
+
+        // 检查列表中是否已存在
+        bool existsInList = false;
+        for(int j=0; j<m_listWidget->count(); ++j) {
+            QListWidgetItem* item = m_listWidget->item(j);
+            if (item->data(Qt::UserRole).toString() == userId) {
+                existsInList = true;
+                // 更新名字（如果变了）
+                QString newText = QString("%1 (%2)").arg(userName).arg(userId);
+                if (item->text() != newText) {
+                    item->setText(newText);
+                }
+                break;
+            }
+        }
+        
+        if (!existsInList) {
+            // 新增到列表
+            QString displayText = QString("%1 (%2)").arg(userName).arg(userId);
+            QListWidgetItem* item = new QListWidgetItem(displayText);
+            item->setData(Qt::UserRole, userId);
+            m_listWidget->addItem(item);
+        }
+        
+        // 新增到透明图片列表 (addUser会自动处理去重和更新)
+        m_transparentImageList->addUser(userId, userName, iconId);
     }
     
-    // 更新透明图片列表 - 使用新的JSON格式
-    m_transparentImageList->updateUserList(users);
+    // 检查目标用户在线状态
     bool targetOnline = false;
     if (!m_currentTargetId.isEmpty()) {
         for (int i = 0; i < users.size(); ++i) {
@@ -1224,12 +1324,41 @@ void MainWindow::updateUserList(const QJsonArray& users)
             }
         }
     }
+}
+
+void MainWindow::onUserCleanupTimerTimeout()
+{
+    // 遍历列表，移除不在蓄水池中的用户
+    for (int i = m_listWidget->count() - 1; i >= 0; --i) {
+        QListWidgetItem* item = m_listWidget->item(i);
+        QString userId = item->data(Qt::UserRole).toString();
+        
+        // 如果UserRole为空（提示信息）
+        if (userId.isEmpty()) {
+             if (m_serverOnlineUsers.size() > 0) {
+                 delete m_listWidget->takeItem(i);
+             }
+             continue;
+        }
+        
+        if (!m_serverOnlineUsers.contains(userId)) {
+            // 蓄水池里没有这个人，移除
+            m_transparentImageList->removeUser(userId);
+            delete m_listWidget->takeItem(i);
+        }
+    }
     
+    // 如果移除后列表为空，显示暂无在线用户
+    if (m_listWidget->count() == 0) {
+        m_listWidget->addItem("暂无在线用户");
+    }
 }
 
 // 登录系统槽函数实现
 void MainWindow::onLoginWebSocketConnected()
 {
+    // 连接成功，停止重连定时器
+    m_reconnectTimer->stop();
     
     m_listWidget->clear();
     m_listWidget->addItem("已连接服务器，正在登录...");
@@ -1246,8 +1375,13 @@ void MainWindow::onLoginWebSocketDisconnected()
     m_listWidget->clear();
     m_listWidget->addItem("与服务器断开连接");
     
-    // 5秒后尝试重新连接
-    QTimer::singleShot(5000, this, &MainWindow::connectToLoginServer);
+    // 断开连接时，清空在线用户蓄水池和桌面头像
+    // 因为相对我而言，所有人都“掉线”了
+    m_serverOnlineUsers.clear();
+    m_transparentImageList->clearUserList();
+
+    // 5秒后尝试重新连接 (如果定时器已在运行，start会重置它，避免重复)
+    m_reconnectTimer->start(5000);
 }
 
 void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
@@ -1399,8 +1533,9 @@ void MainWindow::onLoginWebSocketError(QAbstractSocket::SocketError error)
     m_listWidget->clear();
     m_listWidget->addItem("连接服务器失败: " + errorMessage);
     
-    // 10秒后尝试重新连接
-    QTimer::singleShot(10000, this, &MainWindow::connectToLoginServer);
+    // 10秒后尝试重新连接 (使用统一的定时器，避免冲突)
+    // 如果已经有更短的重连计划，这里会覆盖为10秒，这通常是合理的（出错了多等会儿）
+    m_reconnectTimer->start(10000);
 }
 
 void MainWindow::showContextMenu(const QPoint &pos)

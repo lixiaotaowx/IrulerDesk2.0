@@ -100,6 +100,38 @@ void TransparentImageList::addUser(const QString &userId, const QString &userNam
     updateLayout();
 }
 
+void TransparentImageList::addUser(const QString &userId, const QString &userName, int iconId)
+{
+    if (m_userImages.contains(userId)) {
+        // 用户已存在，检查是否需要更新名称
+        if (m_userImages[userId]->userName != userName) {
+            m_userImages[userId]->userName = userName;
+        }
+        return;
+    }
+    
+    // 创建新用户
+    QLabel* label = createUserImage(userId, iconId);
+    if (label) {
+        m_layout->addWidget(label);
+        m_userLabels.append(label);
+        
+        // 设置名称
+        if (m_userImages.contains(userId)) {
+            m_userImages[userId]->userName = userName;
+        }
+    }
+    
+    updateLayout();
+    
+    // 确保窗口可见
+    if (!m_userLabels.isEmpty()) {
+        show();
+        raise();
+        // activateWindow(); // 避免抢焦点
+    }
+}
+
 void TransparentImageList::removeUser(const QString &userId)
 {
     if (!m_userImages.contains(userId)) {

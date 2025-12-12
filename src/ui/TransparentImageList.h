@@ -33,6 +33,7 @@ public:
 
     // 添加用户头像
     void addUser(const QString &userId, const QString &userName);
+    void addUser(const QString &userId, const QString &userName, int iconId); // 新增：支持iconId
     
     // 移除用户头像
     void removeUser(const QString &userId);
@@ -47,6 +48,9 @@ public:
     // 更新用户头像
     void updateUserAvatar(const QString &userId, int iconId);
     
+    // 清空用户列表
+    void clearUserList();
+
     // 获取当前用户ID
     QString getCurrentUserId() const;
 
@@ -82,7 +86,6 @@ private:
 
     void setupUI();
     void updateLayout();
-    void clearUserList();  // 添加clearUserList函数声明
     void createUserImage(const QString &userId, const QString &userName);
     QLabel* createUserImage(const QString &userId);  // 创建用户图片标签
     QLabel* createUserImage(const QString &userId, int iconId);  // 新增：支持指定icon ID

@@ -50,6 +50,7 @@ private slots:
     void onLoginWebSocketDisconnected();
     void onLoginWebSocketTextMessageReceived(const QString &message);
     void onLoginWebSocketError(QAbstractSocket::SocketError error);
+    void onUserCleanupTimerTimeout(); // 蓄水池清理定时器槽
     
     // 右键菜单相关槽函数
     void showContextMenu(const QPoint &pos);
@@ -166,6 +167,11 @@ private:
     QString m_userId;
     QString m_userName;
     bool m_isLoggedIn;
+    // 在线用户蓄水池
+    QSet<QString> m_serverOnlineUsers;
+    QTimer *m_userCleanupTimer;
+    QTimer *m_reconnectTimer; // 统一的重连定时器
+    
     // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
     QString m_currentTargetId;
     bool m_appReadyEmitted = false;

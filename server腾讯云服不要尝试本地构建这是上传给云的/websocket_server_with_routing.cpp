@@ -417,6 +417,14 @@ private slots:
                         m_userLastHeartbeat[uid] = QDateTime::currentMSecsSinceEpoch();
                     }
                     return;
+                } else if (type == "ping") {
+                    // 处理轻量级心跳
+                    QPair<QString, QString> ui = m_loginUsers.value(sender);
+                    QString uid = ui.first;
+                    if (!uid.isEmpty()) {
+                        m_userLastHeartbeat[uid] = QDateTime::currentMSecsSinceEpoch();
+                    }
+                    return;
                 }
             }
             

@@ -279,7 +279,11 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
     }
 
     // 3. 找出需要添加或更新的用户
-    // 确保当前用户始终在第一位
+    // 强制排序策略：
+    // 1. 每次更新列表时，我们先确保所有存在的用户都在布局中正确就位
+    // 2. 只有当布局顺序真的错误时才进行移动，避免UI闪烁
+    
+    // 步骤 A: 确保自己在列表中
     if (!m_currentUserId.isEmpty()) {
         if (!m_userImages.contains(m_currentUserId)) {
              // 如果尚未创建，创建并插入到最前面
@@ -290,37 +294,22 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
                  m_layout->insertWidget(0, selfLabel);
                  m_userLabels.prepend(selfLabel);
              }
-        } else {
-             // 如果已存在，确保它在最前面
-             UserImageItem* item = m_userImages[m_currentUserId];
-             if (item && item->imageLabel) {
-                 int index = m_layout->indexOf(item->imageLabel);
-                 if (index != 0) {
-                     m_layout->removeWidget(item->imageLabel);
-                     m_layout->insertWidget(0, item->imageLabel);
-                     
-                     // 同步更新 m_userLabels 列表
-                     m_userLabels.removeAll(item->imageLabel);
-                     m_userLabels.prepend(item->imageLabel);
-                 }
-             }
         }
     }
 
-    // 处理其他用户
+    // 步骤 B: 处理其他用户的添加
     for (auto it = newUserInfo.begin(); it != newUserInfo.end(); ++it) {
         QString userId = it.key();
         QString userName = it.value().first;
         int iconId = it.value().second;
         
-        if (userId == m_currentUserId) continue; // 已处理
+        if (userId == m_currentUserId) continue; // 稍后统一排序处理
 
         if (m_userImages.contains(userId)) {
             // 用户已存在，仅更新名称
             if (m_userImages[userId]->userName != userName) {
                 m_userImages[userId]->userName = userName;
             }
-            // 可以在这里更新头像，如果支持动态更换iconId
         } else {
             // 新增用户
             QLabel* userLabel = createUserImage(userId, iconId);
@@ -331,6 +320,28 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
                 if (m_userImages.contains(userId)) {
                     m_userImages[userId]->userName = userName;
                 }
+            }
+        }
+    }
+    
+    // 步骤 C: 最终强制重排——这才是"顽固问题"的终极杀手
+    // 不管之前怎么添加的，现在我们强制把所有Widget按正确顺序重新排列
+    // 顺序规则：自己(m_currentUserId) -> 其他人(按加入顺序或字母顺序)
+    
+    if (!m_currentUserId.isEmpty() && m_userImages.contains(m_currentUserId)) {
+        UserImageItem* selfItem = m_userImages[m_currentUserId];
+        if (selfItem && selfItem->imageLabel) {
+            // 检查当前第0个位置是不是自己
+            QLayoutItem* itemAt0 = m_layout->itemAt(0);
+            if (itemAt0 && itemAt0->widget() != selfItem->imageLabel) {
+                // 如果不是，强制把大家全拿出来，重新放进去？不，这太耗费性能。
+                // 简单的做法：把自己移到最前面。
+                m_layout->removeWidget(selfItem->imageLabel);
+                m_layout->insertWidget(0, selfItem->imageLabel);
+                
+                // 同步更新 m_userLabels 列表辅助维护
+                m_userLabels.removeAll(selfItem->imageLabel);
+                m_userLabels.prepend(selfItem->imageLabel);
             }
         }
     }

@@ -1204,7 +1204,7 @@ int main(int argc, char *argv[])
     mixFmt.setSampleFormat(QAudioFormat::Int16);
     
     mixSink = new QAudioSink(QMediaDevices::defaultAudioOutput(), mixFmt, &app);
-    mixSink->setBufferSize(8192); // ~170ms
+    mixSink->setBufferSize(4096); // ~85ms (reduced from 170ms)
     mixIO = mixSink->start();
     
     mixTimer = new QTimer(&app);
@@ -1256,10 +1256,9 @@ int main(int argc, char *argv[])
             
             // Peer Anti-Jitter Logic
             bool isBuffering = peerBuffering.value(vid, true);
-            // Threshold increased to 20 frames (400ms) to fix stuttering/pulsed audio
-            // while keeping max latency under 1 second.
+            // Threshold reduced to 6 frames (120ms) for low latency (was 20 frames / 400ms)
             if (isBuffering) {
-                if (q.size() >= 20) { 
+                if (q.size() >= 6) { 
                     isBuffering = false;
                     peerBuffering[vid] = false;
                     qDebug() << "[AudioMixer] Peer" << vid << "buffering done. Queue:" << q.size();
@@ -1335,8 +1334,8 @@ int main(int argc, char *argv[])
         
         // 简单缓冲，如果堆积过多则丢弃旧帧 (Latency control)
         // Previous 200 (4s) was too high, causing ~2s latency.
-        // Adjusted to 50 frames (1000ms) to balance jitter resistance and latency.
-        const int MAX_PEER_QUEUE = 50; 
+        // Adjusted to 25 frames (500ms) to balance jitter resistance and latency.
+        const int MAX_PEER_QUEUE = 25; 
         if (peerQueues[vid].size() >= MAX_PEER_QUEUE) {
              // Drop oldest frames to catch up, but leave enough to avoid immediate underrun
              while (peerQueues[vid].size() >= MAX_PEER_QUEUE - 10) {

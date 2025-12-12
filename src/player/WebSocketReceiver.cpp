@@ -376,7 +376,7 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     m_serverUrl = url;
     m_reconnectEnabled = true;
 
-    qDebug() << "[Receiver] Connecting to URL:" << url;
+    // qDebug() << "[Receiver] Connecting to URL:" << url;
     m_webSocket->open(QUrl(url));
     return true;
 }
@@ -454,7 +454,7 @@ void WebSocketReceiver::onConnected()
 
     emit connected();
     emit connectionStatusChanged("已连接");
-        qDebug() << "[Receiver] Connected successfully to:" << m_serverUrl;
+        // qDebug() << "[Receiver] Connected successfully to:" << m_serverUrl;
 
     // 日志清理：移除冗余连接状态输出
 
@@ -619,7 +619,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             rxCount++;
             qint64 now = QDateTime::currentMSecsSinceEpoch();
             if (rxCount % 500 == 0 || (now - lastRxTime > 5000)) {
-                 qDebug() << "[Receiver] Rx audio_opus #" << rxCount << " SR:" << sampleRate << " CH:" << channels << " Bytes:" << opusData.size();
+                 // qDebug() << "[Receiver] Rx audio_opus #" << rxCount << " SR:" << sampleRate << " CH:" << channels << " Bytes:" << opusData.size();
                  lastRxTime = now;
             }
 
@@ -638,9 +638,9 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             m_audioFrameSamples = mixSampleRate / 50; 
             
             // 延迟控制：如果队列过长，丢弃旧帧以追赶实时
-            // 目标：保持队列在 2000ms (100帧) 以内，以抵抗极端网络抖动
-            // Update: Reduced to 100 frames (2s) for better latency
-            const int MAX_QUEUE_SIZE = 100; 
+            // 目标：保持队列在 500ms (25帧) 以内，以抵抗极端网络抖动
+            // Update: Reduced to 25 frames (0.5s) for better latency
+            const int MAX_QUEUE_SIZE = 25; 
             if (m_opusQueue.size() >= MAX_QUEUE_SIZE) {
                 int dropCount = 0;
                 while (m_opusQueue.size() >= MAX_QUEUE_SIZE - 2) {
@@ -658,7 +658,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             m_opusSeqQueue.enqueue(seq);
             
             if (!m_audioTimer->isActive()) {
-                int threshold = 12;
+                int threshold = 4; // Reduced to 4 frames (80ms) for lower latency
                 if (m_opusQueue.size() >= threshold) {
                     m_hasAudioStarted = true;
                     m_producerBuffering = true;
@@ -709,7 +709,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             m_peerLastActiveTimes[fromId] = QDateTime::currentMSecsSinceEpoch();
             
             // 延迟控制 (Peer)
-            const int MAX_PEER_QUEUE = 50; // Reduced to 50 (1000ms) for better latency
+            const int MAX_PEER_QUEUE = 25; // Reduced to 25 (500ms) for better latency
             QQueue<QByteArray>& q = m_peerQueues[fromId];
             if (q.size() >= MAX_PEER_QUEUE) {
                 while (q.size() >= MAX_PEER_QUEUE - 10) {
@@ -719,7 +719,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             
             q.enqueue(opusData);
             if (!m_audioTimer->isActive()) {
-                int threshold = 12;
+                int threshold = 4; // Reduced to 4 frames (80ms)
                 bool ready = m_opusQueue.size() >= threshold;
                 if (!ready) {
                     for (auto it = m_peerQueues.begin(); it != m_peerQueues.end(); ++it) {
@@ -788,7 +788,7 @@ void WebSocketReceiver::onSslErrors(const QList<QSslError> &errors)
 
 void WebSocketReceiver::onStateChanged(QAbstractSocket::SocketState state)
 {
-    qDebug() << "[Receiver] WebSocket State Changed:" << state;
+    // qDebug() << "[Receiver] WebSocket State Changed:" << state;
 }
 
 void WebSocketReceiver::attemptReconnect()

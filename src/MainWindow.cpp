@@ -170,7 +170,7 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     
     videoWidget->startReceiving(serverUrl);
     bool spkEnabled = loadSpeakerEnabledFromConfig();
-    qInfo() << "config.load.speaker_enabled" << spkEnabled;
+    // qInfo() << "config.load.speaker_enabled" << spkEnabled;
     bool micEnabled = true;
     m_videoWindow->setSpeakerChecked(spkEnabled);
     m_videoWindow->setMicChecked(micEnabled);

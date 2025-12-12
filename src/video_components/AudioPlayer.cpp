@@ -125,7 +125,7 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
     static int procCount = 0;
     procCount++;
     if (procCount % 500 == 0) {
-        qDebug() << "[Player] Process Audio Data #" << procCount << " Size:" << pcmData.size() << " SR:" << sampleRate;
+        // qDebug() << "[Player] Process Audio Data #" << procCount << " Size:" << pcmData.size() << " SR:" << sampleRate;
     }
 
     // 更新最后一次帧参数
@@ -276,7 +276,7 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
     }
 
     m_audioSink = new QAudioSink(device, m_audioFormat, this);
-    m_audioSink->setBufferSize(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample / 5);
+    m_audioSink->setBufferSize(m_sinkSampleRate * m_sinkChannels * m_bytesPerSample / 10); // Reduced to 100ms buffer
     m_audioSink->setVolume(qreal(m_volumePercent) / 100.0);
 
     // Push Mode: start() returns the QIODevice we write to

@@ -228,12 +228,12 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
 
     if (device.isFormatSupported(desiredFormat)) {
         m_audioFormat = desiredFormat;
-        qDebug() << "[Player] Device supports source format, using:" << m_audioFormat;
+        // qDebug() << "[Player] Device supports source format, using:" << m_audioFormat;
     } else {
         // 如果不支持源格式，回退到设备首选格式
         QAudioFormat preferred = device.preferredFormat();
-        qDebug() << "[Player] Device does not support source format:" << desiredFormat 
-                 << " Falling back to preferred:" << preferred;
+        // qDebug() << "[Player] Device does not support source format:" << desiredFormat 
+        //          << " Falling back to preferred:" << preferred;
         
         m_audioFormat = preferred;
         
@@ -263,9 +263,9 @@ void AudioPlayer::initAudioSinkIfNeeded(int sampleRate, int channels, int bitsPe
         default: m_bytesPerSample = 2; break;
     }
     
-    qDebug() << "[Player] Initializing AudioSink. Device:" << device.description() 
-             << " Format:" << m_audioFormat 
-             << " Preferred:" << device.preferredFormat();
+    // qDebug() << "[Player] Initializing AudioSink. Device:" << device.description() 
+    //          << " Format:" << m_audioFormat 
+    //          << " Preferred:" << device.preferredFormat();
 
     // 判断是否需要重采样
     if (sampleRate != m_sinkSampleRate || channels != m_sinkChannels || bitsPerSample != 16) {

@@ -378,51 +378,51 @@ void VideoWindow::setupCustomTitleBar()
         "QPushButton:hover { background-color: rgba(220, 53, 69, 0.8); }");
     connect(m_closeButton, &QPushButton::clicked, this, &VideoWindow::onCloseClicked);
     
-    m_penButton = new QPushButton("", m_titleBar);
+    m_penButton = new RainbowToolButton(m_titleBar);
     m_penButton->setIcon(QIcon(iconDir + "/pen.png"));
     m_penButton->setIconSize(QSize(16, 16));
-    m_penButton->setStyleSheet(micButtonStyle);
+    // m_penButton->setStyleSheet(micButtonStyle); // Use internal paintEvent
     m_penButton->setToolTip(QStringLiteral("画笔"));
     m_penButton->setCheckable(true);
     m_penButton->setChecked(false);
 
-    m_rectButton = new QPushButton("", m_titleBar);
+    m_rectButton = new RainbowToolButton(m_titleBar);
     m_rectButton->setIcon(QIcon(iconDir + "/sele_box.png"));
     m_rectButton->setIconSize(QSize(16, 16));
-    m_rectButton->setStyleSheet(micButtonStyle);
+    // m_rectButton->setStyleSheet(micButtonStyle);
     m_rectButton->setToolTip(QStringLiteral("矩形"));
     m_rectButton->setCheckable(true);
     m_rectButton->setChecked(false);
 
-    m_circleButton = new QPushButton("", m_titleBar);
+    m_circleButton = new RainbowToolButton(m_titleBar);
     m_circleButton->setIcon(QIcon(iconDir + "/sele.png"));
     m_circleButton->setIconSize(QSize(16, 16));
-    m_circleButton->setStyleSheet(micButtonStyle);
+    // m_circleButton->setStyleSheet(micButtonStyle);
     m_circleButton->setToolTip(QStringLiteral("圆形"));
     m_circleButton->setCheckable(true);
     m_circleButton->setChecked(false);
 
-    m_arrowButton = new QPushButton("", m_titleBar);
+    m_arrowButton = new RainbowToolButton(m_titleBar);
     m_arrowButton->setIcon(QIcon(iconDir + "/arrow.png"));
     m_arrowButton->setIconSize(QSize(16, 16));
-    m_arrowButton->setStyleSheet(micButtonStyle);
+    // m_arrowButton->setStyleSheet(micButtonStyle);
     m_arrowButton->setToolTip(QStringLiteral("箭头"));
     m_arrowButton->setCheckable(true);
     m_arrowButton->setChecked(false);
 
-    m_textButton = new QPushButton("", m_titleBar);
+    m_textButton = new RainbowToolButton(m_titleBar);
     m_textButton->setIcon(QIcon(iconDir + "/text.png"));
     m_textButton->setIconSize(QSize(16, 16));
-    m_textButton->setStyleSheet(micButtonStyle);
+    // m_textButton->setStyleSheet(micButtonStyle);
     m_textButton->setToolTip(QStringLiteral("文字"));
     m_textButton->installEventFilter(this);
     m_textButton->setCheckable(true);
     m_textButton->setChecked(false);
 
-    m_eraserButton = new QPushButton("", m_titleBar);
+    m_eraserButton = new RainbowToolButton(m_titleBar);
     m_eraserButton->setIcon(QIcon(iconDir + "/xiangpi.png"));
     m_eraserButton->setIconSize(QSize(16, 16));
-    m_eraserButton->setStyleSheet(micButtonStyle);
+    // m_eraserButton->setStyleSheet(micButtonStyle);
     m_eraserButton->setToolTip(QStringLiteral("橡皮擦"));
     m_eraserButton->setCheckable(true);
     m_eraserButton->setChecked(false);
@@ -490,15 +490,16 @@ void VideoWindow::setupCustomTitleBar()
     m_mainLayout->addWidget(m_titleBar);
 
     auto updateToolStyles = [this, micButtonStyle, selectedToolStyle]() {
-        m_penButton->setStyleSheet(m_penButton->isChecked() ? selectedToolStyle : micButtonStyle);
-        m_rectButton->setStyleSheet(m_rectButton->isChecked() ? selectedToolStyle : micButtonStyle);
-        m_circleButton->setStyleSheet(m_circleButton->isChecked() ? selectedToolStyle : micButtonStyle);
-        m_textButton->setStyleSheet(m_textButton->isChecked() ? selectedToolStyle : micButtonStyle);
-        m_eraserButton->setStyleSheet(m_eraserButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        // RainbowToolButton handles its own styling
+        // m_penButton->setStyleSheet(m_penButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        // m_rectButton->setStyleSheet(m_rectButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        // m_circleButton->setStyleSheet(m_circleButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        // m_textButton->setStyleSheet(m_textButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        // m_eraserButton->setStyleSheet(m_eraserButton->isChecked() ? selectedToolStyle : micButtonStyle);
         m_undoButton->setStyleSheet(micButtonStyle);
         m_cameraButton->setStyleSheet(micButtonStyle);
         m_likeButton->setStyleSheet(micButtonStyle);
-        m_arrowButton->setStyleSheet(m_arrowButton->isChecked() ? selectedToolStyle : micButtonStyle);
+        // m_arrowButton->setStyleSheet(m_arrowButton->isChecked() ? selectedToolStyle : micButtonStyle);
     };
 
     connect(m_penButton, &QPushButton::toggled, this, [this, updateToolStyles](bool checked) {

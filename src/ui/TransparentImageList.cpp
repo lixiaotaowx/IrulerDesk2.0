@@ -93,12 +93,7 @@ void TransparentImageList::setCurrentUserInfo(const QString &currentUserId, int 
 
 void TransparentImageList::addUser(const QString &userId, const QString &userName)
 {
-    if (m_userImages.contains(userId)) {
-        return; // 用户已存在
-    }
-    
-    createUserImage(userId, userName);
-    updateLayout();
+    addUser(userId, userName, getUserIconId(userId));
 }
 
 void TransparentImageList::addUser(const QString &userId, const QString &userName, int iconId)
@@ -108,14 +103,37 @@ void TransparentImageList::addUser(const QString &userId, const QString &userNam
         if (m_userImages[userId]->userName != userName) {
             m_userImages[userId]->userName = userName;
         }
+
+        // 确保自己在第一位
+        if (userId == m_currentUserId) {
+             UserImageItem* item = m_userImages[userId];
+             if (item && item->imageLabel) {
+                 // 检查当前第0个位置是不是自己
+                 QLayoutItem* itemAt0 = m_layout->itemAt(0);
+                 if (itemAt0 && itemAt0->widget() != item->imageLabel) {
+                     // 移动到最前面
+                     m_layout->removeWidget(item->imageLabel);
+                     m_layout->insertWidget(0, item->imageLabel);
+                     
+                     m_userLabels.removeAll(item->imageLabel);
+                     m_userLabels.prepend(item->imageLabel);
+                     updateLayout();
+                 }
+             }
+        }
         return;
     }
     
     // 创建新用户
     QLabel* label = createUserImage(userId, iconId);
     if (label) {
-        m_layout->addWidget(label);
-        m_userLabels.append(label);
+        if (userId == m_currentUserId) {
+            m_layout->insertWidget(0, label);
+            m_userLabels.prepend(label);
+        } else {
+            m_layout->addWidget(label);
+            m_userLabels.append(label);
+        }
         
         // 设置名称
         if (m_userImages.contains(userId)) {
@@ -370,8 +388,13 @@ void TransparentImageList::createUserImage(const QString &userId, const QString 
     int iconId = getUserIconId(userId);
     QLabel* label = createUserImage(userId, iconId);
     if (label) {
-        m_layout->addWidget(label);
-        m_userLabels.append(label);
+        if (userId == m_currentUserId) {
+            m_layout->insertWidget(0, label);
+            m_userLabels.prepend(label);
+        } else {
+            m_layout->addWidget(label);
+            m_userLabels.append(label);
+        }
     }
     
     // 更新用户名
@@ -895,8 +918,8 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
 {
     QMenu contextMenu(this);
     
-    QAction *showMainWindowAction = contextMenu.addAction("显示主窗口");
-    connect(showMainWindowAction, &QAction::triggered, this, &TransparentImageList::showMainListRequested);
+    // QAction *showMainWindowAction = contextMenu.addAction("显示主窗口");
+    // connect(showMainWindowAction, &QAction::triggered, this, &TransparentImageList::showMainListRequested);
     
     
 
@@ -915,6 +938,9 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
             if (lines[i].startsWith("speaker_enabled=")) { QString v = lines[i].mid(QString("speaker_enabled=").length()).trimmed(); speakerEnabled = (v.compare("true", Qt::CaseInsensitive) == 0); }
         }
     }
+    // 新增右键菜单项（窗口泛用菜单）
+    QAction *clearMarksAction = contextMenu.addAction("清理标记");
+    connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
     QAction *micAction = contextMenu.addAction("麦克风");
     micAction->setCheckable(true);
     micAction->setChecked(micEnabled);
@@ -924,9 +950,7 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
     speakerAction->setChecked(speakerEnabled);
     connect(speakerAction, &QAction::toggled, this, &TransparentImageList::speakerToggleRequested);
     
-    // 新增右键菜单项（窗口泛用菜单）
-    QAction *clearMarksAction = contextMenu.addAction("清理标记");
-    connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
+    
     QAction *hideAction = contextMenu.addAction("隐藏");
     connect(hideAction, &QAction::triggered, this, &TransparentImageList::hideRequested);
     QAction *exitAction = contextMenu.addAction("退出");

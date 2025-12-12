@@ -33,7 +33,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    struct Stroke { QVector<QPoint> points; int colorId = 0; int thickness = 3; };
+    struct Stroke { QVector<QPoint> points; int colorId = 0; int thickness = 3; bool smooth = false; };
     struct TextItem { QString text; QPoint pos; int colorId = 0; int fontSize = 16; };
     struct OpEntry { int kind = 0; int startIndex = 0; int count = 1; };
     Stroke m_currentStroke;
@@ -45,8 +45,8 @@ private:
     QPoint m_rectEnd;
     int m_currentShapeColor = 0;
     bool m_drawingCircle = false;
-    QPoint m_circleCenter;
-    int m_circleRadius = 0;
+    QPoint m_circleStart;
+    QPoint m_circleEnd;
     bool m_drawingArrow = false;
     QPoint m_arrowStart;
     QPoint m_arrowEnd;

@@ -20,6 +20,12 @@ namespace {
     static QFile *logFile = nullptr;
 
     static void qtConsoleMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &msg) {
+        // 过滤不需要的日志
+        if (msg.contains("libpng warning: iCCP: cHRM chunk does not match sRGB") ||
+            msg.contains("Using Qt multimedia with FFmpeg")) {
+            return;
+        }
+
 #ifdef DISABLE_ALL_LOGS
         // 静音非致命日志，保留 Critical/Fatal
         if (type == QtDebugMsg || type == QtInfoMsg || type == QtWarningMsg) {

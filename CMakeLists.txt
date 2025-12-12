@@ -57,6 +57,8 @@ set(MAIN_SOURCES
     src/ui/SystemSettingsWindow.h         # 系统设置窗口声明：设置项与信号槽
     src/ui/ColorCircleButton.cpp          # 圆形颜色按钮：自绘抗锯齿纯圆显示
     src/ui/ColorCircleButton.h            # 圆形颜色按钮声明
+    src/ui/RainbowToolButton.cpp          # 彩虹工具按钮
+    src/ui/RainbowToolButton.h            # 彩虹工具按钮声明
     src/ui/FirstLaunchWizard.cpp          # 首次启动引导设置对话框
     src/ui/FirstLaunchWizard.h            # 首次启动引导设置对话框声明
 )

@@ -14,6 +14,7 @@
 #include <QTimer>
 #include "video_components/VideoDisplayWidget.h"
 #include "ui/ColorCircleButton.h"
+#include "ui/RainbowToolButton.h"
 
 class VideoWindow : public QWidget
 {
@@ -62,12 +63,12 @@ private:
     QPushButton *m_closeButton;
     QWidget *m_toolBar;
     QHBoxLayout *m_toolBarLayout;
-    QPushButton *m_penButton;
-    QPushButton *m_rectButton;
-    QPushButton *m_circleButton;
-    QPushButton *m_arrowButton;
-    QPushButton *m_textButton;
-    QPushButton *m_eraserButton;
+    RainbowToolButton *m_penButton;
+    RainbowToolButton *m_rectButton;
+    RainbowToolButton *m_circleButton;
+    RainbowToolButton *m_arrowButton;
+    RainbowToolButton *m_textButton;
+    RainbowToolButton *m_eraserButton;
     QPushButton *m_undoButton;
     QPushButton *m_cameraButton;
     QPushButton *m_likeButton;

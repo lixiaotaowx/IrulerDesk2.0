@@ -22,7 +22,7 @@ BubbleTipWidget::BubbleTipWidget(QWidget *parent)
                                PADDING_V + SHADOW_MARGIN);
     
     m_label = new QLabel(this);
-    m_label->setStyleSheet("color: black; font-family: 'Microsoft YaHei'; font-size: 12px;");
+    m_label->setStyleSheet("color: black; font-family: 'Microsoft YaHei'; font-size: 14px; font-weight: bold;");
     layout->addWidget(m_label);
     
     // 移除 QGraphicsDropShadowEffect，改为在 paintEvent 中手动绘制

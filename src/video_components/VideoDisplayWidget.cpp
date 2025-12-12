@@ -446,7 +446,9 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
              drawMouseCursor(pixmap, m_mousePosition, m_mouseName);
         }
         
-        // 始终保持宽高比并居中显示
+        // [Letterboxing] 始终保持宽高比并居中显示 (等比缩放 + 黑边填充)
+        // labelSize 是当前控件的大小，scaledPixmap 是适应控件大小后的图片
+        // 由于 m_videoLabel 设置了 Alignment=Center 和 Background=Black，不足部分会自动填充黑边
         QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         
         // 使用QTimer确保UI更新在主线程中进行，避免闪烁

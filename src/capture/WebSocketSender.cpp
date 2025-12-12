@@ -36,8 +36,9 @@ WebSocketSender::WebSocketSender(QObject *parent)
     m_reconnectTimer = new QTimer(this);
     m_reconnectTimer->setSingleShot(true);
     connect(m_reconnectTimer, &QTimer::timeout, this, &WebSocketSender::attemptReconnect);
-    
-    
+    m_sendTimer = new QTimer(this);
+    m_sendTimer->setInterval(0);
+    connect(m_sendTimer, &QTimer::timeout, this, &WebSocketSender::onSendTimer);
 }
 
 WebSocketSender::~WebSocketSender()
@@ -119,6 +120,77 @@ void WebSocketSender::sendFrame(const QByteArray &frameData)
     }
 }
 
+void WebSocketSender::enqueueFrame(const QByteArray &frameData, bool keyFrame)
+{
+    QMutexLocker locker(&m_mutex);
+    if (!m_connected || !m_webSocket || !m_isStreaming) {
+        return;
+    }
+    qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (frameData.size() >= 8) {
+        qint64 ts;
+        memcpy(&ts, frameData.constData(), 8);
+        if (nowMs - ts > m_queueMaxAgeMs) {
+            return;
+        }
+    }
+
+    if (m_frameQueue.size() >= m_maxQueueSize) {
+        if (keyFrame) {
+            m_frameQueue.clear();
+            m_keyQueue.clear();
+            m_frameQueue.enqueue(frameData);
+            m_keyQueue.enqueue(true);
+        } else {
+            while (!m_frameQueue.isEmpty()) {
+                const QByteArray &first = m_frameQueue.head();
+                if (first.size() >= 8) {
+                    qint64 ots;
+                    memcpy(&ots, first.constData(), 8);
+                    if (nowMs - ots > m_queueMaxAgeMs) {
+                        m_frameQueue.dequeue();
+                        m_keyQueue.dequeue();
+                        m_droppedFramesDueToAge++;
+                        continue;
+                    }
+                }
+                break;
+            }
+
+            if (m_frameQueue.size() >= m_maxQueueSize) {
+                int n = m_frameQueue.size();
+                QQueue<QByteArray> newF;
+                QQueue<bool> newK;
+                bool dropped = false;
+                for (int i = 0; i < n; ++i) {
+                    QByteArray d = m_frameQueue.dequeue();
+                    bool k = m_keyQueue.dequeue();
+                    if (!dropped && !k) {
+                        dropped = true;
+                        m_droppedFramesDueToQueue++;
+                        continue;
+                    }
+                    newF.enqueue(d);
+                    newK.enqueue(k);
+                }
+                m_frameQueue = newF;
+                m_keyQueue = newK;
+            }
+
+            if (m_frameQueue.size() < m_maxQueueSize) {
+                m_frameQueue.enqueue(frameData);
+                m_keyQueue.enqueue(false);
+            }
+        }
+    } else {
+        m_frameQueue.enqueue(frameData);
+        m_keyQueue.enqueue(keyFrame);
+    }
+    if (m_sendTimer && !m_sendTimer->isActive()) {
+        m_sendTimer->start();
+    }
+}
+
 void WebSocketSender::sendTextMessage(const QString &message)
 {
     QMutexLocker locker(&m_mutex);
@@ -184,6 +256,8 @@ void WebSocketSender::onDisconnected()
     
     bool wasConnected = m_connected;
     m_connected = false;
+    m_frameQueue.clear();
+    m_keyQueue.clear();
     
     if (wasConnected) {
         // 断开连接时必须停止推流，确保状态重置
@@ -266,6 +340,8 @@ void WebSocketSender::stopStreaming()
     QMutexLocker locker(&m_mutex);
     if (m_isStreaming) {
         m_isStreaming = false;
+        m_frameQueue.clear();
+        m_keyQueue.clear();
         
         emit streamingStopped();
     }
@@ -490,4 +566,28 @@ void WebSocketSender::resetSenderStats()
     m_lastStatsUpdateTime = QDateTime::currentMSecsSinceEpoch();
     
     
+}
+
+void WebSocketSender::onSendTimer()
+{
+    QMutexLocker locker(&m_mutex);
+    if (!m_connected || !m_webSocket || !m_isStreaming) {
+        m_sendTimer->stop();
+        return;
+    }
+    int burst = (m_frameQueue.size() >= 4) ? 3 : 2;
+    while (burst-- > 0 && !m_frameQueue.isEmpty()) {
+        QByteArray data = m_frameQueue.dequeue();
+        bool key = m_keyQueue.dequeue();
+        Q_UNUSED(key);
+        qint64 bytesSent = m_webSocket->sendBinaryMessage(data);
+        if (bytesSent > 0) {
+            m_totalBytesSent += bytesSent;
+            m_totalFramesSent++;
+            emit frameSent(data.size());
+        }
+    }
+    if (m_frameQueue.isEmpty()) {
+        m_sendTimer->stop();
+    }
 }

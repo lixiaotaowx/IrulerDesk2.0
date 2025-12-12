@@ -15,6 +15,7 @@ VP9Encoder::VP9Encoder(QObject *parent)
     , m_initialized(false)
     , m_frameCount(0)
     , m_forceNextKeyFrame(false) // 初始化强制关键帧标志
+    , m_lastWasKey(false)
     , m_yPlane(nullptr)
     , m_uPlane(nullptr)
     , m_vPlane(nullptr)
@@ -170,6 +171,7 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     QByteArray encodedData = encodeFrame(m_yPlane, m_uPlane, m_vPlane);
     if (!encodedData.isEmpty()) {
         emit frameEncoded(encodedData);
+        emit frameEncodedWithInfo(encodedData, m_lastWasKey);
         
         // 保存当前帧数据用于下次比较
         if (m_enableStaticDetection) {
@@ -443,6 +445,7 @@ QByteArray VP9Encoder::encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane,
         if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
             const char *frameData = static_cast<const char*>(pkt->data.frame.buf);
             int frameSize = static_cast<int>(pkt->data.frame.sz);
+            m_lastWasKey = (pkt->data.frame.flags & VPX_FRAME_IS_KEY) != 0;
             
             // 添加时间戳到编码数据前（8字节，毫秒时间戳）
             qint64 timestamp = QDateTime::currentMSecsSinceEpoch();

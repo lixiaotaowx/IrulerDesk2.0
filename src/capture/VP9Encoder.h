@@ -48,6 +48,7 @@ public:
     
 signals:
     void frameEncoded(const QByteArray &encodedData);
+    void frameEncodedWithInfo(const QByteArray &encodedData, bool keyFrame);
     void error(const QString &errorMessage);
 
 public slots:
@@ -90,6 +91,7 @@ private:
     bool m_initialized;
     int m_frameCount;
     bool m_forceNextKeyFrame; // 强制下一帧为关键帧
+    bool m_lastWasKey;
     
     // YUV转换缓冲区
     uint8_t *m_yPlane;

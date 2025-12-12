@@ -660,9 +660,10 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     return true;
                 } else if (mouseEvent->button() == Qt::RightButton) {
                     QMenu contextMenu(this);
-                    QAction *showMainWindowAction = contextMenu.addAction("显示主窗口");
-                    connect(showMainWindowAction, &QAction::triggered, this, &TransparentImageList::showMainListRequested);
                     
+                    QAction *clearMarksAction = contextMenu.addAction("清理标记");
+                    connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
+
                     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
                     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
 
@@ -688,8 +689,6 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     speakerAction->setChecked(speakerEnabled);
                     connect(speakerAction, &QAction::toggled, this, &TransparentImageList::speakerToggleRequested);
 
-                    QAction *clearMarksAction = contextMenu.addAction("清理标记");
-                    connect(clearMarksAction, &QAction::triggered, this, &TransparentImageList::clearMarksRequested);
                     QAction *hideAction = contextMenu.addAction("隐藏");
                     connect(hideAction, &QAction::triggered, this, &TransparentImageList::hideRequested);
                     QAction *exitAction = contextMenu.addAction("退出");

@@ -414,8 +414,8 @@ int main(int argc, char *argv[])
     // 已禁用性能监控，减少CPU开销
     // 连接信号槽
     // qDebug() << "[CaptureProcess] 连接编码器和服务器信号槽...";
-    QObject::connect(encoder, &VP9Encoder::frameEncoded,
-                     sender, &WebSocketSender::sendFrame);
+    QObject::connect(encoder, &VP9Encoder::frameEncodedWithInfo,
+                     sender, &WebSocketSender::enqueueFrame);
     
     // 连接首帧关键帧策略信号槽
     QObject::connect(sender, &WebSocketSender::requestKeyFrame,

@@ -504,6 +504,8 @@ void MainWindow::startStreaming()
         return;
     }
     
+    // 手动启动时，重置崩溃记录，给用户新的机会
+    m_crashTimestamps.clear();
     
     m_statusLabel->setText("正在启动流媒体...");
     m_statusLabel->setStyleSheet(
@@ -670,20 +672,83 @@ void MainWindow::stopProcesses()
 
 void MainWindow::onCaptureProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
-    
-    
     // 输出已通过 ForwardedChannels 直接转发到控制台，这里无需读取缓冲
     
     if (m_isStreaming) {
-        m_statusLabel->setText("屏幕捕获进程已退出");
-        m_statusLabel->setStyleSheet(
-            "QLabel {"
-            "    color: #f44336;"
-            "    font-weight: bold;"
-            "    padding: 5px;"
-            "}"
-        );
+        // 如果是正常退出（通常是用户点击停止），不做特殊处理，stopStreaming() 会处理状态
+        // 但如果是 CrashExit（被看门狗杀死或崩溃），我们需要处理
+        if (exitStatus == QProcess::CrashExit) {
+            
+            // 检查熔断机制
+            if (checkCrashLoop()) {
+                QString errorMsg = "捕获服务启动失败：1分钟内连续崩溃超过3次，已停止重试。";
+                m_statusLabel->setText("严重错误：服务无法启动");
+                m_statusLabel->setStyleSheet("QLabel { color: #f44336; font-weight: bold; padding: 5px; }");
+                
+                if (m_trayIcon) {
+                    m_trayIcon->showMessage("服务启动失败", errorMsg, QSystemTrayIcon::Critical, 5000);
+                }
+                
+                QMessageBox::critical(this, "严重错误", errorMsg + "\n请检查设备驱动或重新安装程序。");
+                
+                // 彻底停止
+                stopStreaming();
+                return;
+            }
+
+            // 尝试自动重启
+            QString msg = QString("捕获进程异常退出，正在尝试重启... (重试 %1/%2)").arg(m_crashTimestamps.size()).arg(MAX_CRASH_COUNT);
+            m_statusLabel->setText(msg);
+            m_statusLabel->setStyleSheet("QLabel { color: #ff9800; font-weight: bold; padding: 5px; }");
+            
+            if (m_trayIcon) {
+                m_trayIcon->showMessage("服务异常", "捕获进程异常退出，正在尝试自动恢复...", QSystemTrayIcon::Warning, 2000);
+            }
+            
+            // 重新启动进程（复用 startProcesses 逻辑）
+            // 注意：需要先清理旧进程句柄（虽然 finished 信号触发意味着进程已死，但对象还在）
+            // stopProcesses 会做清理，但也会停止看门狗，所以我们需要重新调用 startProcesses
+            
+            // 简单延时一下再重启，避免瞬间频繁重启
+            QTimer::singleShot(1000, this, [this]() {
+                if (m_isStreaming) { // 确保用户没有在延时期间点了停止
+                    // 先清理旧资源
+                    stopProcesses(); 
+                    // 重新启动
+                    startProcesses();
+                }
+            });
+            
+        } else {
+            m_statusLabel->setText("屏幕捕获进程已退出");
+            m_statusLabel->setStyleSheet(
+                "QLabel {"
+                "    color: #f44336;"
+                "    font-weight: bold;"
+                "    padding: 5px;"
+                "}"
+            );
+        }
     }
+}
+
+// 检查是否触发熔断
+bool MainWindow::checkCrashLoop()
+{
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    m_crashTimestamps.append(now);
+    
+    // 清理超出时间窗口的旧记录
+    while (!m_crashTimestamps.isEmpty() && (now - m_crashTimestamps.first() > CRASH_WINDOW_MS)) {
+        m_crashTimestamps.removeFirst();
+    }
+    
+    // 检查次数是否超标
+    if (m_crashTimestamps.size() > MAX_CRASH_COUNT) {
+        return true;
+    }
+    
+    return false;
 }
 
 void MainWindow::onPlayerProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)

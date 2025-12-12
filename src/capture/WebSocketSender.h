@@ -7,6 +7,7 @@
 #include <QTimer>
 #include <QMutex>
 #include <QVector>
+#include <QQueue>
 
 // 前向声明
 
@@ -22,6 +23,7 @@ public:
     void disconnectFromServer();
     
     void sendFrame(const QByteArray &frameData);
+    void enqueueFrame(const QByteArray &frameData, bool keyFrame);
     void sendTextMessage(const QString &message); // 新增：发送文本消息
     
     // 推流控制
@@ -98,6 +100,7 @@ private slots:
     void onError(QAbstractSocket::SocketError socketError);
     void onTextMessageReceived(const QString &message); // 处理文本消息
     void attemptReconnect();
+    void onSendTimer();
 
 private:
     void setupWebSocket();
@@ -135,6 +138,14 @@ private:
     // 线程安全
     mutable QMutex m_mutex;
     QString m_viewerName;
+
+    QQueue<QByteArray> m_frameQueue;
+    QQueue<bool> m_keyQueue;
+    QTimer *m_sendTimer = nullptr;
+    int m_maxQueueSize = 6;
+    int m_queueMaxAgeMs = 200;
+    qint64 m_droppedFramesDueToQueue = 0;
+    qint64 m_droppedFramesDueToAge = 0;
 };
 
 #endif // WEBSOCKETSENDER_H

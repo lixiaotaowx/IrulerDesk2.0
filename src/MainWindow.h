@@ -162,6 +162,12 @@ private:
     void onWatchdogDataReady();
     void onWatchdogTimeout();
     
+    // 熔断机制相关
+    QList<qint64> m_crashTimestamps; // 记录最近崩溃的时间戳
+    const int MAX_CRASH_COUNT = 3;   // 最大允许崩溃次数
+    const int CRASH_WINDOW_MS = 60000; // 时间窗口（1分钟）
+    bool checkCrashLoop(); // 检查是否触发熔断
+    
     // 启动时间诊断
     QElapsedTimer m_startupTimer;
     

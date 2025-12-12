@@ -118,7 +118,7 @@ public slots:
     void renderFrame(const QByteArray &frameData, const QSize &frameSize);
     void renderFrameWithTimestamp(const QByteArray &frameData, const QSize &frameSize, qint64 captureTimestamp);
     void updateConnectionStatus(const QString &status);
-    void onMousePositionReceived(const QPoint &position, qint64 timestamp); // 新增：鼠标位置接收槽
+    void onMousePositionReceived(const QPoint &position, qint64 timestamp, const QString &name = QString()); // 新增：鼠标位置接收槽
     // 批注控制：撤销上一笔与清屏
     void sendUndo();
     void sendClear();
@@ -137,7 +137,7 @@ private:
     void recreateReceiver();
     void setupUI();
     void updateButtonText();
-    void drawMouseCursor(QPixmap &pixmap, const QPoint &position); // 保留旧接口（不再使用远端叠加）
+    void drawMouseCursor(QPixmap &pixmap, const QPoint &position, const QString &name = QString()); // 保留旧接口（不再使用远端叠加）
     void updateLocalCursorComposite();
     // 捕获鼠标并映射到源坐标
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -193,6 +193,7 @@ private:
     
     // 鼠标位置相关
     QPoint m_mousePosition; // 当前鼠标位置
+    QString m_mouseName; // 鼠标对应的用户名
     qint64 m_mouseTimestamp = 0; // 鼠标位置时间戳
     bool m_hasMousePosition = false; // 是否有有效的鼠标位置数据
     QLabel *m_localCursorOverlay = nullptr; // 本地即时光标叠加

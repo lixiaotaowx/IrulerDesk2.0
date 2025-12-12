@@ -87,7 +87,7 @@ signals:
     void disconnected();
     void frameReceived(const QByteArray &frameData);
     void frameReceivedWithTimestamp(const QByteArray &frameData, qint64 captureTimestamp);
-    void mousePositionReceived(const QPoint &position, qint64 timestamp); // 新增：鼠标位置信号
+    void mousePositionReceived(const QPoint &position, qint64 timestamp, const QString &name = QString()); // 新增：鼠标位置信号
     void connectionError(const QString &error);
     void connectionStatusChanged(const QString &status);
     void statsUpdated(const ReceiverStats &stats);

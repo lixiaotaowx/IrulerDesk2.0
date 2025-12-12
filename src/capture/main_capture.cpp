@@ -73,6 +73,36 @@ QString getLocalQualityFromConfig()
     return "medium";
 }
 
+QString getUserNameFromConfig()
+{
+    QStringList configPaths;
+    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
+    configPaths << QDir::currentPath() + "/config/app_config.txt";
+    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+
+    for (const QString& path : configPaths) {
+        QFile configFile(path);
+        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&configFile);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            in.setEncoding(QStringConverter::Utf8);
+#else
+            in.setCodec("UTF-8");
+#endif
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (line.startsWith("user_name=")) {
+                    QString name = line.mid(10).trimmed();
+                    configFile.close();
+                    if (!name.isEmpty()) return name;
+                }
+            }
+            configFile.close();
+        }
+    }
+    return "";
+}
+
 // 从配置文件读取设备ID
 QString getDeviceIdFromConfig()
 {
@@ -355,6 +385,7 @@ int main(int argc, char *argv[])
     static WebSocketSender *staticSender = sender; // 新增：静态WebSocket发送器指针
     static bool isCapturing = false; // 控制捕获状态
     static int currentScreenIndex = getScreenIndexFromConfig(); // 当前屏幕索引
+    static QString currentUserName = getUserNameFromConfig(); // 当前用户名
     static bool isSwitching = false; // 屏幕热切换中标志（不断流）
     // 新增：质量控制相关静态状态
     static QString currentQuality = getLocalQualityFromConfig();
@@ -1109,6 +1140,9 @@ int main(int argc, char *argv[])
         messageObj["type"] = "mouse_position";
         messageObj["x"] = local.x();
         messageObj["y"] = local.y();
+        if (!currentUserName.isEmpty()) {
+            messageObj["name"] = currentUserName;
+        }
         // 使用微秒时间戳，与采集端原实现一致
         auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::high_resolution_clock::now().time_since_epoch()).count();

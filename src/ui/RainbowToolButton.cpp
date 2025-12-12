@@ -47,7 +47,7 @@ void RainbowToolButton::paintEvent(QPaintEvent *event)
     QRectF rect((width() - 24) / 2.0, (height() - 24) / 2.0, 24, 24);
 
     if (isChecked()) {
-        // Rotating Rainbow Gradient with lower saturation (Pastel)
+        // Rotating Rainbow Gradient
         QConicalGradient gradient(rect.center(), m_angle);
         // Saturation 120/255 (~47%), Value 255
         gradient.setColorAt(0.0, QColor::fromHsv(0, 120, 255));

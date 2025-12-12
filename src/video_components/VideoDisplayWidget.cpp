@@ -435,7 +435,10 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
         
         QPixmap pixmap = QPixmap::fromImage(frontBuffer);
         
-        
+        // 绘制远程鼠标
+        if (m_hasMousePosition) {
+             drawMouseCursor(pixmap, m_mousePosition, m_mouseName);
+        }
         
         // 始终保持宽高比并居中显示
         QPixmap scaledPixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -762,11 +765,12 @@ void VideoDisplayWidget::renderFrameWithTimestamp(const QByteArray &frameData, c
     renderFrame(frameData, frameSize);
 }
 
-void VideoDisplayWidget::onMousePositionReceived(const QPoint &position, qint64 timestamp)
+void VideoDisplayWidget::onMousePositionReceived(const QPoint &position, qint64 timestamp, const QString &name)
 {
     // 更新鼠标位置数据
     m_mousePosition = position;
     m_mouseTimestamp = timestamp;
+    m_mouseName = name;
     m_hasMousePosition = true;
     
     // 移除鼠标位置统计日志以提升性能
@@ -779,7 +783,7 @@ void VideoDisplayWidget::onMousePositionReceived(const QPoint &position, qint64 
     // }
 }
 
-void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position)
+void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position, const QString &name)
 {
     static QPixmap cursorPixmap;
     static bool loaded = false;
@@ -794,8 +798,33 @@ void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position
     }
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.setRenderHint(QPainter::Antialiasing, true);
     if (!cursorPixmap.isNull()) {
         painter.drawPixmap(position, cursorPixmap);
+        
+        if (!name.isEmpty()) {
+            QFont font = painter.font();
+            font.setPixelSize(14);
+            font.setBold(true);
+            painter.setFont(font);
+            
+            QFontMetrics fm(font);
+            int textWidth = fm.horizontalAdvance(name);
+            int textHeight = fm.height();
+            
+            // 在光标右侧绘制名字
+            int x = position.x() + cursorPixmap.width() * 0.6; 
+            int y = position.y() + cursorPixmap.height() * 0.6;
+            
+            QRect textRect(x, y, textWidth + 8, textHeight + 4);
+            
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0, 0, 0, 160));
+            painter.drawRoundedRect(textRect, 4, 4);
+            
+            painter.setPen(Qt::white);
+            painter.drawText(textRect, Qt::AlignCenter, name);
+        }
     }
 }
 

@@ -98,7 +98,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             if (m_producerBuffering) {
                 if (m_opusQueue.size() >= 12) {
                     m_producerBuffering = false;
-                    qDebug() << "[Receiver] Producer buffering done. Queue:" << m_opusQueue.size();
+                    // qDebug() << "[Receiver] Producer buffering done. Queue:" << m_opusQueue.size();
                 }
             }
             
@@ -153,7 +153,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
                 }
                 if (decoded > 0) {
                     if (timerCount % 500 == 0) {
-                         qDebug() << "[Receiver] Decoded frame #" << timerCount << " Bytes:" << decoded * m_opusChannels * sizeof(opus_int16) << " PLC:" << !hasFrame;
+                         // qDebug() << "[Receiver] Decoded frame #" << timerCount << " Bytes:" << decoded * m_opusChannels * sizeof(opus_int16) << " PLC:" << !hasFrame;
                     }
                     pcm.resize(decoded * m_opusChannels * sizeof(opus_int16));
                     const opus_int16* src = reinterpret_cast<const opus_int16*>(pcm.constData());
@@ -260,7 +260,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         }
         
         if (timerCount % 500 == 0 && anySource) {
-            qDebug() << "[Receiver] Emitting audio frame. Size:" << mixOut.size() << " TS:" << m_audioLastTimestamp;
+            // qDebug() << "[Receiver] Emitting audio frame. Size:" << mixOut.size() << " TS:" << m_audioLastTimestamp;
         }
         emit audioFrameReceived(mixOut, baseSr, outCh, 16, m_audioLastTimestamp);
         
@@ -580,9 +580,10 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             int x = obj["x"].toInt();
             int y = obj["y"].toInt();
             qint64 timestamp = obj["timestamp"].toVariant().toLongLong();
+            QString name = obj.value("name").toString();
             
             // 发射鼠标位置信号
-            emit mousePositionReceived(QPoint(x, y), timestamp);
+            emit mousePositionReceived(QPoint(x, y), timestamp, name);
             
             // 每100条鼠标消息输出一次统计（避免日志过多）
             static int mouseMessageCount = 0;

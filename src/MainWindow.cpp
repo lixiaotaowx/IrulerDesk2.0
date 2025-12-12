@@ -1237,28 +1237,50 @@ void MainWindow::sendHeartbeat()
 
 void MainWindow::updateUserList(const QJsonArray& users)
 {
-    // 更新服务器在线用户蓄水池
+    // 1. 更新服务器在线用户蓄水池，并构建新用户ID集合
     m_serverOnlineUsers.clear();
+    QSet<QString> newUserIds;
     for (int i = 0; i < users.size(); ++i) {
         QJsonObject userObj = users[i].toObject();
         if (!userObj.isEmpty()) {
-            m_serverOnlineUsers.insert(userObj["id"].toString());
+            QString uid = userObj["id"].toString();
+            m_serverOnlineUsers.insert(uid);
+            newUserIds.insert(uid);
         }
     }
 
-    // 如果收到有效用户列表，先清理掉列表中的提示信息（没有UserRole的项）
-    if (!users.isEmpty()) {
-        for (int j = m_listWidget->count() - 1; j >= 0; --j) {
-            if (m_listWidget->item(j)->data(Qt::UserRole).toString().isEmpty()) {
+    // 2. 立即清理已离线的用户（不在新列表中的用户）
+    // 这样可以消除下线通知的延迟，同时保留蓄水池作为清理僵尸用户的兜底机制
+    for (int j = m_listWidget->count() - 1; j >= 0; --j) {
+        QListWidgetItem* item = m_listWidget->item(j);
+        QString userId = item->data(Qt::UserRole).toString();
+        
+        // 如果是提示信息项（无UserRole）
+        if (userId.isEmpty()) {
+            // 如果现在有真实用户了，移除提示信息
+            if (!newUserIds.isEmpty()) {
                 delete m_listWidget->takeItem(j);
             }
+            continue;
         }
-    } else if (m_listWidget->count() == 0) {
-         // 如果列表空且服务器也没人，显示提示（等到cleanup再处理也行，这里处理更及时）
-         // 但为了遵循"蓄水池"原则，只有在cleanup时才确认真的没人
+        
+        // 如果该用户不在新列表中，说明已下线
+        if (!newUserIds.contains(userId)) {
+            // 从透明头像列表中移除
+            if (m_transparentImageList) {
+                m_transparentImageList->removeUser(userId);
+            }
+            // 从主列表中移除
+            delete m_listWidget->takeItem(j);
+        }
+    }
+    
+    // 如果清理后列表为空且确实没人，显示提示
+    if (m_listWidget->count() == 0 && newUserIds.isEmpty()) {
+         m_listWidget->addItem("暂无在线用户");
     }
 
-    // 增量添加新用户到UI
+    // 3. 增量添加/更新新用户到UI
     for (int i = 0; i < users.size(); ++i) {
         const QJsonValue& userValue = users[i];
         if (!userValue.isObject()) continue;

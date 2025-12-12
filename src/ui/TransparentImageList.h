@@ -22,6 +22,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <memory>
+#include "BubbleTipWidget.h"
 
 class TransparentImageList : public QWidget
 {
@@ -122,6 +123,10 @@ private:
     QPoint m_dragStartGlobal;
     int m_dragThreshold = 8;
     int m_offsetY = -1;
+    
+    // 气泡提示
+    BubbleTipWidget *m_bubbleTip;
+
     void alignToScreenIndex(int index);
     void readPositionFromConfig();
     void writePositionToConfig();

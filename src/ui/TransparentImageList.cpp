@@ -16,6 +16,7 @@ TransparentImageList::TransparentImageList(QWidget *parent)
     , m_layout(nullptr)
     , m_defaultAvatarPath(":/images/default_avatar.png")
 {
+    m_bubbleTip = new BubbleTipWidget(this);
     setupUI();
     readPositionFromConfig();
     positionOnScreen();
@@ -229,43 +230,26 @@ void TransparentImageList::updateUserList(const QStringList &onlineUsers)
 
 void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
 {
-    
+    // 1. 收集新列表中的所有用户ID，并构建信息映射
+    QSet<QString> newUserIdSet;
+    QMap<QString, QPair<QString, int>> newUserInfo; // ID -> <Name, IconId>
 
-    // 清空现有用户
-    clearUserList();
-
-    // 第一个永远是自己（使用本地配置，不依赖服务器）
+    // 始终包含当前用户
     if (!m_currentUserId.isEmpty()) {
-        int selfIconId = (m_currentUserIconId >= 3 && m_currentUserIconId <= 21) ? m_currentUserIconId : -1;
-        
-        QLabel* selfLabel = createUserImage(m_currentUserId, selfIconId);
-        if (selfLabel) {
-            m_layout->addWidget(selfLabel);
-            m_userLabels.append(selfLabel);
-        } else {
-        }
-    } else {
+        newUserIdSet.insert(m_currentUserId);
     }
 
-
-    // 然后添加服务器返回的其他在线用户（包括自己，但会跳过重复）
     for (int i = 0; i < onlineUsers.size(); ++i) {
         const QJsonValue& userValue = onlineUsers[i];
-        if (!userValue.isObject()) {
-            continue;
-        }
+        if (!userValue.isObject()) continue;
         
         QJsonObject userObj = userValue.toObject();
         QString userId = userObj["id"].toString();
+        if (userId.isEmpty()) continue;
         
-        // 跳过自己，因为已经在第一位了
-        if (!userId.isEmpty() && userId == m_currentUserId) {
-            continue;
-        }
+        newUserIdSet.insert(userId);
         
         QString userName = userObj["name"].toString();
-        
-        // 其他用户使用服务器提供的icon_id
         int serverIconId = -1;
         if (userObj.contains("icon_id")) {
             QJsonValue v = userObj["icon_id"];
@@ -274,26 +258,76 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
             QJsonValue v = userObj["viewer_icon_id"];
             serverIconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
         }
-
-        // 验证服务器icon_id范围，无效则用红圈
         int iconId = (serverIconId >= 3 && serverIconId <= 21) ? serverIconId : -1;
         
-        
-        QLabel* userLabel = createUserImage(userId, iconId);
-        if (userLabel) {
-            m_layout->addWidget(userLabel);
-            m_userLabels.append(userLabel);
-        } else {
+        newUserInfo[userId] = qMakePair(userName, iconId);
+    }
+
+    // 2. 找出需要删除的用户（在UI中但不在新列表中）
+    // 注意：不能在遍历m_userImages的同时删除，先收集ID
+    QList<QString> usersToRemove;
+    for (auto it = m_userImages.begin(); it != m_userImages.end(); ++it) {
+        QString userId = it.key();
+        if (!newUserIdSet.contains(userId)) {
+            usersToRemove.append(userId);
         }
     }
     
+    // 执行删除
+    for (const QString &userId : usersToRemove) {
+        removeUserImage(userId); // 带淡出动画
+    }
+
+    // 3. 找出需要添加或更新的用户
+    // 确保当前用户始终在第一位（如果尚未创建）
+    if (!m_currentUserId.isEmpty() && !m_userImages.contains(m_currentUserId)) {
+         int selfIconId = (m_currentUserIconId >= 3 && m_currentUserIconId <= 21) ? m_currentUserIconId : -1;
+         QLabel* selfLabel = createUserImage(m_currentUserId, selfIconId);
+         if (selfLabel) {
+             // 插入到布局的最前面（索引0）
+             m_layout->insertWidget(0, selfLabel);
+             m_userLabels.prepend(selfLabel);
+         }
+    }
+
+    // 处理其他用户
+    for (auto it = newUserInfo.begin(); it != newUserInfo.end(); ++it) {
+        QString userId = it.key();
+        QString userName = it.value().first;
+        int iconId = it.value().second;
+        
+        if (userId == m_currentUserId) continue; // 已处理
+
+        if (m_userImages.contains(userId)) {
+            // 用户已存在，仅更新名称
+            if (m_userImages[userId]->userName != userName) {
+                m_userImages[userId]->userName = userName;
+            }
+            // 可以在这里更新头像，如果支持动态更换iconId
+        } else {
+            // 新增用户
+            QLabel* userLabel = createUserImage(userId, iconId);
+            if (userLabel) {
+                m_layout->addWidget(userLabel);
+                m_userLabels.append(userLabel);
+                // 设置名称
+                if (m_userImages.contains(userId)) {
+                    m_userImages[userId]->userName = userName;
+                }
+            }
+        }
+    }
     
-    // 显示窗口
+    // 4. 更新布局和窗口显示
+    // 如果有任何变化（或者原本就有人），都需要确保显示
     if (!m_userLabels.isEmpty()) {
+        updateLayout(); // 重新计算高度
         show();
         raise();
-        activateWindow();
+        // activateWindow(); 
     } else {
+        // 如果没人了（理论上自己总是在），隐藏
+        // hide(); // updateLayout里已经处理了userCount==0的情况
     }
 }
 
@@ -431,7 +465,7 @@ QLabel* TransparentImageList::createUserImage(const QString &userId, int iconId)
     fadeInAnimation->setDuration(500);
     fadeInAnimation->setStartValue(0.0);
     fadeInAnimation->setEndValue(0.9);
-    fadeInAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+    fadeInAnimation->start(); // 移除 DeleteWhenStopped，由UserImageItem管理生命周期
     item->fadeAnimation = fadeInAnimation; // 存储到UserImageItem中
     
     return label;
@@ -488,26 +522,51 @@ void TransparentImageList::removeUserImage(const QString &userId)
     
     UserImageItem *item = m_userImages[userId];
     
+    // 停止并清理之前的动画，防止冲突和回调崩溃
+    if (item->fadeAnimation) {
+        item->fadeAnimation->stop();
+        // 断开所有连接，防止触发之前的 finished 回调
+        disconnect(item->fadeAnimation, nullptr, nullptr, nullptr);
+        delete item->fadeAnimation;
+        item->fadeAnimation = nullptr;
+    }
+    
     // 创建淡出动画
     QPropertyAnimation *fadeOut = new QPropertyAnimation(item->opacityEffect, "opacity", this);
     fadeOut->setDuration(300);
-    fadeOut->setStartValue(0.8);
+    // 从当前透明度开始，平滑过渡
+    fadeOut->setStartValue(item->opacityEffect->opacity());
     fadeOut->setEndValue(0.0);
     fadeOut->setEasingCurve(QEasingCurve::InOutQuad);
     
+    // 存储新动画
+    item->fadeAnimation = fadeOut;
+    
     // 动画完成后删除控件
     connect(fadeOut, &QPropertyAnimation::finished, [this, userId, item, fadeOut]() {
-        m_mainLayout->removeWidget(item->imageLabel);
-        delete item->fadeAnimation;
-        delete item->opacityEffect;
-        if (item->gifMovie) {
-            delete item->gifMovie; // 清理GIF动画对象
+        // 检查item是否仍然有效且存在于映射中
+        if (m_userImages.contains(userId) && m_userImages.value(userId) == item) {
+            m_mainLayout->removeWidget(item->imageLabel);
+            
+            // 清理动画指针（对象本身由 fadeOut->deleteLater 处理）
+            if (item->fadeAnimation == fadeOut) {
+                item->fadeAnimation = nullptr;
+            }
+            
+            // opacityEffect 是 label 的子对象，不需要手动 delete
+            
+            if (item->gifMovie) {
+                delete item->gifMovie; // 清理GIF动画对象
+            }
+            if (item->imageLabel) {
+                item->imageLabel->deleteLater();
+            }
+            
+            delete item;
+            m_userImages.remove(userId);
+            updateLayout();
         }
-        delete item->imageLabel;
-        delete item;
-        m_userImages.remove(userId);
         fadeOut->deleteLater();
-        updateLayout();
     });
     
     fadeOut->start();
@@ -627,6 +686,30 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     return true;
                 }
             }
+        }
+    } else if (event->type() == QEvent::Enter) {
+        QLabel *label = qobject_cast<QLabel*>(obj);
+        if (label) {
+            QString userId = label->property("userId").toString();
+            if (!userId.isEmpty() && m_userImages.contains(userId)) {
+                QString userName = m_userImages[userId]->userName;
+                // 如果没有用户名，使用ID
+                if (userName.isEmpty()) {
+                    userName = userId;
+                }
+                
+                bool isSelf = (userId == m_currentUserId);
+                
+                // 计算位置：头像右侧垂直居中
+                QPoint globalPos = label->mapToGlobal(QPoint(label->width(), label->height() / 2));
+                
+                m_bubbleTip->showBubble(userName, globalPos, isSelf);
+            }
+        }
+    } else if (event->type() == QEvent::Leave) {
+        // 鼠标离开时隐藏气泡
+        if (m_bubbleTip) {
+            m_bubbleTip->hide();
         }
     }
     return QWidget::eventFilter(obj, event);

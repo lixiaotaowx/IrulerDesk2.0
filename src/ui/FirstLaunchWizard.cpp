@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QStyle>
 #include <QMessageBox>
+#include <QRandomGenerator>
 
 FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
     : QDialog(parent)
@@ -48,6 +49,10 @@ FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
         accept();
     });
     connect(m_skipBtn, &QPushButton::clicked, this, [this]() {
+        // 如果当前未选择有效头像（或者为了确保随机性），随机分配一个
+        if (m_selectedIconId < 3 || m_selectedIconId > 21) {
+            m_selectedIconId = QRandomGenerator::global()->bounded(3, 22);
+        }
         QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("可后期系统设置"));
         accept();
     });
@@ -139,7 +144,11 @@ void FirstLaunchWizard::buildAvatarPage()
         connect(b, &QPushButton::clicked, this, [this, i]() { selectAvatar(i); });
         ++c; if (c >= 4) { c = 0; ++r; }
     }
-    if (!m_avatarButtons.isEmpty()) selectAvatar(3);
+    if (!m_avatarButtons.isEmpty()) {
+        // 随机选择一个默认头像，避免都使用同一个
+        int randomId = QRandomGenerator::global()->bounded(3, 22); // 3 to 21
+        selectAvatar(randomId);
+    }
     m_avatarPage = page;
     m_stack->addWidget(page);
 }

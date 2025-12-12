@@ -49,6 +49,8 @@ set(MAIN_SOURCES
     src/VideoWindow.h                     # 独立视频窗口声明：公开接口与成员
     src/ui/TransparentImageList.cpp       # 透明贴图列表实现：管理/选择叠加贴图资源
     src/ui/TransparentImageList.h         # 透明贴图列表声明：信号槽与模型接口
+    src/ui/BubbleTipWidget.cpp            # 气泡提示控件
+    src/ui/BubbleTipWidget.h              # 气泡提示控件声明
     src/ui/AvatarSettingsWindow.cpp       # 头像设置窗口实现：用户头像资源的配置与预览
     src/ui/AvatarSettingsWindow.h         # 头像设置窗口声明：UI与交互接口
     src/ui/SystemSettingsWindow.cpp       # 系统设置窗口实现：应用参数与行为配置
@@ -118,6 +120,8 @@ set(VIDEO_COMPONENTS_SOURCES
     src/player/WebSocketReceiver.h              # WebSocket 接收端声明
     src/ui/TransparentImageList.cpp             # 透明头像列表（用于动画目标识别）
     src/ui/TransparentImageList.h               # 透明头像列表声明
+    src/ui/BubbleTipWidget.cpp                  # 气泡提示控件
+    src/ui/BubbleTipWidget.h                    # 气泡提示控件声明
 )
 
 # 创建主程序可执行文件

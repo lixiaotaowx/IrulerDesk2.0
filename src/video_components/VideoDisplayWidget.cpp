@@ -785,26 +785,50 @@ void VideoDisplayWidget::onMousePositionReceived(const QPoint &position, qint64 
 
 void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position, const QString &name)
 {
-    static QPixmap cursorPixmap;
+    static QPixmap whiteCursorPixmap;
     static bool loaded = false;
+    
     if (!loaded) {
         QString appDir = QCoreApplication::applicationDirPath();
         QString iconDir = appDir + "/maps/logo";
         QString file = iconDir + "/cursor.png";
         if (QFile::exists(file)) {
-            cursorPixmap.load(file);
+            QPixmap cursorPixmap;
+            if (cursorPixmap.load(file) && !cursorPixmap.isNull()) {
+                // Generate white cursor preserving alpha
+                whiteCursorPixmap = QPixmap(cursorPixmap.size());
+                whiteCursorPixmap.fill(Qt::transparent);
+                QPainter p(&whiteCursorPixmap);
+                p.drawPixmap(0, 0, cursorPixmap);
+                p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                p.fillRect(whiteCursorPixmap.rect(), Qt::white);
+                p.end();
+            }
         }
         loaded = true;
     }
+
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    if (!cursorPixmap.isNull()) {
-        painter.drawPixmap(position, cursorPixmap);
+
+    if (!whiteCursorPixmap.isNull() && whiteCursorPixmap.width() > 0) {
+        // User requested "smaller", targeting ~24px base width at 1080p
+        // Standard cursor is usually ~32px, so 24px is "a bit smaller"
+        // Scale based on 1920x1080 baseline ratio
+        double scale = double(pixmap.width()) / 1920.0;
+        if (scale < 0.2) scale = 0.2;
+        
+        int targetW = qRound(24 * scale); 
+        int targetH = qRound(targetW * (double(whiteCursorPixmap.height()) / whiteCursorPixmap.width()));
+        
+        QRect targetRect(position.x(), position.y(), targetW, targetH);
+        painter.drawPixmap(targetRect, whiteCursorPixmap);
         
         if (!name.isEmpty()) {
+            int fontSize = qMax(9, qRound(12 * scale));
             QFont font = painter.font();
-            font.setPixelSize(14);
+            font.setPixelSize(fontSize);
             font.setBold(true);
             painter.setFont(font);
             
@@ -812,11 +836,12 @@ void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position
             int textWidth = fm.horizontalAdvance(name);
             int textHeight = fm.height();
             
-            // 在光标右侧绘制名字
-            int x = position.x() + cursorPixmap.width() * 0.6; 
-            int y = position.y() + cursorPixmap.height() * 0.6;
+            // Offset text relative to scaled cursor
+            int x = position.x() + targetW * 0.6; 
+            int y = position.y() + targetH * 0.6;
             
-            QRect textRect(x, y, textWidth + 8, textHeight + 4);
+            int padding = qMax(2, qRound(4 * scale));
+            QRect textRect(x, y, textWidth + padding * 2, textHeight + padding);
             
             painter.setPen(Qt::NoPen);
             painter.setBrush(QColor(0, 0, 0, 160));

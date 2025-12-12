@@ -859,7 +859,7 @@ void VideoWindow::onMicToggled(bool checked)
     m_micButton->setIcon(checked ? m_micIconOn : m_micIconOff);
     m_micButton->setToolTip(checked ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
     if (m_videoDisplayWidget) {
-        m_videoDisplayWidget->sendAudioToggle(checked);
+        // m_videoDisplayWidget->sendAudioToggle(checked);
         m_videoDisplayWidget->setTalkEnabled(checked);
     }
     QString appDir = QCoreApplication::applicationDirPath();

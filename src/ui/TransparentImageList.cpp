@@ -268,7 +268,7 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
     QList<QString> usersToRemove;
     for (auto it = m_userImages.begin(); it != m_userImages.end(); ++it) {
         QString userId = it.key();
-        if (!newUserIdSet.contains(userId)) {
+        if (!newUserIdSet.contains(userId) && userId != m_currentUserId) {
             usersToRemove.append(userId);
         }
     }
@@ -279,15 +279,32 @@ void TransparentImageList::updateUserList(const QJsonArray &onlineUsers)
     }
 
     // 3. 找出需要添加或更新的用户
-    // 确保当前用户始终在第一位（如果尚未创建）
-    if (!m_currentUserId.isEmpty() && !m_userImages.contains(m_currentUserId)) {
-         int selfIconId = (m_currentUserIconId >= 3 && m_currentUserIconId <= 21) ? m_currentUserIconId : -1;
-         QLabel* selfLabel = createUserImage(m_currentUserId, selfIconId);
-         if (selfLabel) {
-             // 插入到布局的最前面（索引0）
-             m_layout->insertWidget(0, selfLabel);
-             m_userLabels.prepend(selfLabel);
-         }
+    // 确保当前用户始终在第一位
+    if (!m_currentUserId.isEmpty()) {
+        if (!m_userImages.contains(m_currentUserId)) {
+             // 如果尚未创建，创建并插入到最前面
+             int selfIconId = (m_currentUserIconId >= 3 && m_currentUserIconId <= 21) ? m_currentUserIconId : -1;
+             QLabel* selfLabel = createUserImage(m_currentUserId, selfIconId);
+             if (selfLabel) {
+                 // 插入到布局的最前面（索引0）
+                 m_layout->insertWidget(0, selfLabel);
+                 m_userLabels.prepend(selfLabel);
+             }
+        } else {
+             // 如果已存在，确保它在最前面
+             UserImageItem* item = m_userImages[m_currentUserId];
+             if (item && item->imageLabel) {
+                 int index = m_layout->indexOf(item->imageLabel);
+                 if (index != 0) {
+                     m_layout->removeWidget(item->imageLabel);
+                     m_layout->insertWidget(0, item->imageLabel);
+                     
+                     // 同步更新 m_userLabels 列表
+                     m_userLabels.removeAll(item->imageLabel);
+                     m_userLabels.prepend(item->imageLabel);
+                 }
+             }
+        }
     }
 
     // 处理其他用户

@@ -34,6 +34,11 @@ public:
     
     // 发送观看请求
     void sendWatchRequest(const QString &viewerId, const QString &targetId);
+    
+    // 设置会话信息（不发送网络请求，仅用于本地状态记录，如viewerId/targetId）
+    // 用于在信令通道已经完成鉴权和同意流程后，初始化接收端状态
+    void setSessionInfo(const QString &viewerId, const QString &targetId);
+    
     // 发送远程批注事件：phase为"down"/"move"/"up"，坐标为源屏幕坐标，附带颜色ID
     void sendAnnotationEvent(const QString &phase, int x, int y, int colorId = 0);
     void sendTextAnnotation(const QString &text, int x, int y, int colorId, int fontSize);

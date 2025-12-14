@@ -31,7 +31,7 @@ public:
     void stopStreaming();
     void forceKeyFrame();
     bool isStreaming() const { return m_isStreaming; }
-    
+
     // 状态查询
     bool isConnected() const { return m_connected; }
     QString getServerUrl() const { return m_serverUrl; }

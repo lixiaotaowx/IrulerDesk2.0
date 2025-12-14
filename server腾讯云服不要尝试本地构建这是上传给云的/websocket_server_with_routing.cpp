@@ -330,6 +330,10 @@ private slots:
                         streamRequest["type"] = "start_streaming_request";
                         streamRequest["viewer_id"] = viewerId;
                         streamRequest["target_id"] = targetId;
+                        // [Fix] 透传 action 字段 (用于取消请求等)
+                        if (obj.contains("action")) {
+                            streamRequest["action"] = obj["action"];
+                        }
                         
                         QJsonDocument streamDoc(streamRequest);
                         targetSocket->sendTextMessage(streamDoc.toJson(QJsonDocument::Compact));
@@ -348,6 +352,29 @@ private slots:
                         
                         QJsonDocument errorDoc(errorResponse);
                         sender->sendTextMessage(errorDoc.toJson(QJsonDocument::Compact));
+                    }
+                    return;
+                } else if (type == "watch_request_canceled") {
+                    // [New] 处理取消观看请求 - 直接转发给目标用户
+                    QString viewerId = obj["viewer_id"].toString();
+                    QString targetId = obj["target_id"].toString();
+                    
+                    qDebug() << QDateTime::currentDateTime().toString()
+                             << "收到取消观看请求，观看者:" << viewerId << "目标:" << targetId;
+                    
+                    // 查找目标用户的WebSocket连接
+                    QWebSocket *targetSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == targetId) {
+                            targetSocket = it.key();
+                            break;
+                        }
+                    }
+                    
+                    if (targetSocket && targetSocket->state() == QAbstractSocket::ConnectedState) {
+                        QJsonDocument doc(obj);
+                        targetSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                        qDebug() << "已转发取消请求给目标用户:" << targetId;
                     }
                     return;
                 } else if (type == "streaming_ok") {

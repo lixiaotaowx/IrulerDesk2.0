@@ -104,7 +104,6 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
         QTimer::singleShot(500, this, [this](){
              setTalkEnabled(true);
         });
-        hideApprovalWait();
     });
 
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
@@ -339,6 +338,18 @@ void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString
         }
         m_receiver->sendWatchRequest(viewerId, targetId);
     } else {
+    }
+}
+
+void VideoDisplayWidget::setSessionInfo(const QString &viewerId, const QString &targetId)
+{
+    m_lastViewerId = viewerId;
+    m_lastTargetId = targetId;
+    if (m_receiver) {
+        if (!m_viewerName.isEmpty()) {
+            m_receiver->setViewerName(m_viewerName);
+        }
+        m_receiver->setSessionInfo(viewerId, targetId);
     }
 }
 
@@ -1329,13 +1340,20 @@ void VideoDisplayWidget::recreateReceiver()
     m_receiver.reset();
     // 创建新实例并重新连接信号
     m_receiver = std::make_unique<WebSocketReceiver>();
+    // [Fix] 重建接收器时恢复Session信息，确保批注功能正常工作
+    if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
+        m_receiver->setSessionInfo(m_lastViewerId, m_lastTargetId);
+    }
+    if (!m_viewerName.isEmpty()) {
+        m_receiver->setViewerName(m_viewerName);
+    }
     // 日志清理：移除接收器重建提示
 
     connect(m_receiver.get(), &WebSocketReceiver::frameReceivedWithTimestamp,
             this, [this](const QByteArray &frameData, qint64 captureTimestamp) {
                 m_stats.framesReceived++;
                 if (m_stats.framesReceived == 1) {
-                    hideApprovalWait();
+                    // First frame received
                 }
                 m_currentCaptureTimestamp = captureTimestamp;
                 m_decoder->decodeFrame(frameData);
@@ -1358,7 +1376,6 @@ void VideoDisplayWidget::recreateReceiver()
         if (m_receiver && m_receiver->isConnected()) {
              m_receiver->sendRequestKeyFrame();
         }
-        hideApprovalWait();
     });
     
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
@@ -1389,12 +1406,8 @@ void VideoDisplayWidget::recreateReceiver()
             }
         });
 
-    connect(m_receiver.get(), &WebSocketReceiver::approvalRequired,
-            this, [this](const QString &) { showApprovalWait(); });
-    connect(m_receiver.get(), &WebSocketReceiver::watchRequestRejected,
-            this, [this](const QString &) { hideApprovalWait(); });
-    connect(m_receiver.get(), &WebSocketReceiver::watchRequestAccepted,
-            this, [this](const QString &) { hideApprovalWait(); });
+    // [Fix] 禁用VideoDisplayWidget内部的等待同意弹窗，由MainWindow统一管理
+    // 移除旧的 approvalRequired/watchRequestRejected/watchRequestAccepted 连接
 }
 void VideoDisplayWidget::setVolumePercent(int percent)
 {
@@ -1502,28 +1515,3 @@ void VideoDisplayWidget::updateScaledCursorComposite(double scale)
     m_lastCursorScale = scale;
 }
 
-void VideoDisplayWidget::showApprovalWait()
-{
-    if (!m_approvalWaitDialog) {
-        m_approvalWaitDialog = new QDialog(this);
-        m_approvalWaitDialog->setWindowTitle(QStringLiteral("等待同意"));
-        // 设置为非模态，避免在同一应用实例内测试时阻塞主窗口的同意弹窗
-        m_approvalWaitDialog->setModal(false);
-        m_approvalWaitDialog->setWindowFlags(m_approvalWaitDialog->windowFlags() | Qt::WindowStaysOnTopHint);
-        auto *layout = new QVBoxLayout(m_approvalWaitDialog);
-        m_approvalWaitLabel = new QLabel(QStringLiteral("等待对方同意中..."), m_approvalWaitDialog);
-        QFont f = m_approvalWaitLabel->font(); f.setPointSize(14); f.setBold(true); m_approvalWaitLabel->setFont(f);
-        layout->addWidget(m_approvalWaitLabel);
-    }
-    m_approvalWaitDialog->resize(360, 120);
-    m_approvalWaitDialog->show();
-    m_approvalWaitDialog->raise();
-    m_approvalWaitDialog->activateWindow();
-}
-
-void VideoDisplayWidget::hideApprovalWait()
-{
-    if (m_approvalWaitDialog) {
-        m_approvalWaitDialog->hide();
-    }
-}

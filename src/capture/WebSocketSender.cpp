@@ -400,18 +400,6 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             emit requestKeyFrame();
             sendWatchAccepted(viewerId, targetId);
         }
-    } else if (type == "watch_request_accepted") {
-        QString viewerId = obj.value("viewer_id").toString();
-        QString targetId = obj.value("target_id").toString();
-        // 收到主程序转发的同意消息，开始推流
-        if (isManualApprovalEnabled()) {
-             qDebug() << "[Sender] Received watch_request_accepted, starting stream.";
-             if (m_isStreaming) {
-                 stopStreaming();
-             }
-             startStreaming();
-             emit requestKeyFrame();
-        }
     } else if (type == "start_streaming" || type == "start_streaming_request") {
         if (isManualApprovalEnabled()) {
             return;
@@ -483,8 +471,6 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         QString vid = obj.value("viewer_id").toString();
         QString vname = obj.value("viewer_name").toString();
         emit viewerNameUpdateReceived(vid, vname);
-    } else if (type == "avatar_update") {
-        sendTextMessage(message);
     } else if (type == "viewer_exit" || type == "viewer_disconnected") {
         QString vid = obj.value("viewer_id").toString();
         if (!vid.isEmpty()) {

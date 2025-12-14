@@ -19,6 +19,8 @@
 #include <QMenu>
 #include <QAction>
 #include <QRegularExpression>
+#include <QLocalSocket>
+#include <QLocalServer>
 
 // 前向声明
 class VideoWindow;
@@ -163,6 +165,8 @@ private:
     class QLocalServer *m_watchdogServer;
     QTimer *m_watchdogTimer;
     qint64 m_lastHeartbeatTime;
+    QLocalSocket *m_currentWatchdogSocket = nullptr; // 当前连接的捕获进程Socket
+    bool m_pendingApproval = false; // 是否有待发送的本地审批指令
     void onWatchdogNewConnection();
     void onWatchdogDataReady();
     void onWatchdogTimeout();
@@ -193,6 +197,15 @@ private:
     
     // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
     QString m_currentTargetId;
+    
+    // 等待同意弹窗
+    class QMessageBox *m_waitingDialog = nullptr;
+    // 收到请求时的审批弹窗
+    class QMessageBox *m_approvalDialog = nullptr;
+    
+    // 标记是否主动取消了请求
+    bool m_selfCancelled = false;
+
     bool m_appReadyEmitted = false;
     class QSystemTrayIcon *m_trayIcon = nullptr;
     QMenu *m_trayMenu = nullptr;

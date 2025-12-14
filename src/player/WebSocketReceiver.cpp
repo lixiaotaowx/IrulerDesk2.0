@@ -901,6 +901,13 @@ void WebSocketReceiver::initOpusDecoderIfNeeded(int sampleRate, int channels)
     }
 }
 
+void WebSocketReceiver::setSessionInfo(const QString &viewerId, const QString &targetId)
+{
+    QMutexLocker locker(&m_mutex);
+    m_lastViewerId = viewerId;
+    m_lastTargetId = targetId;
+}
+
 void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString &targetId)
 {
     // 记录最近一次观看请求信息，用于重连后自动重发

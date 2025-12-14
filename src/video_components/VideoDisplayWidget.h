@@ -56,6 +56,8 @@ public:
     
     // 发送观看请求
     void sendWatchRequest(const QString &viewerId, const QString &targetId);
+    // 设置会话信息（不发送网络请求）
+    void setSessionInfo(const QString &viewerId, const QString &targetId);
     void setViewerName(const QString &name);
     
     // 获取统计信息
@@ -127,8 +129,6 @@ public slots:
     QImage captureToImage() const;
     void notifyTargetOffline(const QString &reason = QString());
     void clearOfflineReminder();
-    void showApprovalWait();
-    void hideApprovalWait();
 
 private slots:
     void onStartStopClicked();
@@ -247,10 +247,6 @@ private:
     QPoint m_lastTextSrcPoint;
     
     QMutex m_mutex; // Protect cleanup
-
-    // 手动同意等待弹窗
-    QDialog *m_approvalWaitDialog = nullptr;
-    QLabel *m_approvalWaitLabel = nullptr;
 };
 
 #endif // VIDEODISPLAYWIDGET_H

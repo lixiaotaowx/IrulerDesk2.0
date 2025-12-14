@@ -281,6 +281,7 @@ public:
         m_timer = new QTimer(this);
         
         connect(m_timer, &QTimer::timeout, this, &WatchdogClient::sendHeartbeat);
+        connect(m_socket, &QLocalSocket::readyRead, this, &WatchdogClient::onDataReceived);
         
         // 尝试连接
         m_socket->connectToServer(serverName);
@@ -289,14 +290,29 @@ public:
         m_timer->start(1000);
     }
 
+signals:
+    void approvalReceived();
+    void rejectionReceived();
+
 private slots:
     void sendHeartbeat() {
         if (m_socket->state() == QLocalSocket::ConnectedState) {
             m_socket->write("1"); // 发送任意数据
             m_socket->flush();
         } else if (m_socket->state() == QLocalSocket::UnconnectedState) {
-            // 如果连接断开，尝试重连（虽然通常父进程死了也没必要重连，但为了鲁棒性）
-            // 这里不做自动重连，因为如果父进程关闭管道，说明不需要心跳了
+            // 如果连接断开，尝试重连
+            m_socket->connectToServer(m_socket->serverName());
+        }
+    }
+
+    void onDataReceived() {
+        QByteArray data = m_socket->readAll();
+        if (data.contains("CMD_APPROVE")) {
+            qDebug() << "[CaptureProcess] Received local approval command from MainWindow.";
+            emit approvalReceived();
+        } else if (data.contains("CMD_REJECT")) {
+            qDebug() << "[CaptureProcess] Received local rejection command from MainWindow.";
+            emit rejectionReceived();
         }
     }
 
@@ -1587,6 +1603,32 @@ int main(int argc, char *argv[])
         return -1;
     }
     // qDebug() << "[CaptureProcess] 正在连接到WebSocket服务器:" << serverUrl;
+
+    // -------------------------------------------------------------------------
+    // 本地审批逻辑 (Local Approval Logic)
+    // -------------------------------------------------------------------------
+    if (watchdog) {
+        QObject::connect(watchdog, &WatchdogClient::approvalReceived, [&]() {
+            qDebug() << "[CaptureProcess] Processing local approval...";
+            // 本地收到同意指令，效果等同于收到服务器的 watch_request_accepted
+            if (sender) {
+                 if (sender->isStreaming()) {
+                     sender->stopStreaming();
+                 }
+                 sender->startStreaming();
+                 sender->forceKeyFrame();
+                 qDebug() << "[CaptureProcess] Local approval executed: Streaming started.";
+            }
+        });
+        
+        QObject::connect(watchdog, &WatchdogClient::rejectionReceived, [&]() {
+            qDebug() << "[CaptureProcess] Processing local rejection...";
+            if (sender) {
+                sender->rejectWatchRequest();
+                qDebug() << "[CaptureProcess] Local rejection executed: Request reset.";
+            }
+        });
+    }
 
     return app.exec();
 }

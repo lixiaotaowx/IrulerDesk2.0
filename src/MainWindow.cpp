@@ -72,6 +72,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_watchdogServer(nullptr)
     , m_watchdogTimer(nullptr)
     , m_lastHeartbeatTime(0)
+    , m_pendingApproval(false)
 {
     
     
@@ -167,8 +168,45 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
     QString message = doc.toJson(QJsonDocument::Compact);
     m_loginWebSocket->sendTextMessage(message);
     
-    // 直接在主窗口的VideoDisplayWidget中开始接收视频流
-    startVideoReceiving(targetDeviceId);
+    // 显示非模态等待对话框
+    if (m_waitingDialog) {
+        m_waitingDialog->close();
+        delete m_waitingDialog;
+        m_waitingDialog = nullptr;
+    }
+    m_waitingDialog = new QMessageBox(this);
+    m_waitingDialog->setWindowTitle(QStringLiteral("等待同意"));
+    m_waitingDialog->setText(QStringLiteral("已发送请求，等待对方同意..."));
+    
+    // 添加挂断按钮
+    QPushButton *hangupBtn = m_waitingDialog->addButton(QStringLiteral("挂断"), QMessageBox::RejectRole);
+    
+    connect(hangupBtn, &QPushButton::clicked, this, [this, targetDeviceId]() {
+        // 标记主动取消
+        m_selfCancelled = true;
+
+        // 发送取消请求
+        qDebug() << "Sending watch_request (cancel) to:" << targetDeviceId;
+        QJsonObject cancelMsg;
+        cancelMsg["type"] = "watch_request_canceled";
+        cancelMsg["viewer_id"] = getDeviceId();
+        cancelMsg["target_id"] = targetDeviceId;
+        cancelMsg["viewer_name"] = m_userName;
+        QJsonDocument doc(cancelMsg);
+        if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+            m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+        }
+
+        // 关闭对话框
+        if (m_waitingDialog) {
+            m_waitingDialog->close();
+            m_waitingDialog->deleteLater();
+            m_waitingDialog = nullptr;
+        }
+    });
+
+    m_waitingDialog->setModal(false); // 非模态，不阻塞UI事件循环
+    m_waitingDialog->show();
 }
 
 void MainWindow::startVideoReceiving(const QString& targetDeviceId)
@@ -207,7 +245,10 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
 
     
     QString viewerId = getDeviceId();
-    videoWidget->sendWatchRequest(viewerId, targetDeviceId);
+    // [Fix] 不在流通道发送watch_request，避免触发服务器的二次同意流程
+    // 使用setSessionInfo替代sendWatchRequest，确保本地和接收器知道viewerId用于批注
+    videoWidget->setSessionInfo(viewerId, targetDeviceId);
+    // videoWidget->sendWatchRequest(viewerId, targetDeviceId);
 }
 
 void MainWindow::startPlayerProcess(const QString& targetDeviceId)
@@ -804,9 +845,27 @@ void MainWindow::onWatchdogNewConnection()
     QLocalSocket *clientConnection = m_watchdogServer->nextPendingConnection();
     if (!clientConnection) return;
     
+    // 保存当前连接
+    m_currentWatchdogSocket = clientConnection;
+    
+    // 如果有待发送的审批指令，立即发送
+    if (m_pendingApproval) {
+        if (m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+             m_currentWatchdogSocket->write("CMD_APPROVE");
+             m_currentWatchdogSocket->flush();
+             qDebug() << "Sent queued local approval command to new CaptureProcess connection";
+             m_pendingApproval = false;
+        }
+    }
+
     // 连接数据读取信号
     connect(clientConnection, &QLocalSocket::readyRead, this, &MainWindow::onWatchdogDataReady);
-    connect(clientConnection, &QLocalSocket::disconnected, clientConnection, &QLocalSocket::deleteLater);
+    connect(clientConnection, &QLocalSocket::disconnected, this, [this, clientConnection]() {
+        if (m_currentWatchdogSocket == clientConnection) {
+            m_currentWatchdogSocket = nullptr;
+        }
+        clientConnection->deleteLater();
+    });
     
     // qDebug() << "[Watchdog] Client connected";
 }
@@ -1630,6 +1689,7 @@ void MainWindow::onLoginWebSocketDisconnected()
 
 void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
 {
+    qDebug() << "Received message:" << message;
     
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
@@ -1688,58 +1748,137 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
 
-        bool manualApproval = loadManualApprovalEnabledFromConfig();
-        if (manualApproval) {
+        // [Fix] 检查是否是取消请求
+        if (obj.contains("action") && obj["action"].toString() == "cancel") {
+            // 自动拒绝：发送拒绝消息给服务器 -> 转发给观看端
+            QJsonObject rejected;
+            rejected["type"] = "watch_request_rejected";
+            rejected["viewer_id"] = viewerId;
+            rejected["target_id"] = targetId;
+            QJsonDocument rejDoc(rejected);
             if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
-                // 1. 发送需要审批的消息给观看端
-                QJsonObject approval;
-                approval["type"] = "approval_required";
-                approval["viewer_id"] = viewerId;
-                approval["target_id"] = targetId;
-                QJsonDocument doc(approval);
-                m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                m_loginWebSocket->sendTextMessage(rejDoc.toJson(QJsonDocument::Compact));
+            }
 
-                // 2. 弹出确认对话框
-                // 使用非模态对话框或者不阻塞网络线程的方式更好，但在主线程中模态对话框通常是可以接受的
-                // 为了更好的用户体验，这里使用QMessageBox
-                QMessageBox::StandardButton reply;
-                reply = QMessageBox::question(this, QStringLiteral("观看请求"),
-                                              QStringLiteral("用户 %1 请求观看您的屏幕，是否允许？").arg(viewerId),
-                                              QMessageBox::Yes | QMessageBox::No);
+            // [Local Control] 本地通知捕获进程拒绝 (清理状态)
+            if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                m_currentWatchdogSocket->write("CMD_REJECT");
+                m_currentWatchdogSocket->flush();
+            }
 
-                if (reply == QMessageBox::Yes) {
-                    // 同意
-                    QJsonObject accepted;
-                    accepted["type"] = "watch_request_accepted";
-                    accepted["viewer_id"] = viewerId;
-                    accepted["target_id"] = targetId;
-                    QJsonDocument accDoc(accepted);
+            if (m_approvalDialog) {
+                m_approvalDialog->close();
+                m_approvalDialog->deleteLater();
+                m_approvalDialog = nullptr;
+                QMessageBox::information(this, QStringLiteral("未接提醒"), 
+                    QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+            }
+            return;
+        }
+
+        QString viewerName = obj.contains("viewer_name") ? obj["viewer_name"].toString() : viewerId;
+        
+        bool manualApproval = loadManualApprovalEnabledFromConfig();
+        bool isConnected = m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState;
+
+        if (manualApproval && isConnected) {
+            // 1. 发送需要审批的消息给观看端
+            QJsonObject approval;
+            approval["type"] = "approval_required";
+            approval["viewer_id"] = viewerId;
+            approval["target_id"] = targetId;
+            QJsonDocument doc(approval);
+            m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+
+            // 2. 弹出非模态确认对话框
+            if (m_approvalDialog) {
+                m_approvalDialog->close();
+                delete m_approvalDialog;
+                m_approvalDialog = nullptr;
+            }
+            
+            m_approvalDialog = new QMessageBox(this);
+            m_approvalDialog->setWindowTitle(QStringLiteral("观看请求"));
+            m_approvalDialog->setText(QStringLiteral("用户 %1 请求观看您的屏幕，是否允许？").arg(viewerName));
+            QPushButton *acceptBtn = m_approvalDialog->addButton(QMessageBox::Yes);
+            QPushButton *rejectBtn = m_approvalDialog->addButton(QMessageBox::No);
+            m_approvalDialog->setDefaultButton(acceptBtn);
+            m_approvalDialog->setModal(false); 
+
+            // 连接同意按钮
+            connect(acceptBtn, &QPushButton::clicked, this, [this, viewerId, targetId]() {
+                if (!m_approvalDialog) return;
+
+                // 同意
+                QJsonObject accepted;
+                accepted["type"] = "watch_request_accepted";
+                accepted["viewer_id"] = viewerId;
+                accepted["target_id"] = targetId;
+                QJsonDocument accDoc(accepted);
+                if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
                     m_loginWebSocket->sendTextMessage(accDoc.toJson(QJsonDocument::Compact));
+                }
 
-                    // 开始推流
-                    if (!m_isStreaming) {
-                        startStreaming();
-                    }
-
-                    // 发送 streaming_ok
-                    QJsonObject streamOkResponse;
-                    streamOkResponse["type"] = "streaming_ok";
-                    streamOkResponse["viewer_id"] = viewerId;
-                    streamOkResponse["target_id"] = targetId;
-                    streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
-                    QJsonDocument responseDoc(streamOkResponse);
-                    m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
-
+                // [Local Control] 本地直接通知捕获进程开始推流
+                if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                    m_currentWatchdogSocket->write("CMD_APPROVE");
+                    m_currentWatchdogSocket->flush();
+                    qDebug() << "Sent local approval command to CaptureProcess";
                 } else {
-                    // 拒绝
-                    QJsonObject rejected;
-                    rejected["type"] = "watch_request_rejected";
-                    rejected["viewer_id"] = viewerId;
-                    rejected["target_id"] = targetId;
-                    QJsonDocument rejDoc(rejected);
+                    m_pendingApproval = true;
+                    qDebug() << "CaptureProcess not ready, queued local approval command";
+                }
+
+                // 开始推流
+                if (!m_isStreaming) {
+                    startStreaming();
+                }
+
+                // 发送 streaming_ok
+                QJsonObject streamOkResponse;
+                streamOkResponse["type"] = "streaming_ok";
+                streamOkResponse["viewer_id"] = viewerId;
+                streamOkResponse["target_id"] = targetId;
+                streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
+                QJsonDocument responseDoc(streamOkResponse);
+                if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                    m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+                }
+
+                if (m_approvalDialog) {
+                    m_approvalDialog->close();
+                    m_approvalDialog->deleteLater();
+                    m_approvalDialog = nullptr;
+                }
+            });
+
+            // 连接拒绝按钮
+            connect(rejectBtn, &QPushButton::clicked, this, [this, viewerId, targetId]() {
+                // 拒绝
+                QJsonObject rejected;
+                rejected["type"] = "watch_request_rejected";
+                rejected["viewer_id"] = viewerId;
+                rejected["target_id"] = targetId;
+                QJsonDocument rejDoc(rejected);
+                if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
                     m_loginWebSocket->sendTextMessage(rejDoc.toJson(QJsonDocument::Compact));
                 }
-            }
+
+                // [Local Control] 本地通知捕获进程拒绝
+                if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                    m_currentWatchdogSocket->write("CMD_REJECT");
+                    m_currentWatchdogSocket->flush();
+                    qDebug() << "Sent local rejection command to CaptureProcess";
+                }
+
+                if (m_approvalDialog) {
+                    m_approvalDialog->close();
+                    m_approvalDialog->deleteLater();
+                    m_approvalDialog = nullptr;
+                }
+            });
+
+            m_approvalDialog->show();
         } else {
             if (!m_isStreaming) {
                 startStreaming();
@@ -1754,31 +1893,68 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
             }
         }
-    } else if (type == "approval_required") {
+    } else if (type == "watch_request_canceled") {
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
-        if (viewerId == getDeviceId() && m_videoWindow) {
-            auto *vd = m_videoWindow->getVideoDisplayWidget();
-            if (vd) { vd->showApprovalWait(); }
+        
+        // 自动拒绝：发送拒绝消息给服务器 -> 转发给观看端
+        QJsonObject rejected;
+        rejected["type"] = "watch_request_rejected";
+        rejected["viewer_id"] = viewerId;
+        rejected["target_id"] = targetId;
+        QJsonDocument rejDoc(rejected);
+        if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+            m_loginWebSocket->sendTextMessage(rejDoc.toJson(QJsonDocument::Compact));
         }
+
+        // [Local Control] 本地通知捕获进程拒绝 (清理状态)
+        if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+            m_currentWatchdogSocket->write("CMD_REJECT");
+            m_currentWatchdogSocket->flush();
+        }
+        
+        // 如果有待处理的审批弹窗，关闭它
+        if (m_approvalDialog) {
+            m_approvalDialog->close();
+            m_approvalDialog->deleteLater();
+            m_approvalDialog = nullptr;
+            
+            // 显示未接提醒
+            QMessageBox::information(this, QStringLiteral("未接提醒"), 
+                QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+        }
+    } else if (type == "approval_required") {
+        // [Fix] 移除重复的等待弹窗
     } else if (type == "watch_request_accepted") {
         QString viewerId = obj["viewer_id"].toString();
-        QString targetId = obj["target_id"].toString();
+        // QString targetId = obj["target_id"].toString();
         if (viewerId == getDeviceId()) {
-            if (m_videoWindow) {
-                auto *vd = m_videoWindow->getVideoDisplayWidget();
-                if (vd) { vd->hideApprovalWait(); }
+            // Close the waiting dialog if any
+            if (m_waitingDialog) {
+                m_waitingDialog->close();
+                m_waitingDialog->deleteLater();
+                m_waitingDialog = nullptr;
             }
+            
             // startVideoReceiving(targetId); // 移除此处调用，等待 streaming_ok 信号再开始接收，避免重复初始化
         }
     } else if (type == "watch_request_rejected") {
         QString viewerId = obj["viewer_id"].toString();
-        QString targetId = obj["target_id"].toString();
+        // QString targetId = obj["target_id"].toString();
         if (viewerId == getDeviceId()) {
-            if (m_videoWindow) {
-                auto *vd = m_videoWindow->getVideoDisplayWidget();
-                if (vd) { vd->hideApprovalWait(); }
+            // Close the waiting dialog if any
+            if (m_waitingDialog) {
+                m_waitingDialog->close();
+                m_waitingDialog->deleteLater();
+                m_waitingDialog = nullptr;
             }
+            
+            // 如果是自己主动取消的，不显示拒绝弹窗
+            if (m_selfCancelled) {
+                m_selfCancelled = false;
+                return;
+            }
+
             QMessageBox::information(this, QStringLiteral("观看被拒绝"), QStringLiteral("对方拒绝了观看请求"));
         }
     } else if (type == "streaming_ok") {
@@ -1789,12 +1965,23 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         
         // 检查是否是当前用户的观看请求
         if (viewerId == getDeviceId()) {
+            // Close the waiting dialog if any (just in case)
+            if (m_waitingDialog) {
+                m_waitingDialog->close();
+                m_waitingDialog->deleteLater();
+                m_waitingDialog = nullptr;
+            }
             
             // 开始视频接收和播放
-            startVideoReceiving(targetId);
-        } else {
-            // 非当前用户的观看请求，忽略
-        }
+                    if (m_videoWindow) {
+                        m_videoWindow->show();
+                        m_videoWindow->raise();
+                        m_videoWindow->activateWindow();
+                    }
+                    startVideoReceiving(targetId);
+                } else {
+                    // 非当前用户的观看请求，忽略
+                }
     } else if (type == "avatar_update" || type == "avatar_updated" || type == "user_icon_update") {
         QString userId;
         if (obj.contains("device_id")) userId = obj.value("device_id").toString();
@@ -1818,7 +2005,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         // 未知消息类型，忽略
     }
 }
-
 void MainWindow::onLoginWebSocketError(QAbstractSocket::SocketError error)
 {
     
@@ -1914,17 +2100,17 @@ void MainWindow::onUserImageClicked(const QString &userId, const QString &userNa
 {
     
     // 显示视频窗口
-    if (m_videoWindow) {
-        m_videoWindow->show();
-        m_videoWindow->raise();
-        m_videoWindow->activateWindow();
-    }
+    // if (m_videoWindow) {
+    //     m_videoWindow->show();
+    //     m_videoWindow->raise();
+    //     m_videoWindow->activateWindow();
+    // }
     
     // 发送观看请求
     sendWatchRequest(userId);
     
-    // 启动视频接收
-    startVideoReceiving(userId);
+    // 启动视频接收 - 移至收到 streaming_ok 后
+    // startVideoReceiving(userId);
 }
 
 void MainWindow::showMainList()
@@ -1950,11 +2136,10 @@ void MainWindow::onSetAvatarRequested()
     // 显示头像设置窗口
     m_avatarSettingsWindow->show();
     // 启动视频接收（使用当前选中的用户ID）
-    QString currentUserId = m_transparentImageList ? m_transparentImageList->getCurrentUserId() : QString();
-    if (!currentUserId.isEmpty()) {
-        startVideoReceiving(currentUserId);
-    } else {
-    }
+    // QString currentUserId = m_transparentImageList ? m_transparentImageList->getCurrentUserId() : QString();
+    // if (!currentUserId.isEmpty()) {
+    //     startVideoReceiving(currentUserId);
+    // }
     m_avatarSettingsWindow->activateWindow();
 }
 
@@ -2623,3 +2808,4 @@ void MainWindow::saveUserNameToConfig(const QString &name)
         configFile.close();
     }
 }
+

@@ -1829,6 +1829,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             QPushButton *rejectBtn = m_approvalDialog->addButton(QMessageBox::No);
             m_approvalDialog->setDefaultButton(acceptBtn);
             m_approvalDialog->setModal(false); 
+            m_approvalDialog->setWindowFlags(m_approvalDialog->windowFlags() | Qt::WindowStaysOnTopHint);
 
             // 连接同意按钮
             connect(acceptBtn, &QPushButton::clicked, this, [this, viewerId, targetId]() {
@@ -1904,6 +1905,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             });
 
             m_approvalDialog->show();
+            m_approvalDialog->raise();
+            m_approvalDialog->activateWindow();
         } else {
             if (!m_isStreaming) {
                 startStreaming();

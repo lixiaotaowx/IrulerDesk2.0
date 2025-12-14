@@ -104,6 +104,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
         QTimer::singleShot(500, this, [this](){
              setTalkEnabled(true);
         });
+        hideApprovalWait();
     });
 
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
@@ -1333,6 +1334,9 @@ void VideoDisplayWidget::recreateReceiver()
     connect(m_receiver.get(), &WebSocketReceiver::frameReceivedWithTimestamp,
             this, [this](const QByteArray &frameData, qint64 captureTimestamp) {
                 m_stats.framesReceived++;
+                if (m_stats.framesReceived == 1) {
+                    hideApprovalWait();
+                }
                 m_currentCaptureTimestamp = captureTimestamp;
                 m_decoder->decodeFrame(frameData);
             });
@@ -1351,11 +1355,10 @@ void VideoDisplayWidget::recreateReceiver()
     });
 
     connect(m_receiver.get(), &WebSocketReceiver::streamingStarted, this, [this]() {
-        // [Fix 6] Server confirms streaming ready, request keyframe now.
-        // This ensures the subscription is active before we ask for an I-frame.
         if (m_receiver && m_receiver->isConnected()) {
              m_receiver->sendRequestKeyFrame();
         }
+        hideApprovalWait();
     });
     
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
@@ -1385,6 +1388,13 @@ void VideoDisplayWidget::recreateReceiver()
                 m_audioPlayer->processAudioData(pcmData, sampleRate, channels, bitsPerSample);
             }
         });
+
+    connect(m_receiver.get(), &WebSocketReceiver::approvalRequired,
+            this, [this](const QString &) { showApprovalWait(); });
+    connect(m_receiver.get(), &WebSocketReceiver::watchRequestRejected,
+            this, [this](const QString &) { hideApprovalWait(); });
+    connect(m_receiver.get(), &WebSocketReceiver::watchRequestAccepted,
+            this, [this](const QString &) { hideApprovalWait(); });
 }
 void VideoDisplayWidget::setVolumePercent(int percent)
 {
@@ -1492,3 +1502,28 @@ void VideoDisplayWidget::updateScaledCursorComposite(double scale)
     m_lastCursorScale = scale;
 }
 
+void VideoDisplayWidget::showApprovalWait()
+{
+    if (!m_approvalWaitDialog) {
+        m_approvalWaitDialog = new QDialog(this);
+        m_approvalWaitDialog->setWindowTitle(QStringLiteral("等待同意"));
+        // 设置为非模态，避免在同一应用实例内测试时阻塞主窗口的同意弹窗
+        m_approvalWaitDialog->setModal(false);
+        m_approvalWaitDialog->setWindowFlags(m_approvalWaitDialog->windowFlags() | Qt::WindowStaysOnTopHint);
+        auto *layout = new QVBoxLayout(m_approvalWaitDialog);
+        m_approvalWaitLabel = new QLabel(QStringLiteral("等待对方同意中..."), m_approvalWaitDialog);
+        QFont f = m_approvalWaitLabel->font(); f.setPointSize(14); f.setBold(true); m_approvalWaitLabel->setFont(f);
+        layout->addWidget(m_approvalWaitLabel);
+    }
+    m_approvalWaitDialog->resize(360, 120);
+    m_approvalWaitDialog->show();
+    m_approvalWaitDialog->raise();
+    m_approvalWaitDialog->activateWindow();
+}
+
+void VideoDisplayWidget::hideApprovalWait()
+{
+    if (m_approvalWaitDialog) {
+        m_approvalWaitDialog->hide();
+    }
+}

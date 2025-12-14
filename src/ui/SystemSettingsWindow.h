@@ -25,6 +25,7 @@ signals:
     void localQualitySelected(const QString& quality);
     void userNameChanged(const QString& name);
     void avatarSelected(int iconId);
+    void manualApprovalEnabledChanged(bool enabled);
 
 public slots:
     void notifySwitchSucceeded();
@@ -34,6 +35,7 @@ private:
     void setupQualityControls();
     void setupUserNameControls();
     QFrame* setupAvatarControls();
+    QFrame* setupManualApprovalControls();
     void loadAvatarImages();
     void selectAvatar(int iconId);
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -53,6 +55,7 @@ private:
     QList<QLabel*> m_avatarLabels;
     QLabel* m_selectedAvatarLabel = nullptr;
     int m_selectedIconId = -1;
+    class QCheckBox* m_manualApprovalCheck = nullptr;
 };
 
 #endif // SYSTEMSETTINGSWINDOW_H

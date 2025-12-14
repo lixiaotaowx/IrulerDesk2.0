@@ -89,6 +89,7 @@ public slots:
     void onLocalQualitySelected(const QString& quality);
     void onAudioOutputSelectionChanged(bool followSystem, const QString &deviceId);
     void onMicInputSelectionChanged(bool followSystem, const QString &deviceId);
+    void onManualApprovalEnabledChanged(bool enabled);
 private:
     void saveLocalQualityToConfig(const QString& quality);
     int loadOrGenerateRandomId();
@@ -117,6 +118,8 @@ private:
     bool loadMicEnabledFromConfig() const;
     void saveSpeakerEnabledToConfig(bool enabled);
     void saveMicEnabledToConfig(bool enabled);
+    bool loadManualApprovalEnabledFromConfig() const;
+    void saveManualApprovalEnabledToConfig(bool enabled);
     
     // 登录系统相关方法
     void initializeLoginSystem();

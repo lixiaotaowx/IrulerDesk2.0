@@ -92,6 +92,9 @@ signals:
     void connectionStatusChanged(const QString &status);
     void statsUpdated(const ReceiverStats &stats);
     void streamingStarted(); // Signal when server confirms streaming is OK
+    void approvalRequired(const QString &targetId);
+    void watchRequestRejected(const QString &targetId);
+    void watchRequestAccepted(const QString &targetId);
     
     // 新增：音频帧信号（PCM）
     void audioFrameReceived(const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 timestamp);

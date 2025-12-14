@@ -9,6 +9,10 @@
 #include <QBuffer>
 #include <cstring>
 #include <climits>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
 
 WebSocketSender::WebSocketSender(QObject *parent)
     : QObject(parent)
@@ -241,12 +245,12 @@ void WebSocketSender::onConnected()
     
     emit connected();
 
-    // 强制自动开始推流，不等待服务器的 start_streaming 消息
-    // 这可以解决服务器版本不一致或消息丢失导致的推流不启动问题
     if (isPublisher) {
-        qDebug() << "[Sender] Publisher connected, auto-starting streaming (bypassing server trigger)";
-        startStreaming();
-        emit requestKeyFrame();
+        if (!isManualApprovalEnabled()) {
+            qDebug() << "[Sender] Publisher connected, auto-starting streaming (bypassing server trigger)";
+            startStreaming();
+            emit requestKeyFrame();
+        }
     }
 }
 
@@ -347,6 +351,11 @@ void WebSocketSender::stopStreaming()
     }
 }
 
+void WebSocketSender::forceKeyFrame()
+{
+    emit requestKeyFrame();
+}
+
 void WebSocketSender::onTextMessageReceived(const QString &message)
 {
     
@@ -370,32 +379,44 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         }
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
-        
-        
-        // 响应观看请求
-        // 如果正在推流，先停止再重新开始，确保编码器重置并发送关键帧
-        // 这样可以解决再次观看时黑屏的问题（通过模拟"第一次观看"的流程）
-        if (m_isStreaming) {
-            stopStreaming();
+        int iconId = obj.value("viewer_icon_id").toInt(-1);
+
+        if (isManualApprovalEnabled()) {
+            if (m_waitingForApproval) {
+                return;
+            }
+            m_pendingViewerId = viewerId;
+            m_pendingTargetId = targetId;
+            m_pendingViewerName = m_viewerName;
+            m_pendingIconId = iconId;
+            m_waitingForApproval = true;
+            sendApprovalRequired(viewerId, targetId);
+            emit watchRequestReceived(viewerId, m_viewerName, targetId, iconId);
+        } else {
+            if (m_isStreaming) {
+                stopStreaming();
+            }
+            startStreaming();
+            emit requestKeyFrame();
+            sendWatchAccepted(viewerId, targetId);
+        }
+    } else if (type == "watch_request_accepted") {
+        QString viewerId = obj.value("viewer_id").toString();
+        QString targetId = obj.value("target_id").toString();
+        // 收到主程序转发的同意消息，开始推流
+        if (isManualApprovalEnabled()) {
+             qDebug() << "[Sender] Received watch_request_accepted, starting stream.";
+             if (m_isStreaming) {
+                 stopStreaming();
+             }
+             startStreaming();
+             emit requestKeyFrame();
+        }
+    } else if (type == "start_streaming" || type == "start_streaming_request") {
+        if (isManualApprovalEnabled()) {
+            return;
         }
         startStreaming();
-        
-        // 强制请求关键帧（双重保险）
-        emit requestKeyFrame();
-        
-        // 可以在这里发送确认消息给观看者（如果需要的话）
-        QJsonObject response;
-        response["type"] = "watch_request_accepted";
-        response["viewer_id"] = viewerId;
-        response["target_id"] = targetId;
-        
-        QJsonDocument responseDoc(response);
-        sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
-        
-    } else if (type == "start_streaming" || type == "start_streaming_request") {
-        qDebug() << "[Sender] Received start_streaming request. Type:" << type;
-        startStreaming();
-        // 收到推流请求时，强制生成关键帧以确保观看端能立即看到画面
         emit requestKeyFrame();
     } else if (type == "request_keyframe") {
         emit requestKeyFrame();
@@ -590,4 +611,87 @@ void WebSocketSender::onSendTimer()
     if (m_frameQueue.isEmpty()) {
         m_sendTimer->stop();
     }
+}
+bool WebSocketSender::isManualApprovalEnabled() const
+{
+    QStringList paths;
+    paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+    paths << QDir::currentPath() + "/config/app_config.txt";
+    QString configPath;
+    for (const QString &p : paths) {
+        QFile f(p);
+        if (f.exists()) { configPath = p; break; }
+    }
+    if (configPath.isEmpty()) return false;
+    QFile f(configPath);
+    if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("manual_approval_enabled=")) {
+                QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
+                f.close();
+                return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+            }
+        }
+        f.close();
+    }
+    return false;
+}
+
+void WebSocketSender::sendApprovalRequired(const QString &viewerId, const QString &targetId)
+{
+    QJsonObject response;
+    response["type"] = "approval_required";
+    response["viewer_id"] = viewerId;
+    response["target_id"] = targetId;
+    QJsonDocument responseDoc(response);
+    sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+}
+
+void WebSocketSender::sendWatchAccepted(const QString &viewerId, const QString &targetId)
+{
+    QJsonObject response;
+    response["type"] = "watch_request_accepted";
+    response["viewer_id"] = viewerId;
+    response["target_id"] = targetId;
+    QJsonDocument responseDoc(response);
+    sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+}
+
+void WebSocketSender::sendWatchRejected(const QString &viewerId, const QString &targetId)
+{
+    QJsonObject response;
+    response["type"] = "watch_request_rejected";
+    response["viewer_id"] = viewerId;
+    response["target_id"] = targetId;
+    QJsonDocument responseDoc(response);
+    sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+}
+
+void WebSocketSender::approveWatchRequest()
+{
+    if (!m_waitingForApproval) return;
+    if (m_isStreaming) {
+        stopStreaming();
+    }
+    startStreaming();
+    emit requestKeyFrame();
+    sendWatchAccepted(m_pendingViewerId, m_pendingTargetId);
+    {
+        QJsonObject ok;
+        ok["type"] = "streaming_ok";
+        ok["viewer_id"] = m_pendingViewerId;
+        ok["target_id"] = m_pendingTargetId;
+        QJsonDocument okDoc(ok);
+        sendTextMessage(okDoc.toJson(QJsonDocument::Compact));
+    }
+    m_waitingForApproval = false;
+}
+
+void WebSocketSender::rejectWatchRequest()
+{
+    if (!m_waitingForApproval) return;
+    sendWatchRejected(m_pendingViewerId, m_pendingTargetId);
+    m_waitingForApproval = false;
 }

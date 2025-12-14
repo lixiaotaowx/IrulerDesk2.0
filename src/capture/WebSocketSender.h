@@ -29,6 +29,7 @@ public:
     // 推流控制
     void startStreaming();
     void stopStreaming();
+    void forceKeyFrame();
     bool isStreaming() const { return m_isStreaming; }
     
     // 状态查询
@@ -93,6 +94,7 @@ signals:
     void viewerNameUpdateReceived(const QString &viewerId, const QString &viewerName);
     void viewerListenMuteRequested(bool mute);
     void viewerExited(const QString &viewerId);
+    void watchRequestReceived(const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId);
 
 private slots:
     void onConnected();
@@ -106,6 +108,13 @@ private:
     void setupWebSocket();
     void startReconnectTimer();
     void stopReconnectTimer();
+    bool isManualApprovalEnabled() const;
+    void sendApprovalRequired(const QString &viewerId, const QString &targetId);
+    void sendWatchAccepted(const QString &viewerId, const QString &targetId);
+    void sendWatchRejected(const QString &viewerId, const QString &targetId);
+public:
+    void approveWatchRequest();
+    void rejectWatchRequest();
     
     // 性能统计更新方法
     void updateSenderStats(qint64 encodingTime, qint64 sendingTime, qint64 serializationTime, qint64 bytesSent);
@@ -146,6 +155,13 @@ private:
     int m_queueMaxAgeMs = 200;
     qint64 m_droppedFramesDueToQueue = 0;
     qint64 m_droppedFramesDueToAge = 0;
+
+    // 手动同意状态
+    bool m_waitingForApproval = false;
+    QString m_pendingViewerId;
+    QString m_pendingTargetId;
+    QString m_pendingViewerName;
+    int m_pendingIconId = -1;
 };
 
 #endif // WEBSOCKETSENDER_H

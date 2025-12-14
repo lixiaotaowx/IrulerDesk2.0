@@ -13,6 +13,7 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QMouseEvent>
+#include <QCheckBox>
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     : QDialog(parent), m_list(new QListWidget(this))
@@ -95,6 +96,9 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     qualityRow->addStretch();
     qualityBox->addLayout(qualityRow);
     layout->addWidget(qualityCard);
+
+    QFrame* manualCard = setupManualApprovalControls();
+    layout->addWidget(manualCard);
 
     QFrame* avatarCard = setupAvatarControls();
     layout->addWidget(avatarCard);
@@ -299,6 +303,45 @@ QFrame* SystemSettingsWindow::setupAvatarControls()
     box->addWidget(gridWidget);
     loadAvatarImages();
     return avatarCard;
+}
+
+QFrame* SystemSettingsWindow::setupManualApprovalControls()
+{
+    QFrame* card = new QFrame(this); card->setObjectName("card");
+    QVBoxLayout* box = new QVBoxLayout(card); box->setContentsMargins(12, 12, 12, 12); box->setSpacing(10);
+    QLabel* title = new QLabel("观看请求处理", card);
+    title->setStyleSheet("QLabel { font-size: 13px; }");
+    box->addWidget(title);
+    QHBoxLayout* row = new QHBoxLayout();
+    QLabel* lbl = new QLabel("启用手动同意", card);
+    m_manualApprovalCheck = new QCheckBox(card);
+    m_manualApprovalCheck->setText(QStringLiteral("启用"));
+    row->addWidget(lbl);
+    row->addWidget(m_manualApprovalCheck);
+    row->addStretch();
+    box->addLayout(row);
+
+    QString configPath = QApplication::applicationDirPath() + "/config/app_config.txt";
+    QFile f(configPath);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("manual_approval_enabled=")) {
+                QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
+                bool enabled = v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+                m_manualApprovalCheck->setChecked(enabled);
+                break;
+            }
+        }
+        f.close();
+    }
+
+    connect(m_manualApprovalCheck, &QCheckBox::toggled, this, [this](bool checked){
+        emit manualApprovalEnabledChanged(checked);
+    });
+
+    return card;
 }
 
 void SystemSettingsWindow::loadAvatarImages()

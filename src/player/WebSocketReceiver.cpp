@@ -590,6 +590,19 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             if (mouseMessageCount % 100 == 0) {
             }
             return;
+        } else if (type == "approval_required") {
+            QString targetId = obj.value("target_id").toString();
+            emit approvalRequired(targetId);
+            return;
+        } else if (type == "watch_request_rejected") {
+            QString targetId = obj.value("target_id").toString();
+            emit watchRequestRejected(targetId);
+            return;
+        } else if (type == "watch_request_accepted") {
+            QString targetId = obj.value("target_id").toString();
+            emit watchRequestAccepted(targetId);
+            emit streamingStarted();
+            return;
         } else if (type == "audio_pcm") {
             int sampleRate = obj.value("sample_rate").toInt(16000);
             int channels = obj.value("channels").toInt(1);

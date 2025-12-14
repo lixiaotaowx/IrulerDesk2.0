@@ -1,4 +1,9 @@
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QDialog>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QVBoxLayout>
 #include <QTimer>
 #include <QDateTime>
 #include <QVector>
@@ -904,9 +909,35 @@ int main(int argc, char *argv[])
     });
     
     QObject::connect(safetyStartTimer, &QTimer::timeout, [&, sender]() {
+        auto isManualApprovalEnabledFromConfig = []() -> bool {
+            QStringList paths;
+            paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+            paths << QDir::currentPath() + "/config/app_config.txt";
+            for (const QString &p : paths) {
+                QFile f(p);
+                if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    QTextStream in(&f);
+                    while (!in.atEnd()) {
+                        QString line = in.readLine();
+                        if (line.startsWith("manual_approval_enabled=")) {
+                            QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
+                            f.close();
+                            return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+                        }
+                    }
+                    f.close();
+                }
+            }
+            return false;
+        };
+
         if (!isCapturing && sender->isConnected()) {
-             qDebug() << "[CaptureProcess] Safety Timer Triggered: No start_streaming signal received in 3s. Force starting...";
-             sender->startStreaming(); // 这将触发 streamingStarted 信号，进而调用 startAudio
+            if (!isManualApprovalEnabledFromConfig()) {
+                qDebug() << "[CaptureProcess] Safety Timer Triggered: Auto-start (manual approval disabled).";
+                sender->startStreaming();
+            } else {
+                qDebug() << "[CaptureProcess] Safety Timer: Manual approval enabled, skip auto-start.";
+            }
         }
     });
 
@@ -1173,6 +1204,44 @@ int main(int argc, char *argv[])
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_cursorOverlays.size()) {
             s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
+        }
+    });
+
+    QObject::connect(sender, &WebSocketSender::watchRequestReceived,
+                     [&](const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId) {
+        
+        // 检查配置是否启用手动审批
+        auto isManualApprovalEnabledFromConfig = []() -> bool {
+            QStringList paths;
+            paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+            paths << QDir::currentPath() + "/config/app_config.txt";
+            for (const QString &p : paths) {
+                QFile f(p);
+                if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    QTextStream in(&f);
+                    while (!in.atEnd()) {
+                        QString line = in.readLine();
+                        if (line.startsWith("manual_approval_enabled=")) {
+                            QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
+                            f.close();
+                            return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+                        }
+                    }
+                    f.close();
+                }
+            }
+            return false;
+        };
+
+        if (isManualApprovalEnabledFromConfig()) {
+            // 手动模式：主程序 MainWindow 负责弹出对话框并发送 accepted 消息
+            // CaptureProcess 等待收到 watch_request_accepted 消息后再开始推流
+            qDebug() << "[CaptureProcess] Manual approval mode. Waiting for watch_request_accepted signal.";
+            // 移除自动开始推流，等待明确的同意指令
+        } else {
+            // 自动模式：直接通过
+            qDebug() << "[CaptureProcess] Auto-approving watch request (Auto mode)";
+            sender->approveWatchRequest();
         }
     });
 

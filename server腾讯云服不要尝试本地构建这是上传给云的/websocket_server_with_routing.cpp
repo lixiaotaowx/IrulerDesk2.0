@@ -407,6 +407,75 @@ private slots:
                                  << "房间" << targetId << "不存在";
                     }
                     return;
+                } else if (type == "approval_required") {
+                    QString viewerId = obj.value("viewer_id").toString();
+                    QString targetId = obj.value("target_id").toString();
+                    QWebSocket *viewerSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == viewerId) { viewerSocket = it.key(); break; }
+                    }
+                    if (viewerSocket && viewerSocket->state() == QAbstractSocket::ConnectedState) {
+                        QJsonDocument doc(obj);
+                        viewerSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "已向观看者" << viewerId << "转发审批请求";
+                    }
+                    return;
+                } else if (type == "watch_request_accepted") {
+                    QString viewerId = obj.value("viewer_id").toString();
+                    QString targetId = obj.value("target_id").toString();
+                    
+                    // 1. 转发给观看者 (Viewer)
+                    QWebSocket *viewerSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == viewerId) { viewerSocket = it.key(); break; }
+                    }
+                    if (viewerSocket && viewerSocket->state() == QAbstractSocket::ConnectedState) {
+                        QJsonDocument doc(obj);
+                        viewerSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "已向观看者" << viewerId << "转发同意消息";
+                    }
+
+                    // 2. 转发给推流端 (Publisher) 以触发推流
+                    if (m_rooms.contains(targetId)) {
+                        Room *room = m_rooms[targetId];
+                        if (room && room->publisher && room->publisher->state() == QAbstractSocket::ConnectedState) {
+                            QJsonDocument doc(obj);
+                            room->publisher->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                            qDebug() << QDateTime::currentDateTime().toString()
+                                     << "已向推流端" << targetId << "转发同意消息(触发推流)";
+                        }
+                    }
+                    return;
+                } else if (type == "watch_request_rejected") {
+                    QString viewerId = obj.value("viewer_id").toString();
+                    QString targetId = obj.value("target_id").toString();
+                    QWebSocket *viewerSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == viewerId) { viewerSocket = it.key(); break; }
+                    }
+                    if (viewerSocket && viewerSocket->state() == QAbstractSocket::ConnectedState) {
+                        QJsonDocument doc(obj);
+                        viewerSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "已向观看者" << viewerId << "转发拒绝消息";
+                    }
+                    return;
+                } else if (type == "streaming_ok") {
+                    QString viewerId = obj.value("viewer_id").toString();
+                    QString targetId = obj.value("target_id").toString();
+                    QWebSocket *viewerSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == viewerId) { viewerSocket = it.key(); break; }
+                    }
+                    if (viewerSocket && viewerSocket->state() == QAbstractSocket::ConnectedState) {
+                        QJsonDocument doc(obj);
+                        viewerSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "已向观看者" << viewerId << "转发推流就绪消息";
+                    }
+                    return;
                 } else if (type == "heartbeat") {
                     QString uid = obj.value("id").toString();
                     if (uid.isEmpty()) {

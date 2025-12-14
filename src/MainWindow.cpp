@@ -1685,28 +1685,101 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         updateUserList(users);
         if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
     } else if (type == "start_streaming_request") {
-        // 处理推流请求
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
-        
-        // 开始推流
-        if (!m_isStreaming) {
-            startStreaming();
+
+        bool manualApproval = loadManualApprovalEnabledFromConfig();
+        if (manualApproval) {
+            if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                // 1. 发送需要审批的消息给观看端
+                QJsonObject approval;
+                approval["type"] = "approval_required";
+                approval["viewer_id"] = viewerId;
+                approval["target_id"] = targetId;
+                QJsonDocument doc(approval);
+                m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+
+                // 2. 弹出确认对话框
+                // 使用非模态对话框或者不阻塞网络线程的方式更好，但在主线程中模态对话框通常是可以接受的
+                // 为了更好的用户体验，这里使用QMessageBox
+                QMessageBox::StandardButton reply;
+                reply = QMessageBox::question(this, QStringLiteral("观看请求"),
+                                              QStringLiteral("用户 %1 请求观看您的屏幕，是否允许？").arg(viewerId),
+                                              QMessageBox::Yes | QMessageBox::No);
+
+                if (reply == QMessageBox::Yes) {
+                    // 同意
+                    QJsonObject accepted;
+                    accepted["type"] = "watch_request_accepted";
+                    accepted["viewer_id"] = viewerId;
+                    accepted["target_id"] = targetId;
+                    QJsonDocument accDoc(accepted);
+                    m_loginWebSocket->sendTextMessage(accDoc.toJson(QJsonDocument::Compact));
+
+                    // 开始推流
+                    if (!m_isStreaming) {
+                        startStreaming();
+                    }
+
+                    // 发送 streaming_ok
+                    QJsonObject streamOkResponse;
+                    streamOkResponse["type"] = "streaming_ok";
+                    streamOkResponse["viewer_id"] = viewerId;
+                    streamOkResponse["target_id"] = targetId;
+                    streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
+                    QJsonDocument responseDoc(streamOkResponse);
+                    m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+
+                } else {
+                    // 拒绝
+                    QJsonObject rejected;
+                    rejected["type"] = "watch_request_rejected";
+                    rejected["viewer_id"] = viewerId;
+                    rejected["target_id"] = targetId;
+                    QJsonDocument rejDoc(rejected);
+                    m_loginWebSocket->sendTextMessage(rejDoc.toJson(QJsonDocument::Compact));
+                }
+            }
+        } else {
+            if (!m_isStreaming) {
+                startStreaming();
+            }
+            QJsonObject streamOkResponse;
+            streamOkResponse["type"] = "streaming_ok";
+            streamOkResponse["viewer_id"] = viewerId;
+            streamOkResponse["target_id"] = targetId;
+            streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
+            if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                QJsonDocument responseDoc(streamOkResponse);
+                m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+            }
         }
-        
-        // 发送推流OK响应给观看者
-        QJsonObject streamOkResponse;
-        streamOkResponse["type"] = "streaming_ok";
-        streamOkResponse["viewer_id"] = viewerId;
-        streamOkResponse["target_id"] = targetId;
-        streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
-        
-        // 查找观看者的连接并发送响应
-        // 注意：这里需要通过服务器转发，因为我们不直接连接到观看者
-        // 服务器会处理这个响应的转发
-        if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
-            QJsonDocument responseDoc(streamOkResponse);
-            m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+    } else if (type == "approval_required") {
+        QString viewerId = obj["viewer_id"].toString();
+        QString targetId = obj["target_id"].toString();
+        if (viewerId == getDeviceId() && m_videoWindow) {
+            auto *vd = m_videoWindow->getVideoDisplayWidget();
+            if (vd) { vd->showApprovalWait(); }
+        }
+    } else if (type == "watch_request_accepted") {
+        QString viewerId = obj["viewer_id"].toString();
+        QString targetId = obj["target_id"].toString();
+        if (viewerId == getDeviceId()) {
+            if (m_videoWindow) {
+                auto *vd = m_videoWindow->getVideoDisplayWidget();
+                if (vd) { vd->hideApprovalWait(); }
+            }
+            // startVideoReceiving(targetId); // 移除此处调用，等待 streaming_ok 信号再开始接收，避免重复初始化
+        }
+    } else if (type == "watch_request_rejected") {
+        QString viewerId = obj["viewer_id"].toString();
+        QString targetId = obj["target_id"].toString();
+        if (viewerId == getDeviceId()) {
+            if (m_videoWindow) {
+                auto *vd = m_videoWindow->getVideoDisplayWidget();
+                if (vd) { vd->hideApprovalWait(); }
+            }
+            QMessageBox::information(this, QStringLiteral("观看被拒绝"), QStringLiteral("对方拒绝了观看请求"));
         }
     } else if (type == "streaming_ok") {
         // 处理推流OK响应，开始拉流播放
@@ -1949,6 +2022,8 @@ void MainWindow::onSystemSettingsRequested()
                 this, &MainWindow::onUserNameChanged);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::avatarSelected,
                 this, &MainWindow::onAvatarSelected);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::manualApprovalEnabledChanged,
+                this, &MainWindow::onManualApprovalEnabledChanged);
     }
     m_systemSettingsWindow->show();
 }
@@ -2027,6 +2102,11 @@ void MainWindow::onSpeakerToggleRequested(bool enabled)
             vd->setSpeakerEnabled(enabled);
         }
     }
+}
+
+void MainWindow::onManualApprovalEnabledChanged(bool enabled)
+{
+    saveManualApprovalEnabledToConfig(enabled);
 }
 
 void MainWindow::onScreenSelected(int index)
@@ -2274,6 +2354,50 @@ void MainWindow::saveMicEnabledToConfig(bool enabled)
         }
     }
     if (!replaced) configLines << QString("mic_enabled=%1").arg(enabled ? "true" : "false");
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+bool MainWindow::loadManualApprovalEnabledFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("manual_approval_enabled=")) {
+                QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
+                configFile.close();
+                return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+            }
+        }
+        configFile.close();
+    }
+    return false;
+}
+
+void MainWindow::saveManualApprovalEnabledToConfig(bool enabled)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("manual_approval_enabled=")) {
+            configLines[i] = QString("manual_approval_enabled=%1").arg(enabled ? "true" : "false");
+            replaced = true; break;
+        }
+    }
+    if (!replaced) configLines << QString("manual_approval_enabled=%1").arg(enabled ? "true" : "false");
     if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&configFile);
         for (const QString &line : configLines) out << line << "\n";

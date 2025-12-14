@@ -387,7 +387,7 @@ install(DIRECTORY ${INSTALL_BUNDLE_DIR}/ DESTINATION .
 
 # 安装静态资源（地图/头像等），以确保无构建工序也可包含
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/maps DESTINATION .)
-
+# cpack -G NSIS -C Release
 # CPack 打包元数据（默认生成 ZIP 包，免外部打包器依赖）
 include(InstallRequiredSystemLibraries)
 set(CPACK_PACKAGE_NAME "IrulerDeskPro")
@@ -399,6 +399,9 @@ set(CPACK_SYSTEM_NAME "Windows")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "IrulerDeskPro")
 set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
 set(CPACK_NSIS_ENABLE_UNINSTALL ON)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
+set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "IrulerDeskPro")
+set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "StrCpy $R0 $\"$\"\nReadRegStr $R0 HKLM $\"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IrulerDeskPro$\" $\"UninstallString$\"\nStrCmp $R0 $\"$\" checkHKCU haveUninst\ncheckHKCU:\nReadRegStr $R0 HKCU $\"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IrulerDeskPro$\" $\"UninstallString$\"\nStrCmp $R0 $\"$\" doneCheck haveUninst\nhaveUninst:\nMessageBox MB_ICONQUESTION|MB_YESNO $\"检测到已安装旧版本，是否先卸载后继续安装？$\" IDYES doUninstall IDNO doneCheck\ndoUninstall:\nExecWait $\"$R0$\"\ndoneCheck:\n")
 set(CPACK_NSIS_DISPLAY_NAME "IrulerDeskPro")
 set(CPACK_NSIS_CONTACT "support@iruler.local")
 set(CPACK_NSIS_HELP_LINK "http://www.iruler.cn/")
@@ -410,6 +413,8 @@ set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 set(CPACK_NSIS_MENU_LINKS "irulerdesk.exe" "IrulerDeskPro")
 set(CPACK_GENERATOR "NSIS")
 set(CPACK_NSIS_EXECUTABLE "C:/Program Files (x86)/NSIS/makensis.exe")
+set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "SetShellVarContext current\nWriteRegStr HKCU $\"Software\\Microsoft\\Windows\\CurrentVersion\\Run$\" $\"IrulerDeskPro$\" $\"$INSTDIR\\irulerdesk.exe$\"\nExecShell $\"open$\" $\"$INSTDIR\\irulerdesk.exe$\"\n")
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "DeleteRegValue HKCU $\"Software\\Microsoft\\Windows\\CurrentVersion\\Run$\" $\"IrulerDeskPro$\"\n")
 include(CPack)
 
 # 嵌入应用图标（使用 src/maps/logo/iruler.ico）

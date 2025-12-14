@@ -1,3 +1,4 @@
+Website: http://www.iruler.cn/
 End User License Agreement (EULA)
 
 IMPORTANT: Please read this agreement carefully before installing or using this software. By installing or using the software, you agree to be bound by the terms of this EULA.

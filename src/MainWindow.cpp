@@ -1750,17 +1750,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
 
         // [Fix] 检查是否是取消请求
         if (obj.contains("action") && obj["action"].toString() == "cancel") {
-            // 自动拒绝：发送拒绝消息给服务器 -> 转发给观看端
-            QJsonObject rejected;
-            rejected["type"] = "watch_request_rejected";
-            rejected["viewer_id"] = viewerId;
-            rejected["target_id"] = targetId;
-            QJsonDocument rejDoc(rejected);
-            if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
-                m_loginWebSocket->sendTextMessage(rejDoc.toJson(QJsonDocument::Compact));
-            }
+            qInfo() << "Received start_streaming_request (cancel) from" << viewerId;
 
-            // [Local Control] 本地通知捕获进程拒绝 (清理状态)
+            // [Local Control] 本地通知捕获进程清理状态
             if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
                 m_currentWatchdogSocket->write("CMD_REJECT");
                 m_currentWatchdogSocket->flush();
@@ -1772,6 +1764,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_approvalDialog = nullptr;
                 QMessageBox::information(this, QStringLiteral("未接提醒"), 
                     QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+            } else {
+                qInfo() << "No approval dialog to close for canceled request (via action)";
             }
             return;
         }
@@ -1897,17 +1891,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
         
-        // 自动拒绝：发送拒绝消息给服务器 -> 转发给观看端
-        QJsonObject rejected;
-        rejected["type"] = "watch_request_rejected";
-        rejected["viewer_id"] = viewerId;
-        rejected["target_id"] = targetId;
-        QJsonDocument rejDoc(rejected);
-        if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
-            m_loginWebSocket->sendTextMessage(rejDoc.toJson(QJsonDocument::Compact));
-        }
+        qInfo() << "Received watch_request_canceled from" << viewerId;
 
-        // [Local Control] 本地通知捕获进程拒绝 (清理状态)
+        // [Local Control] 本地通知捕获进程清理状态
         if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
             m_currentWatchdogSocket->write("CMD_REJECT");
             m_currentWatchdogSocket->flush();
@@ -1922,7 +1908,23 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             // 显示未接提醒
             QMessageBox::information(this, QStringLiteral("未接提醒"), 
                 QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+        } else {
+            qInfo() << "No approval dialog to close for canceled request";
         }
+    } else if (type == "watch_request_error") {
+        QString message = obj["message"].toString();
+        QString targetId = obj["target_id"].toString();
+        
+        // Close the waiting dialog if any
+        if (m_waitingDialog) {
+            m_waitingDialog->close();
+            m_waitingDialog->deleteLater();
+            m_waitingDialog = nullptr;
+        }
+        
+        QMessageBox::warning(this, QStringLiteral("请求失败"), 
+            QStringLiteral("无法连接到目标用户 %1: %2").arg(targetId, message));
+            
     } else if (type == "approval_required") {
         // [Fix] 移除重复的等待弹窗
     } else if (type == "watch_request_accepted") {

@@ -2,6 +2,7 @@
 #include "VideoWindow.h"
 #include "ui/TransparentImageList.h"
 #include "video_components/VideoDisplayWidget.h"
+#include "ui/ScreenAnnotationWidget.h"
 #include "ui/AvatarSettingsWindow.h"
 #include "ui/SystemSettingsWindow.h"
 #include "ui/FirstLaunchWizard.h"
@@ -120,7 +121,7 @@ MainWindow::MainWindow(QWidget *parent)
     initializeLoginSystem();
     
     // 自动开始流媒体传输
-    QTimer::singleShot(1000, this, &MainWindow::startStreaming);
+    // QTimer::singleShot(1000, this, &MainWindow::startStreaming);
 }
 
 #ifdef _WIN32
@@ -533,11 +534,16 @@ void MainWindow::setupUI()
             this, &MainWindow::onExitRequested);
     connect(m_transparentImageList, &TransparentImageList::hideRequested,
             this, &MainWindow::onHideRequested);
+    connect(m_transparentImageList, &TransparentImageList::toggleStreamingIslandRequested,
+            this, &MainWindow::onToggleStreamingIsland);
     connect(m_transparentImageList, &TransparentImageList::micToggleRequested,
             this, &MainWindow::onMicToggleRequested);
     connect(m_transparentImageList, &TransparentImageList::speakerToggleRequested,
             this, &MainWindow::onSpeakerToggleRequested);
-    
+
+    // Initialize Streaming Island
+    m_islandWidget = new StreamingIslandWidget(nullptr); 
+    connect(m_islandWidget, &StreamingIslandWidget::stopStreamingRequested, this, &MainWindow::stopStreaming);
 }
 
 void MainWindow::setupStatusBar()
@@ -580,6 +586,16 @@ void MainWindow::startStreaming()
     startProcesses();
     
     m_isStreaming = true;
+
+    // [User Request] 取消灵动岛与推流的自动关联
+    // if (m_islandWidget) {
+    //     int screenIndex = loadScreenIndexFromConfig();
+    //     const auto screens = QGuiApplication::screens();
+    //     if (screenIndex >= 0 && screenIndex < screens.size()) {
+    //         m_islandWidget->setTargetScreen(screens[screenIndex]);
+    //     }
+    //     m_islandWidget->showOnScreen();
+    // }
 }
 
 void MainWindow::stopStreaming()
@@ -600,6 +616,11 @@ void MainWindow::stopStreaming()
     stopProcesses();
     
     m_isStreaming = false;
+
+    // [User Request] 取消灵动岛与推流的自动关联
+    // if (m_islandWidget) {
+    //     m_islandWidget->hide();
+    // }
     
     m_statusLabel->setText("已停止");
     m_statusLabel->setStyleSheet(
@@ -1959,6 +1980,20 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
 
             QMessageBox::information(this, QStringLiteral("观看被拒绝"), QStringLiteral("对方拒绝了观看请求"));
         }
+    } else if (type == "viewer_exit" || type == "stop_streaming") {
+        // 处理观众退出或停止观看的通知
+        QString viewerId = obj["viewer_id"].toString();
+        
+        if (m_isStreaming) {
+            qInfo() << "Received stop command (" << type << ") from viewer" << viewerId;
+            // 停止推流（这也将关闭灵动岛）
+            stopStreaming();
+            
+            // 可选：如果需要通知用户
+            // if (m_trayIcon) {
+            //     m_trayIcon->showMessage("推流结束", QString("用户 %1 已停止观看").arg(viewerId), QSystemTrayIcon::Information, 3000);
+            // }
+        }
     } else if (type == "streaming_ok") {
         // 处理推流OK响应，开始拉流播放
         QString viewerId = obj["viewer_id"].toString();
@@ -2217,6 +2252,16 @@ void MainWindow::onSystemSettingsRequested()
 
 void MainWindow::onClearMarksRequested()
 {
+    // 1. 清理本地所有屏幕上的 ScreenAnnotationWidget 绘制内容
+    const auto widgets = QApplication::topLevelWidgets();
+    for (QWidget *w : widgets) {
+        ScreenAnnotationWidget *saw = qobject_cast<ScreenAnnotationWidget*>(w);
+        if (saw) {
+            saw->clear();
+        }
+    }
+
+    // 2. 发送网络事件清理远端或消费者端的绘制
     QString serverUrl = QString("ws://%1/subscribe/%2").arg(getServerAddress(), getDeviceId());
     QWebSocket *ws = new QWebSocket();
     connect(ws, &QWebSocket::connected, this, [this, ws]() {
@@ -2330,6 +2375,15 @@ void MainWindow::onScreenSelected(int index)
                 });
             }
         }
+        
+        // 实时更新灵动岛位置
+        if (m_isStreaming && m_islandWidget) {
+             const auto screens = QGuiApplication::screens();
+             if (index >= 0 && index < screens.size()) {
+                 m_islandWidget->setTargetScreen(screens[index]);
+                 m_islandWidget->showOnScreen(); // 重新显示以更新位置
+             }
+        }
     } else {
         saveScreenIndexToConfig(index);
         if (m_systemSettingsWindow) {
@@ -2374,6 +2428,29 @@ void MainWindow::saveScreenIndexToConfig(int screenIndex)
         configFile.close();
     } else {
     }
+}
+
+int MainWindow::loadScreenIndexFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("screen_index=")) {
+                bool ok;
+                int idx = line.mid(13).toInt(&ok); // "screen_index=" is 13 chars
+                if (ok && idx >= 0) {
+                    configFile.close();
+                    return idx;
+                }
+            }
+        }
+        configFile.close();
+    }
+    return 0; // Default to primary screen
 }
 
 void MainWindow::onLocalQualitySelected(const QString& quality)
@@ -2520,6 +2597,22 @@ void MainWindow::saveSpeakerEnabledToConfig(bool enabled)
         QTextStream out(&configFile);
         for (const QString &line : configLines) out << line << "\n";
         configFile.close();
+    }
+}
+
+void MainWindow::onToggleStreamingIsland()
+{
+    if (m_islandWidget) {
+        if (m_islandWidget->isVisible()) {
+            m_islandWidget->hide();
+        } else {
+             int screenIndex = loadScreenIndexFromConfig();
+             const auto screens = QGuiApplication::screens();
+             if (screenIndex >= 0 && screenIndex < screens.size()) {
+                 m_islandWidget->setTargetScreen(screens[screenIndex]);
+             }
+             m_islandWidget->showOnScreen();
+        }
     }
 }
 

@@ -667,6 +667,9 @@ bool TransparentImageList::eventFilter(QObject *obj, QEvent *event)
                     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
                     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
 
+                    QAction *toggleIslandAction = contextMenu.addAction("灵动岛");
+                    connect(toggleIslandAction, &QAction::triggered, this, &TransparentImageList::toggleStreamingIslandRequested);
+
                     bool micEnabled = true;
                     bool speakerEnabled = true;
                     {
@@ -924,6 +927,10 @@ void TransparentImageList::contextMenuEvent(QContextMenuEvent *event)
 
     QAction *systemSettingsAction = contextMenu.addAction("系统设置");
     connect(systemSettingsAction, &QAction::triggered, this, &TransparentImageList::systemSettingsRequested);
+    
+    QAction *toggleIslandAction = contextMenu.addAction("灵动岛");
+    connect(toggleIslandAction, &QAction::triggered, this, &TransparentImageList::toggleStreamingIslandRequested);
+
     bool micEnabled = true;
     bool speakerEnabled = true;
     {

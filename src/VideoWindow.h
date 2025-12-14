@@ -71,7 +71,7 @@ private:
     RainbowToolButton *m_eraserButton;
     QPushButton *m_undoButton;
     QPushButton *m_cameraButton;
-    QPushButton *m_likeButton;
+    QPushButton *m_clearButton;
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
     QPushButton *m_speakerButton;
@@ -102,9 +102,6 @@ private:
     bool m_textSizeDragActive = false;
     QPoint m_textSizeDragStartPos;
     int m_textSizeDragStartValue = 16;
-    QLabel *m_likeAnimLabel = nullptr;
-    QMovie *m_likeMovie = nullptr;
-    void showLikeAnimation();
     QLabel *m_clipToast = nullptr;
     void showClipboardToast();
     QWidget *m_fullscreenBar = nullptr;

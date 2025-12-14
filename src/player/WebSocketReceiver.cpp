@@ -1190,8 +1190,21 @@ void WebSocketReceiver::sendStopStreaming()
     if (!m_connected || !m_webSocket) {
         return;
     }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
     QJsonObject stopMsg;
     stopMsg["type"] = "stop_streaming";
+    if (!viewerId.isEmpty()) stopMsg["viewer_id"] = viewerId;
+    if (!targetId.isEmpty()) stopMsg["target_id"] = targetId;
+    stopMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
     QJsonDocument stopDoc(stopMsg);
     m_webSocket->sendTextMessage(stopDoc.toJson(QJsonDocument::Compact));
 }

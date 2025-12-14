@@ -48,6 +48,10 @@ set(MAIN_SOURCES
     src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件
     src/VideoWindow.h                     # 独立视频窗口声明：公开接口与成员
     src/ui/TransparentImageList.cpp       # 透明贴图列表实现：管理/选择叠加贴图资源
+    src/ui/ScreenAnnotationWidget.cpp     # 屏幕批注透明层实现
+    src/ui/ScreenAnnotationWidget.h       # 屏幕批注透明层声明
+    src/ui/AnnotationToolbar.cpp          # 批注工具条实现
+    src/ui/AnnotationToolbar.h            # 批注工具条声明
     src/ui/TransparentImageList.h         # 透明贴图列表声明：信号槽与模型接口
     src/ui/BubbleTipWidget.cpp            # 气泡提示控件
     src/ui/BubbleTipWidget.h              # 气泡提示控件声明
@@ -61,6 +65,8 @@ set(MAIN_SOURCES
     src/ui/RainbowToolButton.h            # 彩虹工具按钮声明
     src/ui/FirstLaunchWizard.cpp          # 首次启动引导设置对话框
     src/ui/FirstLaunchWizard.h            # 首次启动引导设置对话框声明
+    src/ui/StreamingIslandWidget.cpp      # 推流状态灵动岛悬浮窗
+    src/ui/StreamingIslandWidget.h        # 推流状态灵动岛悬浮窗声明
 )
 
 # 屏幕捕获编码进程源文件
@@ -124,6 +130,8 @@ set(VIDEO_COMPONENTS_SOURCES
     src/ui/TransparentImageList.h               # 透明头像列表声明
     src/ui/BubbleTipWidget.cpp                  # 气泡提示控件
     src/ui/BubbleTipWidget.h                    # 气泡提示控件声明
+    src/ui/ScreenAnnotationWidget.cpp           # 屏幕批注透明层实现
+    src/ui/ScreenAnnotationWidget.h             # 屏幕批注透明层声明
 )
 
 # 创建主程序可执行文件

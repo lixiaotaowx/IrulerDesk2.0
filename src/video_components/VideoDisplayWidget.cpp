@@ -1,4 +1,5 @@
 #include "VideoDisplayWidget.h"
+#include "../ui/ScreenAnnotationWidget.h"
 #include <iostream>
 #include "../player/DxvaVP9Decoder.h"
 #include "../player/WebSocketReceiver.h"
@@ -1133,9 +1134,18 @@ void VideoDisplayWidget::sendUndo()
 void VideoDisplayWidget::sendClear()
 {
     if (m_receiver) {
-    m_receiver->sendAnnotationEvent("clear", 0, 0, m_currentColorId);
+        m_receiver->sendAnnotationEvent("clear", 0, 0, m_currentColorId);
     }
     m_isAnnotating = false;
+
+    // 同时清理本地全屏绘制
+    const auto widgets = QApplication::topLevelWidgets();
+    for (QWidget *w : widgets) {
+        ScreenAnnotationWidget *saw = qobject_cast<ScreenAnnotationWidget*>(w);
+        if (saw) {
+            saw->clear();
+        }
+    }
 }
 
 void VideoDisplayWidget::sendCloseOverlay()
@@ -1265,7 +1275,17 @@ void VideoDisplayWidget::applyCursor()
         m_videoLabel->setCursor(Qt::ArrowCursor);
         return;
     }
-    if (m_toolMode == 1) {
+    if (m_toolMode == 0) { // Pen
+        // Custom white dot cursor
+        QPixmap pixmap(16, 16);
+        pixmap.fill(Qt::transparent);
+        QPainter p(&pixmap);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(Qt::black, 1));
+        p.setBrush(Qt::white);
+        p.drawEllipse(4, 4, 8, 8); // 8px circle in center
+        m_videoLabel->setCursor(QCursor(pixmap, 8, 8)); // Hotspot at center
+    } else if (m_toolMode == 1) { // Eraser
         int r = 20;
         QPixmap pix(2*r + 2, 2*r + 2);
         pix.fill(Qt::transparent);

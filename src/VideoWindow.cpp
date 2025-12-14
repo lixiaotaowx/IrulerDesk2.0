@@ -78,12 +78,6 @@ VideoWindow::~VideoWindow()
     }
     if (m_textSizeSlider) m_textSizeSlider->setVisible(false);
     if (m_volumeSlider) m_volumeSlider->setVisible(false);
-    if (m_likeMovie) {
-        m_likeMovie->stop();
-    }
-    if (m_likeAnimLabel) {
-        m_likeAnimLabel->hide();
-    }
     if (m_clipToast) {
         m_clipToast->hide();
     }
@@ -136,10 +130,6 @@ void VideoWindow::setupUI()
             this, [this](int colorId){ updateColorButtonVisual(colorId); });
     
     m_mainLayout->addWidget(m_videoDisplayWidget, 1);
-
-    m_likeAnimLabel = new QLabel(m_videoDisplayWidget);
-    m_likeAnimLabel->setVisible(false);
-    m_likeAnimLabel->setStyleSheet("QLabel { background: transparent; }");
 
     m_fullscreenBar = new QWidget(this);
     m_fullscreenBar->setFixedHeight(28);
@@ -433,11 +423,14 @@ void VideoWindow::setupCustomTitleBar()
     m_undoButton->setStyleSheet(micButtonStyle);
     m_undoButton->setToolTip(QStringLiteral("撤销"));
 
-    m_likeButton = new QPushButton("", m_titleBar);
-    m_likeButton->setIcon(QIcon(iconDir + "/good.png"));
-    m_likeButton->setIconSize(QSize(16, 16));
-    m_likeButton->setStyleSheet(micButtonStyle);
-    m_likeButton->setToolTip(QStringLiteral("点赞"));
+    m_clearButton = new QPushButton("清", m_titleBar);
+    // m_clearButton->setIcon(QIcon(iconDir + "/good.png"));
+    // m_clearButton->setIconSize(QSize(16, 16));
+    m_clearButton->setStyleSheet(micButtonStyle);
+    m_clearButton->setToolTip(QStringLiteral("清理绘制"));
+    connect(m_clearButton, &QPushButton::clicked, this, [this]() {
+        if (m_videoDisplayWidget) m_videoDisplayWidget->sendClear();
+    });
 
     m_toolBar = new QWidget(m_titleBar);
     m_toolBarLayout = new QHBoxLayout(m_toolBar);
@@ -468,7 +461,7 @@ void VideoWindow::setupCustomTitleBar()
     m_cameraButton->setToolTip(QStringLiteral("截图到剪贴板"));
     m_toolBarLayout->addWidget(m_cameraButton);
     m_toolBarLayout->addSpacing(2);
-    m_toolBarLayout->addWidget(m_likeButton);
+    m_toolBarLayout->addWidget(m_clearButton);
 
     m_titleCenter = new QWidget(m_titleBar);
     m_titleCenterLayout = new QHBoxLayout(m_titleCenter);
@@ -498,7 +491,7 @@ void VideoWindow::setupCustomTitleBar()
         // m_eraserButton->setStyleSheet(m_eraserButton->isChecked() ? selectedToolStyle : micButtonStyle);
         m_undoButton->setStyleSheet(micButtonStyle);
         m_cameraButton->setStyleSheet(micButtonStyle);
-        m_likeButton->setStyleSheet(micButtonStyle);
+        m_clearButton->setStyleSheet(micButtonStyle);
         // m_arrowButton->setStyleSheet(m_arrowButton->isChecked() ? selectedToolStyle : micButtonStyle);
     };
 
@@ -621,7 +614,6 @@ void VideoWindow::setupCustomTitleBar()
         if (m_textSizeFloatLabel) m_textSizeFloatLabel->setVisible(false);
         updateToolStyles();
     });
-    connect(m_likeButton, &QPushButton::clicked, this, [this]() { showLikeAnimation(); });
     connect(m_cameraButton, &QPushButton::clicked, this, [this]() {
         if (!m_videoDisplayWidget) return;
         QImage img = m_videoDisplayWidget->captureToImage();
@@ -937,85 +929,6 @@ void VideoWindow::toggleFullscreen()
     }
 }
 
-void VideoWindow::showLikeAnimation()
-{
-    if (!m_videoDisplayWidget) return;
-    m_videoDisplayWidget->sendLike();
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString iconDir = appDir + "/maps/logo";
-    QString file = iconDir + "/zan.gif";
-    if (!QFile::exists(file)) {
-        file.clear();
-    }
-    if (!file.isEmpty()) {
-        if (!m_likeMovie) {
-            m_likeMovie = new QMovie(file, QByteArray(), this);
-        } else {
-            m_likeMovie->setFileName(file);
-            m_likeMovie->stop();
-            QObject::disconnect(m_likeMovie, nullptr, this, nullptr);
-        }
-        m_likeMovie->setCacheMode(QMovie::CacheAll);
-        m_likeAnimLabel->setMovie(m_likeMovie);
-        m_likeMovie->jumpToFrame(0);
-        QSize sz = m_likeMovie->currentPixmap().size();
-        QRect area = m_videoDisplayWidget->rect();
-        QPoint center(area.width()/2, area.height()/2);
-        int w = sz.width();
-        int h = sz.height();
-        m_likeAnimLabel->setGeometry(center.x() - w/2, center.y() - h/2, w, h);
-        m_likeAnimLabel->setVisible(true);
-        m_likeAnimLabel->raise();
-        m_likeMovie->start();
-        int total = m_likeMovie->frameCount();
-        QPointer<QLabel> lblPtr(m_likeAnimLabel);
-        QPointer<QMovie> mvPtr(m_likeMovie);
-        if (total > 0) {
-            QObject::connect(m_likeMovie, &QMovie::frameChanged, this, [lblPtr, mvPtr, total](int frame) {
-                if (!lblPtr || !mvPtr) return;
-                if (frame >= total - 1) {
-                    lblPtr->setVisible(false);
-                    mvPtr->stop();
-                }
-            }, Qt::QueuedConnection);
-        } else {
-            QTimer::singleShot(2000, this, [lblPtr, mvPtr]() { if (lblPtr) lblPtr->setVisible(false); if (mvPtr) mvPtr->stop(); });
-        }
-        return;
-    }
-    QPixmap pix(iconDir + "/good.png");
-    if (pix.isNull()) {
-        QFont f; f.setPixelSize(48);
-        m_likeAnimLabel->setText(QStringLiteral("👍"));
-        m_likeAnimLabel->setAlignment(Qt::AlignCenter);
-        m_likeAnimLabel->setStyleSheet("QLabel { color: #ffffff; background: transparent; } ");
-        m_likeAnimLabel->setFont(f);
-        QRect area = m_videoDisplayWidget->rect();
-        QPoint center(area.width()/2, area.height()/2);
-        int w = 96; int h = 96;
-        m_likeAnimLabel->setGeometry(center.x() - w/2, center.y() - h/2, w, h);
-        auto effect = new QGraphicsOpacityEffect(m_likeAnimLabel);
-        m_likeAnimLabel->setGraphicsEffect(effect);
-        auto anim = new QPropertyAnimation(effect, "opacity", m_likeAnimLabel);
-        anim->setDuration(800);
-        anim->setStartValue(1.0);
-        anim->setEndValue(0.0);
-        m_likeAnimLabel->setVisible(true);
-        m_likeAnimLabel->raise();
-        QObject::connect(anim, &QPropertyAnimation::finished, this, [this, effect]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); effect->deleteLater(); });
-        anim->start(QAbstractAnimation::DeleteWhenStopped);
-        return;
-    }
-    QRect area = m_videoDisplayWidget->rect();
-    QPoint center(area.width()/2, area.height()/2);
-    int w = pix.width();
-    int h = pix.height();
-    m_likeAnimLabel->setPixmap(pix);
-    m_likeAnimLabel->setGeometry(center.x() - w/2, center.y() - h/2, w, h);
-    m_likeAnimLabel->setVisible(true);
-    m_likeAnimLabel->raise();
-    QTimer::singleShot(800, this, [this]() { if (m_likeAnimLabel) m_likeAnimLabel->setVisible(false); });
-}
 
 void VideoWindow::showClipboardToast()
 {

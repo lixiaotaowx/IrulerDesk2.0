@@ -165,12 +165,12 @@ void AudioPlayer::processAudioData(const QByteArray &pcmData, int sampleRate, in
                     m_ringBuffer.remove(0, int(w));
                 }
             }
-            static int fullCount = 0;
-            if (!m_ringBuffer.isEmpty() && ++fullCount % 20 == 0) {
-                qDebug() << "[Player] Sink backlog bytes:" << m_ringBuffer.size()
-                         << " State:" << m_audioSink->state()
-                         << " Error:" << m_audioSink->error();
-            }
+            // static int fullCount = 0;
+            // if (!m_ringBuffer.isEmpty() && ++fullCount % 20 == 0) {
+            //     qDebug() << "[Player] Sink backlog bytes:" << m_ringBuffer.size()
+            //              << " State:" << m_audioSink->state()
+            //              << " Error:" << m_audioSink->error();
+            // }
         }
     }
 }

@@ -5,6 +5,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
+#include "ui/StreamingIslandWidget.h"
 #include <QLabel>
 #include <QStatusBar>
 #include <QTimer>
@@ -67,6 +68,7 @@ private slots:
     void showMainList();
     void onSetAvatarRequested();  // 新增：设置头像槽函数
     void onSystemSettingsRequested(); // 新增：打开系统设置
+    void onToggleStreamingIsland(); // 新增：切换灵动岛显示
     void onScreenSelected(int index); // 新增：屏幕选择槽
     void onAvatarSelected(int iconId);  // 新增：头像选择完成槽函数
     void onClearMarksRequested(); // 新增：清理标记槽函数
@@ -106,6 +108,7 @@ private:
     QString getServerAddress() const;  // 获取服务器地址
     void saveServerAddressToConfig(const QString& serverAddress);  // 保存服务器地址到配置文件
     void saveScreenIndexToConfig(int screenIndex); // 新增：保存屏幕索引到配置
+    int loadScreenIndexFromConfig() const; // 新增：读取屏幕索引
     QString loadUserNameFromConfig() const;
     void saveUserNameToConfig(const QString &name);
     bool loadAudioOutputFollowSystemFromConfig() const;
@@ -198,6 +201,9 @@ private:
     // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
     QString m_currentTargetId;
     
+    // 推流状态灵动岛
+    StreamingIslandWidget *m_islandWidget = nullptr;
+
     // 等待同意弹窗
     class QMessageBox *m_waitingDialog = nullptr;
     // 收到请求时的审批弹窗

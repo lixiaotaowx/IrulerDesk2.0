@@ -11,7 +11,10 @@
 // Custom widget for capsule appearance
 class CapsuleWidget : public QWidget {
 public:
-    explicit CapsuleWidget(QWidget *parent = nullptr) : QWidget(parent) {}
+    explicit CapsuleWidget(QWidget *parent = nullptr) : QWidget(parent) {
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_NoSystemBackground);
+    }
 protected:
     void paintEvent(QPaintEvent *event) override {
         Q_UNUSED(event);
@@ -34,7 +37,11 @@ StreamingIslandWidget::StreamingIslandWidget(QWidget *parent)
 {
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_DeleteOnClose, false);
+    
+    // 确保背景透明，避免出现黑色矩形背景
+    setStyleSheet("background: transparent;");
 
     // Create annotation widget as a separate top-level window
     m_annotationWidget = new ScreenAnnotationWidget(nullptr); 

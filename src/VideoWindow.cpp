@@ -139,7 +139,8 @@ void VideoWindow::setupUI()
     m_fullscreenBarLayout->setContentsMargins(12, 0, 4, 0);
     m_fullscreenBarLayout->setSpacing(0);
     m_fullscreenPill = new QWidget(m_fullscreenBar);
-    m_fullscreenPill->setStyleSheet("QWidget { background-color: rgba(0,0,0,120); border-radius: 14px; } ");
+    m_fullscreenPill->setObjectName("fullscreenPill");
+    m_fullscreenPill->setStyleSheet("#fullscreenPill { background-color: rgba(0,0,0,120); border-radius: 14px; } ");
     m_fullscreenPillLayout = new QHBoxLayout(m_fullscreenPill);
     m_fullscreenPillLayout->setContentsMargins(10, 2, 10, 2);
     m_fullscreenPillLayout->setSpacing(6);

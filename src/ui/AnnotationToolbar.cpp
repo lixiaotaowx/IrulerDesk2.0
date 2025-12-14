@@ -5,6 +5,9 @@
 AnnotationToolbar::AnnotationToolbar(QWidget *parent)
     : QWidget(parent)
 {
+    // Ensure transparent background so it blends with the capsule
+    setAttribute(Qt::WA_TranslucentBackground);
+    setStyleSheet("background: transparent;");
     setupUI();
 }
 

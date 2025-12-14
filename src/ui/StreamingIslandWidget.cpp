@@ -161,9 +161,9 @@ void StreamingIslandWidget::showOnScreen()
     }
 
     if (screen) {
-        // Position Island at TOP center
+        // Position Island at TOP LEFT with margin
         QRect screenGeom = screen->availableGeometry();
-        int x = screenGeom.x() + (screenGeom.width() - width()) / 2;
+        int x = screenGeom.x() + 20; // 20px from left edge
         int y = screenGeom.y(); // 0px from top (flush)
         
         move(x, y);

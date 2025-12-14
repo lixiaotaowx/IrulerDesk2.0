@@ -631,7 +631,7 @@ void VideoWindow::setupCustomTitleBar()
 
 void VideoWindow::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && m_titleBar->geometry().contains(event->pos())) {
+    if (event->button() == Qt::LeftButton && m_titleBar->geometry().contains(event->pos()) && !m_isMaximized) {
         m_dragging = true;
         m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
         event->accept();

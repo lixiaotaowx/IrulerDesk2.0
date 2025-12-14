@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 #include "VideoWindow.h"
+#include <QSoundEffect>
+#include <QUrl>
 #include "ui/TransparentImageList.h"
 #include "video_components/VideoDisplayWidget.h"
 #include "ui/ScreenAnnotationWidget.h"
@@ -1790,6 +1792,14 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
             return;
         }
+
+        // 播放来电提醒音
+        if (!m_alertSound) {
+            m_alertSound = new QSoundEffect(this);
+            m_alertSound->setSource(QUrl::fromLocalFile(QCoreApplication::applicationDirPath() + "/audio/ling2.wav"));
+            m_alertSound->setVolume(1.0f);
+        }
+        m_alertSound->play();
 
         QString viewerName = obj.contains("viewer_name") ? obj["viewer_name"].toString() : viewerId;
         

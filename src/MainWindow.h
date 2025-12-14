@@ -27,6 +27,7 @@
 class VideoWindow;
 class TransparentImageList;
 class AvatarSettingsWindow;
+class QSoundEffect;
 
 class MainWindow : public QMainWindow
 {
@@ -216,6 +217,9 @@ private:
     class QSystemTrayIcon *m_trayIcon = nullptr;
     QMenu *m_trayMenu = nullptr;
     bool m_inSystemSuspend = false;
+
+    // 提示音
+    QSoundEffect *m_alertSound = nullptr;
 };
 
 #endif // MAINWINDOW_H

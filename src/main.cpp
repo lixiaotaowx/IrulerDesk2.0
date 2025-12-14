@@ -12,6 +12,7 @@
 #include <QGraphicsOpacityEffect>
 #include <QPropertyAnimation>
 #include <QParallelAnimationGroup>
+#include <QTimer>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QByteArray>
@@ -121,21 +122,50 @@ int main(int argc, char *argv[])
         p.drawPixmap(x, y, wm.scaled(w, h, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         p.setOpacity(1.0);
     }
-    QFont f = p.font();
-    f.setPixelSize(20);
-    p.setFont(f);
-    p.setPen(QColor(255,255,255,220));
-    QString t = QStringLiteral("启动中...");
-    QFontMetrics fm(f);
-    int tw = fm.horizontalAdvance(t);
-    int th = fm.height();
-    int bx = (ss.width() - tw) / 2;
-    int by = ss.height() - th - 16;
-    p.drawText(QPoint(bx, by), t);
+    // 绘制进度条初始背景（确保启动瞬间可见）
+    int barWidth = ss.width() * 0.4;
+    int barHeight = 4;
+    int barX = (ss.width() - barWidth) / 2;
+    int barY = ss.height() - barHeight - 20;
+
+    // 静态绘制背景
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(255, 255, 255, 60));
+    p.drawRoundedRect(barX, barY, barWidth, barHeight, 2, 2);
+
     p.end();
     QSplashScreen splash(canvas);
     splash.show();
-    
+
+    // 进度条动画
+    QTimer *splashTimer = new QTimer(&app);
+    QObject::connect(splashTimer, &QTimer::timeout, [&splash, canvas, barX, barY, barWidth, barHeight, progress = 0]() mutable {
+        if (progress < 95) {
+            if (progress < 20) progress += 2;
+            else if (progress < 60) progress += 1;
+            else if (progress < 80 && (QRandomGenerator::global()->bounded(2) == 0)) progress += 1;
+            else if (QRandomGenerator::global()->bounded(10) == 0) progress += 1;
+        }
+
+        QPixmap temp = canvas;
+        QPainter p(&temp);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        // 进度条背景
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(255, 255, 255, 60));
+        p.drawRoundedRect(barX, barY, barWidth, barHeight, 2, 2);
+
+        // 进度条前景
+        p.setBrush(QColor(255, 255, 255, 200));
+        int w = (barWidth * progress) / 100;
+        p.drawRoundedRect(barX, barY, w, barHeight, 2, 2);
+        p.end();
+
+        splash.setPixmap(temp);
+    });
+    splashTimer->start(30);
+
     // 创建并显示主窗口
     MainWindow window;
 
@@ -153,7 +183,9 @@ int main(int argc, char *argv[])
             }
         });
     });
-    QObject::connect(&window, &MainWindow::appReady, &splash, [&splash, &window, canvas]() {
+    QObject::connect(&window, &MainWindow::appReady, &splash, [&splash, &window, canvas, splashTimer]() {
+        splashTimer->stop();
+        splashTimer->deleteLater();
         QRect startRect = splash.geometry();
         TransparentImageList *target = window.transparentImageList();
         QPoint destCenter;

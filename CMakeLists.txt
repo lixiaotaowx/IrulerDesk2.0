@@ -199,6 +199,16 @@ if(DISABLE_ALL_LOGS)
     target_compile_definitions(PlayerProcess PRIVATE DISABLE_ALL_LOGS QT_NO_DEBUG_OUTPUT QT_NO_INFO_OUTPUT QT_NO_WARNING_OUTPUT)
 endif()
 
+# 复制音频文件到构建目录
+add_custom_command(TARGET ScreenStreamApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ScreenStreamApp>/audio
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/audio/ling2.wav"
+    "$<TARGET_FILE_DIR:ScreenStreamApp>/audio/ling2.wav"
+    COMMENT "Copying audio assets..."
+)
+
+
 # 添加Windows特定库
 if(WIN32)
     target_link_libraries(CaptureProcess PRIVATE d3d11 dxgi dbghelp)

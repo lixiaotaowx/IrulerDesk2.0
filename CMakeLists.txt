@@ -429,10 +429,25 @@ set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/src/maps/logo/iruler.ico")
 set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/src/maps/logo/iruler.ico")
 set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 set(CPACK_NSIS_MENU_LINKS "irulerdesk.exe" "IrulerDeskPro")
+set(CPACK_NSIS_MUI_FINISHPAGE_RUN "irulerdesk.exe")
 set(CPACK_GENERATOR "NSIS")
 set(CPACK_NSIS_EXECUTABLE "C:/Program Files (x86)/NSIS/makensis.exe")
-set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "SetShellVarContext current\nWriteRegStr HKCU $\"Software\\Microsoft\\Windows\\CurrentVersion\\Run$\" $\"IrulerDeskPro$\" $\"$INSTDIR\\irulerdesk.exe$\"\nExecShell $\"open$\" $\"$INSTDIR\\irulerdesk.exe$\"\n")
-set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "DeleteRegValue HKCU $\"Software\\Microsoft\\Windows\\CurrentVersion\\Run$\" $\"IrulerDeskPro$\"\n")
+
+# 手动管理快捷方式创建（确保使用 All Users 上下文，解决桌面和开机自启无效问题）
+# SetShellVarContext all: 切换到"所有用户"上下文 (ProgramData/Public Desktop)
+# 注意：使用 \\" 转义双引号，确保 NSIS 脚本格式正确
+set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
+    SetShellVarContext all
+    CreateShortCut \\\"$DESKTOP\\\\IrulerDeskPro.lnk\\\" \\\"$INSTDIR\\\\irulerdesk.exe\\\"
+    CreateShortCut \\\"$SMSTARTUP\\\\IrulerDeskPro.lnk\\\" \\\"$INSTDIR\\\\irulerdesk.exe\\\"
+")
+
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "
+    SetShellVarContext all
+    Delete \\\"$DESKTOP\\\\IrulerDeskPro.lnk\\\"
+    Delete \\\"$SMSTARTUP\\\\IrulerDeskPro.lnk\\\"
+")
+
 include(CPack)
 
 # 嵌入应用图标（使用 src/maps/logo/iruler.ico）

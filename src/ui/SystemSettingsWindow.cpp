@@ -321,6 +321,9 @@ QFrame* SystemSettingsWindow::setupManualApprovalControls()
     row->addStretch();
     box->addLayout(row);
 
+    // 默认开启手动同意
+    m_manualApprovalCheck->setChecked(true);
+
     QString configPath = QApplication::applicationDirPath() + "/config/app_config.txt";
     QFile f(configPath);
     if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {

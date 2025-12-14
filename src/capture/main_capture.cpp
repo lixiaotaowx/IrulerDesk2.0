@@ -944,7 +944,8 @@ int main(int argc, char *argv[])
                     f.close();
                 }
             }
-            return false;
+            // 默认开启手动同意，与MainWindow保持一致
+            return true;
         };
 
         if (!isCapturing && sender->isConnected()) {
@@ -1246,7 +1247,8 @@ int main(int argc, char *argv[])
                     f.close();
                 }
             }
-            return false;
+            // 默认开启手动同意，与MainWindow保持一致
+            return true;
         };
 
         if (isManualApprovalEnabledFromConfig()) {

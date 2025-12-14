@@ -2667,7 +2667,8 @@ bool MainWindow::loadManualApprovalEnabledFromConfig() const
         }
         configFile.close();
     }
-    return false;
+    // 默认返回 true，确保首次安装后手动同意是开启的
+    return true;
 }
 
 void MainWindow::saveManualApprovalEnabledToConfig(bool enabled)

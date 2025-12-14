@@ -246,11 +246,17 @@ void WebSocketSender::onConnected()
     emit connected();
 
     if (isPublisher) {
+        // [Privacy Change] Disable auto-start on connect.
+        // We should ONLY start streaming when we receive a 'watch_request' or 'start_streaming' command.
+        // This ensures that a restarted process sits in IDLE mode until a viewer is actually present.
+        /*
         if (!isManualApprovalEnabled()) {
             qDebug() << "[Sender] Publisher connected, auto-starting streaming (bypassing server trigger)";
             startStreaming();
             emit requestKeyFrame();
         }
+        */
+        qDebug() << "[Sender] Publisher connected. Waiting for server commands (Standby Mode).";
     }
 }
 

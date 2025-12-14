@@ -914,48 +914,21 @@ int main(int argc, char *argv[])
     applyQualitySetting(currentQuality);
     
     // 安全启动定时器：如果连接成功后3秒仍未收到start_streaming信号，则强制启动
-    // 这可以解决服务器未发送指令或指令丢失导致的问题
+    // [Privacy Change] Disabled safety auto-start.
+    // The process must remain IDLE until explicitly requested by a viewer.
+    // This prevents "Ghost Streaming" when the process restarts automatically.
     QTimer *safetyStartTimer = new QTimer(&app);
     safetyStartTimer->setInterval(3000);
     safetyStartTimer->setSingleShot(true);
     
     QObject::connect(sender, &WebSocketSender::connected, [safetyStartTimer]() {
-        qDebug() << "[CaptureProcess] Connected to server. Starting safety timer (3s)...";
-        safetyStartTimer->start();
+        // qDebug() << "[CaptureProcess] Connected to server. Starting safety timer (3s)...";
+        // safetyStartTimer->start(); 
+        qDebug() << "[CaptureProcess] Connected to server. Standing by for viewer request.";
     });
     
     QObject::connect(safetyStartTimer, &QTimer::timeout, [&, sender]() {
-        auto isManualApprovalEnabledFromConfig = []() -> bool {
-            QStringList paths;
-            paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-            paths << QDir::currentPath() + "/config/app_config.txt";
-            for (const QString &p : paths) {
-                QFile f(p);
-                if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                    QTextStream in(&f);
-                    while (!in.atEnd()) {
-                        QString line = in.readLine();
-                        if (line.startsWith("manual_approval_enabled=")) {
-                            QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
-                            f.close();
-                            return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
-                        }
-                    }
-                    f.close();
-                }
-            }
-            // 默认开启手动同意，与MainWindow保持一致
-            return true;
-        };
-
-        if (!isCapturing && sender->isConnected()) {
-            if (!isManualApprovalEnabledFromConfig()) {
-                qDebug() << "[CaptureProcess] Safety Timer Triggered: Auto-start (manual approval disabled).";
-                sender->startStreaming();
-            } else {
-                qDebug() << "[CaptureProcess] Safety Timer: Manual approval enabled, skip auto-start.";
-            }
-        }
+        // Disabled logic
     });
 
 
@@ -1068,11 +1041,50 @@ int main(int argc, char *argv[])
             qDebug() << "[CaptureProcess] Status - Capturing: No | Connected:" << sender->isConnected()
                      << "| Waiting for start_streaming signal...";
         }
+        
+        // [Fix] Keep-Alive UI Overlay
+        // Every 3 seconds, if we are capturing, force the overlay windows to stay on top.
+        // This combats the "drawing not visible" issue after long sessions.
+        if (isCapturing) {
+            for (auto *ov : s_overlays) {
+                 if (ov) {
+                     ov->raise();
+                     // Check if window handle is still valid (primitive check)
+                     if (!ov->isVisible()) ov->show();
+                 }
+            }
+        }
+        
+        // [Fix] Zombie Process Self-Termination
+        // If capture is active but we haven't sent any video frames for 60 seconds (frameCount stuck),
+        // we assume the capture loop is dead or graphics driver is hung.
+        // We exit, letting the Watchdog restart us.
+        static int lastVideoFrameCount = 0;
+        static int stuckVideoCounter = 0;
+        if (isCapturing) {
+            if (frameCount == lastVideoFrameCount) {
+                stuckVideoCounter++;
+                if (stuckVideoCounter >= 20) { // 20 * 3s = 60s
+                    qDebug() << "[CaptureProcess] CRITICAL: Video stuck for 60s! Self-terminating to force restart.";
+                    app.quit();
+                }
+            } else {
+                stuckVideoCounter = 0;
+                lastVideoFrameCount = frameCount;
+            }
+        }
     });
     statusTimer->start(3000); // 3秒一次
 
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
                      [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
+        // [Debug] Log annotation events to diagnose "cannot draw" issues
+        // If logs appear but no drawing -> UI overlay z-order/visibility issue
+        // If no logs appear -> Network/Connection issue
+        if (phase != "move") { // Ignore move events to avoid log spam
+             qDebug() << "[CaptureProcess] Annotation received:" << phase << "from" << viewerId << "at" << x << "," << y;
+        }
+
         int idx = currentScreenIndex;
         if (phase == QStringLiteral("clear")) {
             for (auto *ov : s_overlays) { if (ov) ov->clear(); }
@@ -1085,6 +1097,11 @@ int main(int argc, char *argv[])
             int sx = enc.width() > 0 ? qRound(double(x) * double(orig.width()) / double(enc.width())) : x;
             int sy = enc.height() > 0 ? qRound(double(y) * double(orig.height()) / double(enc.height())) : y;
             s_overlays[idx]->onAnnotationEvent(phase, sx, sy, viewerId, colorId);
+            
+            // [Fix] Force overlay to top when drawing happens
+            // This fixes the issue where overlay might be buried under other windows after long runtime
+            s_overlays[idx]->raise();
+            s_overlays[idx]->show(); 
         }
     });
     QObject::connect(sender, &WebSocketSender::textAnnotationReceived,
@@ -1270,6 +1287,31 @@ int main(int argc, char *argv[])
         }
         for (auto *ov : s_overlays) {
             if (ov) ov->onViewerExited(viewerId);
+        }
+        
+        // [Security] User disconnected, stop streaming immediately to prevent zombie streaming
+        // This assumes 1-on-1 session or that we want to stop when ANY viewer exits (conservative)
+        // Ideally we should check if viewerCount == 0, but since we don't have count sync,
+        // stopping here is the safest bet to prevent "secret recording".
+        // The next viewer will trigger start_streaming again.
+        qDebug() << "[CaptureProcess] Viewer exited:" << viewerId << "-> Stopping stream for privacy/performance.";
+        
+        // Trigger stop logic
+        if (isCapturing) {
+            isCapturing = false;
+            captureTimer->stop();
+            staticMouseCapture->stopCapture();
+            audioTimer->stop();
+            if (audioSource) {
+                audioSource->stop();
+                audioInput = nullptr;
+            }
+            // Reset encoders to free resources
+            if (staticCapture) staticCapture->cleanup();
+            if (staticEncoder) staticEncoder->cleanup();
+            
+            // Notify server we stopped (optional, but good practice)
+            // sender->sendStreamingStopped(); 
         }
     });
 

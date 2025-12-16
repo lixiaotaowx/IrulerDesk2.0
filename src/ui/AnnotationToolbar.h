@@ -26,6 +26,7 @@ signals:
     void colorChanged(int colorId);
     void undoRequested();
     void cameraRequested();
+    void snippetRequested();
     void clearRequested();
 
 private slots:
@@ -45,6 +46,7 @@ private:
     RainbowToolButton *m_eraserButton;
     QPushButton *m_undoButton;
     QPushButton *m_cameraButton;
+    QPushButton *m_snippetButton;
     QPushButton *m_clearButton;
 
     QString m_micButtonStyle;

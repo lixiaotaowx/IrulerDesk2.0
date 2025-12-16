@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
     
     // 设置应用程序信息
     app.setApplicationName("ScreenStreamApp");
-    app.setApplicationVersion("1.0");
+    app.setApplicationVersion("1.0.1");
     app.setOrganizationName("ScreenStream");
     
     // 设置现代化样式

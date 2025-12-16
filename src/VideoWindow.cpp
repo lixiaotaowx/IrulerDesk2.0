@@ -1,4 +1,5 @@
 #include "VideoWindow.h"
+#include "ui/SnippetOverlay.h"
 #include <iostream>
 #include <QPainter>
 #include <QScreen>
@@ -462,6 +463,24 @@ void VideoWindow::setupCustomTitleBar()
     m_cameraButton->setToolTip(QStringLiteral("截图到剪贴板"));
     m_toolBarLayout->addWidget(m_cameraButton);
     m_toolBarLayout->addSpacing(2);
+
+    m_snippetButton = new QPushButton("", m_titleBar);
+    m_snippetButton->setIcon(QIcon(iconDir + "/sel.png"));
+    m_snippetButton->setIconSize(QSize(16, 16));
+    m_snippetButton->setStyleSheet(micButtonStyle);
+    m_snippetButton->setToolTip(QStringLiteral("框选截图"));
+    connect(m_snippetButton, &QPushButton::clicked, this, [this]() {
+         QScreen *screen = this->screen();
+         if (screen) {
+             QPixmap fullPix = screen->grabWindow(0);
+             SnippetOverlay *overlay = new SnippetOverlay(fullPix);
+             overlay->setGeometry(screen->geometry());
+             overlay->show();
+         }
+    });
+    m_toolBarLayout->addWidget(m_snippetButton);
+    m_toolBarLayout->addSpacing(2);
+
     m_toolBarLayout->addWidget(m_clearButton);
 
     m_titleCenter = new QWidget(m_titleBar);
@@ -492,6 +511,7 @@ void VideoWindow::setupCustomTitleBar()
         // m_eraserButton->setStyleSheet(m_eraserButton->isChecked() ? selectedToolStyle : micButtonStyle);
         m_undoButton->setStyleSheet(micButtonStyle);
         m_cameraButton->setStyleSheet(micButtonStyle);
+        m_snippetButton->setStyleSheet(micButtonStyle);
         m_clearButton->setStyleSheet(micButtonStyle);
         // m_arrowButton->setStyleSheet(m_arrowButton->isChecked() ? selectedToolStyle : micButtonStyle);
     };

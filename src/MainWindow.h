@@ -136,6 +136,9 @@ private:
     void sendWatchRequest(const QString& targetDeviceId);
     void startVideoReceiving(const QString& targetDeviceId);
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
+
+    // 显示更新日志
+    void checkAndShowUpdateLog();
 private:
     
     // UI组件

@@ -11,6 +11,7 @@ MouseCapture::MouseCapture(QObject *parent)
     , m_lastPosition(-1, -1)
     , m_isCapturing(false)
     , m_updateInterval(10) // 100Hz更新频率
+    , m_needScaling(false)
 {
     // 连接定时器信号
     connect(m_captureTimer, &QTimer::timeout, this, &MouseCapture::checkMousePosition);
@@ -77,19 +78,62 @@ void MouseCapture::checkMousePosition()
     }
 }
 
+void MouseCapture::setScreenRect(const QRect &sourceRect, const QSize &targetSize)
+{
+    m_sourceRect = sourceRect;
+    m_targetSize = targetSize;
+    // 需要缩放的条件：源区域尺寸与目标尺寸不同，且都不为空
+    // 或者源区域有偏移（非0,0）
+    m_needScaling = ((sourceRect.size() != targetSize || !sourceRect.topLeft().isNull()) && !sourceRect.isEmpty() && !targetSize.isEmpty());
+}
+
 QPoint MouseCapture::getSystemMousePosition() const
 {
 #ifdef _WIN32
     // 使用Windows API获取鼠标位置
     POINT point;
     if (GetCursorPos(&point)) {
-        return QPoint(point.x, point.y);
+        QPoint p(point.x, point.y);
+        
+        // 减去屏幕偏移（如果是多屏或非主屏）
+        if (!m_sourceRect.topLeft().isNull()) {
+            p -= m_sourceRect.topLeft();
+        }
+
+        // 如果需要缩放，将物理坐标映射到编码分辨率
+        if (m_needScaling && m_sourceRect.width() > 0 && m_sourceRect.height() > 0) {
+            // 如果目标尺寸与源尺寸不同，进行缩放
+            // 增加容差：如果尺寸差异小于2像素，不进行缩放，避免浮点误差导致的微小抖动
+            if (qAbs(m_sourceRect.width() - m_targetSize.width()) > 1 || 
+                qAbs(m_sourceRect.height() - m_targetSize.height()) > 1) {
+                int sx = qRound(double(p.x()) * double(m_targetSize.width()) / double(m_sourceRect.width()));
+                int sy = qRound(double(p.y()) * double(m_targetSize.height()) / double(m_sourceRect.height()));
+                return QPoint(sx, sy);
+            }
+        }
+        return p;
     } else {
         return QPoint(-1, -1);
     }
 #else
     // 使用Qt跨平台API获取鼠标位置
-    return QCursor::pos();
+    QPoint p = QCursor::pos();
+    
+    // 减去屏幕偏移
+    if (!m_sourceRect.topLeft().isNull()) {
+        p -= m_sourceRect.topLeft();
+    }
+
+    // 如果需要缩放
+    if (m_needScaling && m_sourceRect.width() > 0 && m_sourceRect.height() > 0) {
+        if (qAbs(m_sourceRect.width() - m_targetSize.width()) > 1 || 
+            qAbs(m_sourceRect.height() - m_targetSize.height()) > 1) {
+            int sx = qRound(double(p.x()) * double(m_targetSize.width()) / double(m_sourceRect.width()));
+            int sy = qRound(double(p.y()) * double(m_targetSize.height()) / double(m_sourceRect.height()));
+            return QPoint(sx, sy);
+        }
+    }
+    return p;
 #endif
 }
 

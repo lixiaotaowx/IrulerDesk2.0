@@ -293,6 +293,7 @@ public:
 signals:
     void approvalReceived();
     void rejectionReceived();
+    void switchScreenRequested(int index);
 
 private slots:
     void sendHeartbeat() {
@@ -307,12 +308,20 @@ private slots:
 
     void onDataReceived() {
         QByteArray data = m_socket->readAll();
-        if (data.contains("CMD_APPROVE")) {
+        QString str = QString::fromUtf8(data);
+        if (str.contains("CMD_APPROVE")) {
             qDebug() << "[CaptureProcess] Received local approval command from MainWindow.";
             emit approvalReceived();
-        } else if (data.contains("CMD_REJECT")) {
+        } else if (str.contains("CMD_REJECT")) {
             qDebug() << "[CaptureProcess] Received local rejection command from MainWindow.";
             emit rejectionReceived();
+        } else if (str.startsWith("CMD_SWITCH_SCREEN:")) {
+            bool ok;
+            int idx = str.mid(18).toInt(&ok);
+            if (ok) {
+                qDebug() << "[CaptureProcess] Received local switch screen command from MainWindow:" << idx;
+                emit switchScreenRequested(idx);
+            }
         }
     }
 
@@ -386,10 +395,22 @@ int main(int argc, char *argv[])
     
     // 创建VP9编码器
     QSize actualScreenSize = capture->getScreenSize();
+    QSize initEncodeSize = actualScreenSize;
+
+    // 限制最大宽度为 1920，超过则等比缩放
+    if (initEncodeSize.width() > 1920) {
+        double ratio = 1920.0 / initEncodeSize.width();
+        initEncodeSize.setWidth(1920);
+        initEncodeSize.setHeight(qRound(initEncodeSize.height() * ratio));
+        // 确保宽高是偶数（某些编码器要求）
+        if (initEncodeSize.width() % 2 != 0) initEncodeSize.setWidth(initEncodeSize.width() - 1);
+        if (initEncodeSize.height() % 2 != 0) initEncodeSize.setHeight(initEncodeSize.height() - 1);
+        qDebug() << "[CaptureProcess] Screen > 1920, scaling down to:" << initEncodeSize;
+    }
     
     VP9Encoder *encoder = new VP9Encoder(&app);
     // 保持现有帧率设置以降低编码负载（避免强制60fps）
-    if (!encoder->initialize(actualScreenSize.width(), actualScreenSize.height(), encoder->getFrameRate())) {
+    if (!encoder->initialize(initEncodeSize.width(), initEncodeSize.height(), encoder->getFrameRate())) {
         return -1;
     }
     // qDebug() << "[CaptureProcess] VP9编码器初始化成功";
@@ -447,6 +468,22 @@ int main(int argc, char *argv[])
     // qDebug() << "[CaptureProcess] 初始化鼠标捕获模块...";
     MouseCapture *mouseCapture = new MouseCapture(&app);
     
+    // 设置鼠标坐标缩放和屏幕偏移
+    // 计算当前屏幕的物理区域
+    QRect currentScreenRect;
+    int initialScreenIdx = getScreenIndexFromConfig();
+    if (initialScreenIdx >= 0 && initialScreenIdx < QApplication::screens().size()) {
+        QScreen *scr = QApplication::screens().at(initialScreenIdx);
+        qreal dpr = scr->devicePixelRatio();
+        QRect geo = scr->geometry();
+        currentScreenRect = QRect(qRound(geo.x() * dpr), qRound(geo.y() * dpr), 
+                                  qRound(geo.width() * dpr), qRound(geo.height() * dpr));
+    } else {
+        currentScreenRect = QRect(0, 0, actualScreenSize.width(), actualScreenSize.height());
+    }
+    
+    mouseCapture->setScreenRect(currentScreenRect, initEncodeSize);
+    
     // 鼠标坐标转换的连接将在下面（静态变量声明之后）设置
     // qDebug() << "[CaptureProcess] 鼠标捕获模块初始化成功，已连接到WebSocket发送器";
     
@@ -467,6 +504,90 @@ int main(int argc, char *argv[])
     // 新增：质量控制相关静态状态
     static QString currentQuality = getLocalQualityFromConfig();
     static QSize targetEncodeSize = staticEncoder->getFrameSize();
+
+    // -------------------------------------------------------------------------
+    // 屏幕切换处理逻辑 (Screen Switch Logic)
+    // -------------------------------------------------------------------------
+    auto handleScreenSwitch = [&](int targetIndex = -1) {
+        const auto screens = QApplication::screens();
+        if (screens.isEmpty()) {
+            return;
+        }
+
+        // 计算目标屏幕索引
+        if (targetIndex >= 0 && targetIndex < screens.size()) {
+            currentScreenIndex = targetIndex;
+        } else {
+            // 默认滚动到下一屏幕
+            currentScreenIndex = (currentScreenIndex + 1) % screens.size();
+        }
+        saveScreenIndexToConfig(currentScreenIndex);
+        
+        // 标记正在切换以避免捕获循环继续抓帧（不断流，仅暂时不发帧）
+        isSwitching = true;
+
+        // 重新初始化屏幕捕获到新屏幕
+        staticCapture->cleanup();
+        staticCapture->setTargetScreenIndex(currentScreenIndex);
+        if (!staticCapture->initialize()) {
+            isSwitching = false;
+            return;
+        }
+
+        QSize newSize = staticCapture->getScreenSize();
+        QSize encodeSize = newSize;
+
+        // 限制最大长边为 1920，超过则等比缩放 (适用于超宽屏或竖屏)
+        if (encodeSize.width() > 1920 || encodeSize.height() > 1920) {
+            double ratioW = 1920.0 / encodeSize.width();
+            double ratioH = 1920.0 / encodeSize.height();
+            double ratio = std::min(ratioW, ratioH);
+            
+            encodeSize.setWidth(qRound(encodeSize.width() * ratio));
+            encodeSize.setHeight(qRound(encodeSize.height() * ratio));
+            
+            // 确保偶数宽高
+            if (encodeSize.width() % 2 != 0) encodeSize.setWidth(encodeSize.width() - 1);
+            if (encodeSize.height() % 2 != 0) encodeSize.setHeight(encodeSize.height() - 1);
+        }
+
+        // 重新初始化编码器以匹配新分辨率
+        staticEncoder->cleanup();
+        // 切屏后保持既有帧率，避免强制提升到60fps
+        if (!staticEncoder->initialize(encodeSize.width(), encodeSize.height(), staticEncoder->getFrameRate())) {
+            isSwitching = false;
+            return;
+        }
+        
+        // 更新目标编码尺寸和鼠标缩放
+        targetEncodeSize = encodeSize;
+        
+        // 更新鼠标捕获的屏幕区域信息
+        QRect newScreenRect;
+        if (currentScreenIndex >= 0 && currentScreenIndex < screens.size()) {
+            QScreen *scr = screens.at(currentScreenIndex);
+            qreal dpr = scr->devicePixelRatio();
+            QRect geo = scr->geometry();
+            newScreenRect = QRect(qRound(geo.x() * dpr), qRound(geo.y() * dpr), 
+                                  qRound(geo.width() * dpr), qRound(geo.height() * dpr));
+        } else {
+            newScreenRect = QRect(0, 0, newSize.width(), newSize.height());
+        }
+        
+        staticMouseCapture->setScreenRect(newScreenRect, encodeSize);
+        
+        staticEncoder->forceKeyFrame();
+
+        if (currentScreenIndex >= 0 && currentScreenIndex < s_overlays.size()) {
+            s_overlays[currentScreenIndex]->raise();
+        }
+        if (currentScreenIndex >= 0 && currentScreenIndex < s_cursorOverlays.size()) {
+            s_cursorOverlays[currentScreenIndex]->raise();
+        }
+
+        // 切换完成，恢复捕获循环发帧
+        isSwitching = false;
+    };
 
     // 新增：音频发送（改为麦克风采集，基于文本消息）
     QTimer *audioTimer = new QTimer(&app);
@@ -871,12 +992,41 @@ int main(int argc, char *argv[])
             desired = orig;
         }
 
+        // 全局限制：无论什么画质，最大长边不超过 1920
+        if (desired.width() > 1920 || desired.height() > 1920) {
+            double ratioW = 1920.0 / desired.width();
+            double ratioH = 1920.0 / desired.height();
+            double ratio = std::min(ratioW, ratioH);
+            
+            desired.setWidth(qRound(desired.width() * ratio));
+            desired.setHeight(qRound(desired.height() * ratio));
+        }
+        
+        // 确保偶数宽高
+        if (desired.width() % 2 != 0) desired.setWidth(desired.width() - 1);
+        if (desired.height() % 2 != 0) desired.setHeight(desired.height() - 1);
+
         staticEncoder->setQualityPreset(q);
         staticEncoder->cleanup();
         if (!staticEncoder->initialize(desired.width(), desired.height(), staticEncoder->getFrameRate())) {
             return; // 保持旧状态以避免崩溃
         }
         targetEncodeSize = staticEncoder->getFrameSize();
+        
+        // 更新鼠标缩放比例（同时更新屏幕区域）
+        QRect qScreenRect;
+        int qScreenIdx = currentScreenIndex;
+        if (qScreenIdx >= 0 && qScreenIdx < QApplication::screens().size()) {
+            QScreen *scr = QApplication::screens().at(qScreenIdx);
+            qreal dpr = scr->devicePixelRatio();
+            QRect geo = scr->geometry();
+            qScreenRect = QRect(qRound(geo.x() * dpr), qRound(geo.y() * dpr), 
+                                qRound(geo.width() * dpr), qRound(geo.height() * dpr));
+        } else {
+            qScreenRect = QRect(0, 0, orig.width(), orig.height());
+        }
+        
+        staticMouseCapture->setScreenRect(qScreenRect, targetEncodeSize);
 
         // 按质量调整码率与静态内容降码策略
         // 全局启用静态帧跳过以实现最低流量
@@ -1079,9 +1229,7 @@ int main(int argc, char *argv[])
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
                      [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
         // [Debug] Log annotation events to diagnose "cannot draw" issues
-        // If logs appear but no drawing -> UI overlay z-order/visibility issue
-        // If no logs appear -> Network/Connection issue
-        if (phase != "move") { // Ignore move events to avoid log spam
+        if (phase != "move") { 
              qDebug() << "[CaptureProcess] Annotation received:" << phase << "from" << viewerId << "at" << x << "," << y;
         }
 
@@ -1092,14 +1240,17 @@ int main(int argc, char *argv[])
             return;
         }
         if (idx >= 0 && idx < s_overlays.size()) {
-            QSize orig = staticCapture->getScreenSize();
+            // 直接使用 Overlay Widget 的逻辑尺寸进行映射
+            // 这避免了物理分辨率/DPR换算的复杂性和潜在错误 (如 4K 屏双倍映射问题)
+            QSize logicalSize = s_overlays[idx]->size();
             QSize enc = targetEncodeSize;
-            int sx = enc.width() > 0 ? qRound(double(x) * double(orig.width()) / double(enc.width())) : x;
-            int sy = enc.height() > 0 ? qRound(double(y) * double(orig.height()) / double(enc.height())) : y;
+            
+            int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+            int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+            
             s_overlays[idx]->onAnnotationEvent(phase, sx, sy, viewerId, colorId);
             
             // [Fix] Force overlay to top when drawing happens
-            // This fixes the issue where overlay might be buried under other windows after long runtime
             s_overlays[idx]->raise();
             s_overlays[idx]->show(); 
         }
@@ -1108,10 +1259,12 @@ int main(int argc, char *argv[])
                      [&](const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize) {
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_overlays.size()) {
-            QSize orig = staticCapture->getScreenSize();
+            QSize logicalSize = s_overlays[idx]->size();
             QSize enc = targetEncodeSize;
-            int sx = enc.width() > 0 ? qRound(double(x) * double(orig.width()) / double(enc.width())) : x;
-            int sy = enc.height() > 0 ? qRound(double(y) * double(orig.height()) / double(enc.height())) : y;
+            
+            int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+            int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+            
             s_overlays[idx]->onTextAnnotation(text, sx, sy, viewerId, colorId, fontSize);
         }
     });
@@ -1141,9 +1294,14 @@ int main(int argc, char *argv[])
     }
 
     // 连接推流控制信号
-    QObject::connect(sender, &WebSocketSender::streamingStarted, [&, startAudio]() {
+    QObject::connect(sender, &WebSocketSender::streamingStarted, [&, startAudio, applyQualitySetting]() {
         qDebug() << "[CaptureProcess] Streaming started signal received. isCapturing:" << isCapturing;
         if (!isCapturing) {
+            // [Fix] 重新应用画质设置，确保编码器分辨率与 targetEncodeSize 一致
+            // 避免 streamingStopped 重置为全分辨率后导致的鼠标映射错误
+            applyQualitySetting(currentQuality);
+            qDebug() << "[CaptureProcess] Quality applied on start. TargetEncodeSize:" << targetEncodeSize;
+
             isCapturing = true;
             // 降低帧率以应对多人观看：从33ms(30fps)调整为66ms(15fps)
             // 这是一个非常稳妥的折中值，既能保证流畅度，又能将流量和CPU减半
@@ -1226,10 +1384,21 @@ int main(int argc, char *argv[])
                      [&](const QString &viewerId, int x, int y, const QString &viewerName) {
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_cursorOverlays.size()) {
-            QSize orig = staticCapture->getScreenSize();
+            // 直接使用 Overlay Widget 的逻辑尺寸进行映射
+            // 避免了依赖 QApplication::screens() 索引一致性和 Fallback 到物理尺寸的风险
+            QSize logicalSize = s_cursorOverlays[idx]->size();
             QSize enc = targetEncodeSize;
-            int sx = enc.width() > 0 ? qRound(double(x) * double(orig.width()) / double(enc.width())) : x;
-            int sy = enc.height() > 0 ? qRound(double(y) * double(orig.height()) / double(enc.height())) : y;
+
+            int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+            int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+            
+            // static int logCount = 0;
+            // if (++logCount % 60 == 0) {
+            //      qDebug() << "[CursorMap] In(" << x << "," << y << ") "
+            //               << "LogSize:" << logicalSize << " EncSize:" << enc 
+            //               << " -> Out(" << sx << "," << sy << ")";
+            // }
+
             s_cursorOverlays[idx]->onViewerCursor(viewerId, sx, sy, viewerName);
         }
     });
@@ -1351,55 +1520,22 @@ int main(int argc, char *argv[])
     
 
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕
-    QObject::connect(sender, &WebSocketSender::switchScreenRequested, [](const QString &direction, int targetIndex) {
-        const auto screens = QApplication::screens();
-        if (screens.isEmpty()) {
-            return;
+    QObject::connect(sender, &WebSocketSender::switchScreenRequested, 
+                     [&](const QString &direction, int targetIndex) {
+        int finalIndex = -1;
+        if (direction == "index") {
+            finalIndex = targetIndex;
         }
-
-        // 计算目标屏幕索引
-        if (direction == "index" && targetIndex >= 0 && targetIndex < screens.size()) {
-            currentScreenIndex = targetIndex;
-        } else {
-            // 默认滚动到下一屏幕
-            currentScreenIndex = (currentScreenIndex + 1) % screens.size();
-        }
-        saveScreenIndexToConfig(currentScreenIndex);
-        
-        
-        // 标记正在切换以避免捕获循环继续抓帧（不断流，仅暂时不发帧）
-        isSwitching = true;
-
-        // 重新初始化屏幕捕获到新屏幕
-        staticCapture->cleanup();
-        staticCapture->setTargetScreenIndex(currentScreenIndex);
-        if (!staticCapture->initialize()) {
-            isSwitching = false;
-            return;
-        }
-
-        QSize newSize = staticCapture->getScreenSize();
-
-        // 重新初始化编码器以匹配新分辨率
-        staticEncoder->cleanup();
-        // 切屏后保持既有帧率，避免强制提升到60fps
-        if (!staticEncoder->initialize(newSize.width(), newSize.height(), staticEncoder->getFrameRate())) {
-            isSwitching = false;
-            return;
-        }
-        staticEncoder->forceKeyFrame();
-
-        
-        if (currentScreenIndex >= 0 && currentScreenIndex < s_overlays.size()) {
-            s_overlays[currentScreenIndex]->raise();
-        }
-        if (currentScreenIndex >= 0 && currentScreenIndex < s_cursorOverlays.size()) {
-            s_cursorOverlays[currentScreenIndex]->raise();
-        }
-
-        // 切换完成，恢复捕获循环发帧
-        isSwitching = false;
+        handleScreenSwitch(finalIndex);
     });
+
+    // 处理本地切换屏幕请求
+    if (watchdog) {
+        QObject::connect(watchdog, &WatchdogClient::switchScreenRequested, 
+                         [&](int index) {
+            handleScreenSwitch(index);
+        });
+    }
 
     // 新增：处理质量变更请求
     QObject::connect(sender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
@@ -1612,21 +1748,13 @@ int main(int argc, char *argv[])
             if (captureLatency > 20000) { // 超过20ms时输出警告
             }
             
-            // 如果编码目标分辨率与屏幕尺寸不同（例如低质720p），进行缩放
-            const QSize encSize = staticEncoder->getFrameSize();
+            // 如果编码目标分辨率与屏幕尺寸不同（例如低质720p），VP9Encoder会自动使用libyuv进行高效缩放
+            // 移除了此前导致4K卡顿和异常的QImage::scaled操作
             const QSize capSize = staticCapture->getScreenSize();
-            if (encSize != capSize) {
-                QImage src(reinterpret_cast<const uchar*>(frameData.constData()),
-                           capSize.width(), capSize.height(), QImage::Format_ARGB32);
-                QImage scaled = src.scaled(encSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                QByteArray scaledData;
-                scaledData.resize(scaled.sizeInBytes());
-                memcpy(scaledData.data(), scaled.constBits(), scaled.sizeInBytes());
-                frameData = scaledData;
-            }
             
-            // 继续正常的VP9编码流程
-            staticEncoder->encode(frameData);
+            // 继续正常的VP9编码流程，传入实际捕获的尺寸
+            // encode内部会根据初始化尺寸和输入尺寸自动判断是否需要缩放
+            staticEncoder->encode(frameData, capSize.width(), capSize.height());
         }
     });
     

@@ -22,7 +22,7 @@ public:
     bool initialize(int width, int height, int fps);
     void cleanup();
     
-    QByteArray encode(const QByteArray &frameData);
+    QByteArray encode(const QByteArray &frameData, int inputWidth = -1, int inputHeight = -1);
     
     // 编码参数
     void setBitrate(int bitrate) { m_bitrate = bitrate; }
@@ -56,7 +56,7 @@ public slots:
 
 private:
     bool initializeEncoder();
-    bool convertRGBAToYUV420(const QByteArray &rgbaData, uint8_t **yuvPlanes);
+    bool convertRGBAToYUV420(const QByteArray &rgbaData, int inputWidth, int inputHeight, uint8_t **yuvPlanes);
     QByteArray encodeFrame(const uint8_t *yPlane, const uint8_t *uPlane, const uint8_t *vPlane);
     
     // 静态检测相关方法
@@ -99,6 +99,9 @@ private:
     uint8_t *m_vPlane;
     int m_yPlaneSize;
     int m_uvPlaneSize;
+    
+    // 缩放缓冲
+    QByteArray m_scaledArgbBuffer;
     
     // 线程安全
     QMutex m_mutex;

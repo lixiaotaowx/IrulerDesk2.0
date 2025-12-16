@@ -82,6 +82,15 @@ void AnnotationToolbar::setupUI()
     m_cameraButton = createNormalBtn("camera.png", QStringLiteral("截图到剪贴板"));
     connect(m_cameraButton, &QPushButton::clicked, this, &AnnotationToolbar::cameraRequested);
 
+    // Snippet Button
+    m_snippetButton = new QPushButton("", this);
+    m_snippetButton->setIcon(QIcon(iconDir + "/sel.png"));
+    m_snippetButton->setIconSize(QSize(16, 16));
+    m_snippetButton->setFixedSize(24, 24);
+    m_snippetButton->setToolTip(QStringLiteral("框选截图"));
+    m_snippetButton->setStyleSheet(m_micButtonStyle); // Use shared style
+    connect(m_snippetButton, &QPushButton::clicked, this, &AnnotationToolbar::snippetRequested);
+
     // Clear Button (Replaces Like)
     m_clearButton = new QPushButton("清", this);
     m_clearButton->setFixedSize(24, 24);
@@ -117,6 +126,8 @@ void AnnotationToolbar::setupUI()
     m_layout->addWidget(m_undoButton);
     m_layout->addSpacing(2);
     m_layout->addWidget(m_cameraButton);
+    m_layout->addSpacing(2);
+    m_layout->addWidget(m_snippetButton);
     m_layout->addSpacing(2);
     m_layout->addWidget(m_clearButton);
 }

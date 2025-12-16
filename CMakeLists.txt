@@ -67,6 +67,8 @@ set(MAIN_SOURCES
     src/ui/FirstLaunchWizard.h            # 首次启动引导设置对话框声明
     src/ui/StreamingIslandWidget.cpp      # 推流状态灵动岛悬浮窗
     src/ui/StreamingIslandWidget.h        # 推流状态灵动岛悬浮窗声明
+    src/ui/SnippetOverlay.cpp             # 截图选择遮罩层
+    src/ui/SnippetOverlay.h               # 截图选择遮罩层声明
 )
 
 # 屏幕捕获编码进程源文件
@@ -206,6 +208,13 @@ add_custom_command(TARGET ScreenStreamApp POST_BUILD
     "${CMAKE_CURRENT_SOURCE_DIR}/src/audio/ling2.wav"
     "$<TARGET_FILE_DIR:ScreenStreamApp>/audio/ling2.wav"
     COMMENT "Copying audio assets..."
+)
+
+# 拷贝更新日志文件
+add_custom_command(TARGET ScreenStreamApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/src/UpdateLog.html"
+    "$<TARGET_FILE_DIR:ScreenStreamApp>/UpdateLog.html"
 )
 
 
@@ -411,7 +420,7 @@ include(InstallRequiredSystemLibraries)
 set(CPACK_PACKAGE_NAME "IrulerDeskPro")
 set(CPACK_PACKAGE_VENDOR "lunzi")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "屏幕采集、VP9 传输、Qt 前端一体化客户端")
-set(CPACK_PACKAGE_VERSION "0.1.0")
+set(CPACK_PACKAGE_VERSION "1.0.1")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win64")
 set(CPACK_SYSTEM_NAME "Windows")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "IrulerDeskPro")

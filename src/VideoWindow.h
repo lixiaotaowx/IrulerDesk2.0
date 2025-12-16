@@ -71,6 +71,7 @@ private:
     RainbowToolButton *m_eraserButton;
     QPushButton *m_undoButton;
     QPushButton *m_cameraButton;
+    QPushButton *m_snippetButton;
     QPushButton *m_clearButton;
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;

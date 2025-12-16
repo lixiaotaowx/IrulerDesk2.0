@@ -144,6 +144,10 @@ private:
     // 捕获鼠标并映射到源坐标
     bool eventFilter(QObject *obj, QEvent *event) override;
     QPoint mapLabelToSource(const QPoint &labelPoint) const;
+
+    // 鼠标输入坐标系是否检测为物理坐标（用于高分屏修正）
+    mutable bool m_inputIsPhysical = false;
+
     void closeEvent(QCloseEvent *event) override;
     void applyCursor();
     double currentScale() const;

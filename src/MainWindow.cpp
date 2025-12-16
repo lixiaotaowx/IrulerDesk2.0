@@ -52,6 +52,8 @@ namespace {
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QDateTime>
+#include <QSettings>
+#include <QTextEdit>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -124,6 +126,97 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 自动开始流媒体传输
     // QTimer::singleShot(1000, this, &MainWindow::startStreaming);
+    
+    // 检查并显示更新日志
+    QTimer::singleShot(500, this, &MainWindow::checkAndShowUpdateLog);
+}
+
+void MainWindow::checkAndShowUpdateLog()
+{
+    // 获取应用程序版本号（从main.cpp中设置的）
+    const QString CURRENT_VERSION = QCoreApplication::applicationVersion();
+    
+    QSettings settings("ScreenStream", "ScreenStreamApp");
+    QString lastVersion = settings.value("app_version", "").toString();
+    
+    // 如果是首次安装（lastVersion为空）或版本更新
+    // 注意：如果是首次安装，也应该弹出日志，让用户知道这个版本的特性
+    // 逻辑：lastVersion为空 -> 不等于CURRENT_VERSION -> 进入分支 -> 弹出 -> 写入当前版本
+    if (lastVersion != CURRENT_VERSION) {
+        // 更新存储的版本号
+        settings.setValue("app_version", CURRENT_VERSION);
+        
+        // 创建大字体的更新日志窗口
+        QDialog *logDialog = new QDialog(this);
+        logDialog->setWindowTitle(QStringLiteral("更新日志 / Update Log"));
+        logDialog->setMinimumSize(600, 400);
+        logDialog->setWindowFlags(logDialog->windowFlags() & ~Qt::WindowContextHelpButtonHint); // 移除问号按钮
+        
+        QVBoxLayout *layout = new QVBoxLayout(logDialog);
+        
+        QLabel *title = new QLabel(QStringLiteral("✨ 新版本更新说明 ✨"), logDialog);
+        QFont titleFont = title->font();
+        titleFont.setPointSize(20);
+        titleFont.setBold(true);
+        title->setFont(titleFont);
+        title->setAlignment(Qt::AlignCenter);
+        title->setStyleSheet("color: #4CAF50; margin-bottom: 10px;");
+        layout->addWidget(title);
+        
+        QTextEdit *content = new QTextEdit(logDialog);
+        content->setReadOnly(true);
+        QFont contentFont = content->font();
+        contentFont.setPointSize(14); // 大字体
+        content->setFont(contentFont);
+        
+        // 读取外部日志文件内容
+        QString html;
+        QString logPath = QCoreApplication::applicationDirPath() + "/UpdateLog.html";
+        // 开发环境路径兼容（如果需要）
+        if (!QFile::exists(logPath)) {
+             logPath = QCoreApplication::applicationDirPath() + "/../../src/UpdateLog.html";
+        }
+
+        QFile logFile(logPath);
+        if (logFile.exists() && logFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            html = QString::fromUtf8(logFile.readAll());
+            logFile.close();
+        } else {
+            // 文件读取失败时的默认显示
+            html = R"(
+                <body style="background-color:#2b2b2b; color:#ffffff;">
+                <p>暂无更新说明。</p>
+                </body>
+            )";
+        }
+        
+        content->setHtml(html);
+        content->setStyleSheet("QTextEdit { border: none; background-color: #2b2b2b; }");
+        layout->addWidget(content);
+        
+        QPushButton *btn = new QPushButton(QStringLiteral("我知道了 / Got it"), logDialog);
+        btn->setMinimumHeight(50);
+        QFont btnFont = btn->font();
+        btnFont.setPointSize(12);
+        btnFont.setBold(true);
+        btn->setFont(btnFont);
+        btn->setStyleSheet(
+            "QPushButton { "
+            "   background-color: #2196F3; "
+            "   color: white; "
+            "   border-radius: 5px; "
+            "   border: none; "
+            "}"
+            "QPushButton:hover { background-color: #1976D2; }"
+            "QPushButton:pressed { background-color: #0D47A1; }"
+        );
+        connect(btn, &QPushButton::clicked, logDialog, &QDialog::accept);
+        layout->addWidget(btn);
+        
+        // 模态显示
+        logDialog->exec();
+        delete logDialog;
+    }
 }
 
 #ifdef _WIN32
@@ -1803,6 +1896,21 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
 
         QString viewerName = obj.contains("viewer_name") ? obj["viewer_name"].toString() : viewerId;
         
+        // [Fix] 优先使用本地用户列表中的名字（如果存在），确保显示最新名字
+        if (m_listWidget) {
+            for (int i = 0; i < m_listWidget->count(); ++i) {
+                QListWidgetItem* item = m_listWidget->item(i);
+                if (item && item->data(Qt::UserRole).toString() == viewerId) {
+                    QString text = item->text();
+                    int idx = text.lastIndexOf(" (");
+                    if (idx != -1) {
+                        viewerName = text.left(idx);
+                    }
+                    break;
+                }
+            }
+        }
+        
         bool manualApproval = loadManualApprovalEnabledFromConfig();
         bool isConnected = m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState;
 
@@ -2356,6 +2464,31 @@ void MainWindow::onManualApprovalEnabledChanged(bool enabled)
 
 void MainWindow::onScreenSelected(int index)
 {
+    // [New] Direct control of CaptureProcess when streaming (align with consumer right-click behavior)
+    if (m_isStreaming && m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+        QString cmd = QString("CMD_SWITCH_SCREEN:%1").arg(index);
+        m_currentWatchdogSocket->write(cmd.toUtf8());
+        m_currentWatchdogSocket->flush();
+        qDebug() << "Sent direct screen switch command to CaptureProcess:" << cmd;
+        
+        // Notify Settings UI
+        if (m_systemSettingsWindow) {
+            m_systemSettingsWindow->notifySwitchSucceeded();
+        }
+        
+        // Update Dynamic Island
+        if (m_islandWidget) {
+             const auto screens = QGuiApplication::screens();
+             if (index >= 0 && index < screens.size()) {
+                 m_islandWidget->setTargetScreen(screens[index]);
+                 m_islandWidget->showOnScreen();
+             }
+        }
+        
+        saveScreenIndexToConfig(index);
+        return;
+    }
+
     bool active = false;
     if (m_videoWindow) {
         auto *videoWidget = m_videoWindow->getVideoDisplayWidget();

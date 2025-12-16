@@ -3,6 +3,8 @@
 #include <QBuffer>
 #include <QImageWriter>
 #include <QGuiApplication>
+#include <cstring> // for memcpy
+#include <QRect>
 
 ScreenCapture::ScreenCapture(QObject *parent)
     : QObject(parent)
@@ -34,7 +36,10 @@ bool ScreenCapture::initialize()
         return false;
     }
     
-    m_screenSize = m_primaryScreen->size();
+    // 获取物理分辨率（处理DPI缩放）
+    qreal dpr = m_primaryScreen->devicePixelRatio();
+    m_screenSize = m_primaryScreen->size() * dpr;
+    // qDebug() << "[ScreenCapture] Screen size:" << m_screenSize << "DPR:" << dpr;
     
 #ifdef _WIN32
     // 尝试使用D3D11进行硬件加速捕获
@@ -144,10 +149,17 @@ bool ScreenCapture::initializeD3D11()
     }
     
     // 选择对应DXGI输出：根据Qt屏幕geometry匹配
+    // 注意：Qt的geometry是逻辑坐标，DXGI是物理坐标，需要转换
+    qreal dpr = m_primaryScreen->devicePixelRatio();
+    QRect geo = m_primaryScreen->geometry();
+    RECT targetRect = { 
+        (LONG)(geo.x() * dpr), 
+        (LONG)(geo.y() * dpr),
+        (LONG)((geo.x() + geo.width()) * dpr),
+        (LONG)((geo.y() + geo.height()) * dpr) 
+    };
+
     int selectedOutputIndex = 0;
-    RECT targetRect = { m_primaryScreen->geometry().x(), m_primaryScreen->geometry().y(),
-                        m_primaryScreen->geometry().x() + m_primaryScreen->geometry().width(),
-                        m_primaryScreen->geometry().y() + m_primaryScreen->geometry().height() };
     for (int i = 0; i < 8; ++i) {
         ComPtr<IDXGIOutput> out;
         HRESULT hrEnum = m_dxgiAdapter->EnumOutputs(i, out.GetAddressOf());
@@ -299,16 +311,34 @@ QByteArray ScreenCapture::captureWithQt()
     if (image.isNull()) {
         return QByteArray();
     }
-    
-    // 确保格式为ARGB32 (VP9编码器期望ARGB格式)
+
+    // 更新屏幕尺寸（Qt捕获的尺寸可能与D3D11不同，或者是逻辑/物理尺寸变化）
+    if (image.size() != m_screenSize) {
+        m_screenSize = image.size();
+    }
+
+    // 确保格式为Format_ARGB32（与D3D11保持一致，且便于后续处理）
     if (image.format() != QImage::Format_ARGB32) {
         image = image.convertToFormat(QImage::Format_ARGB32);
     }
     
-    // 返回原始像素数据
+    // 紧凑打包数据（去除可能的填充字节，确保main_capture能正确解析）
+    int width = image.width();
+    int height = image.height();
+    int bpp = 4;
+    
     QByteArray frameData;
-    frameData.resize(image.sizeInBytes());
-    memcpy(frameData.data(), image.constBits(), image.sizeInBytes());
+    frameData.resize(width * height * bpp);
+    
+    if (image.bytesPerLine() == width * bpp) {
+        memcpy(frameData.data(), image.constBits(), frameData.size());
+    } else {
+        const uchar* src = image.constBits();
+        uchar* dst = reinterpret_cast<uchar*>(frameData.data());
+        for (int y = 0; y < height; ++y) {
+            memcpy(dst + y * width * bpp, src + y * image.bytesPerLine(), width * bpp);
+        }
+    }
     
     return frameData;
 }

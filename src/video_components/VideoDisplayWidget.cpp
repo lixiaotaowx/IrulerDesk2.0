@@ -885,6 +885,33 @@ QPoint VideoDisplayWidget::mapLabelToSource(const QPoint &labelPoint) const
     const QSize labelSize = m_videoLabel->size();
     if (frameSize.isEmpty() || labelSize.isEmpty()) return QPoint(-1, -1);
 
+    // [High-DPI Fix] 检测是否处于物理坐标输入模式
+    // 如果在高分屏(DPR>1.1)下，输入坐标超出了逻辑尺寸范围，说明系统提供了物理坐标
+    // 这种情况下需要除以DPR来还原为逻辑坐标
+    qreal dpr = m_videoLabel->devicePixelRatio();
+    QPoint effectivePoint = labelPoint;
+
+    if (dpr > 1.1) {
+        if (!m_inputIsPhysical) {
+            // 启发式检测：如果坐标超出了逻辑尺寸的边界(加一点容差)，则判定为物理坐标
+            // 这通常发生在系统DPI缩放策略与Qt不完全兼容时
+            if (labelPoint.x() > labelSize.width() + 5 || labelPoint.y() > labelSize.height() + 5) {
+                m_inputIsPhysical = true;
+                qDebug() << "[VideoDisplayWidget] Detected Physical Mouse Coordinates (Pos:" 
+                         << labelPoint << " Size:" << labelSize << " DPR:" << dpr << "). Switching to Physical Input Mode.";
+            }
+        }
+
+        if (m_inputIsPhysical) {
+            effectivePoint = QPoint(qRound(labelPoint.x() / dpr), qRound(labelPoint.y() / dpr));
+        }
+    } else {
+        // 如果DPR回归为1，重置检测状态（可能是拖到了普通屏幕）
+        if (m_inputIsPhysical) {
+             m_inputIsPhysical = false;
+        }
+    }
+
     const double sx = static_cast<double>(labelSize.width()) / static_cast<double>(frameSize.width());
     const double sy = static_cast<double>(labelSize.height()) / static_cast<double>(frameSize.height());
     const double scale = (sx < sy ? sx : sy);
@@ -893,14 +920,13 @@ QPoint VideoDisplayWidget::mapLabelToSource(const QPoint &labelPoint) const
     const int offsetX = (labelSize.width() - scaledW) / 2;
     const int offsetY = (labelSize.height() - scaledH) / 2;
 
-    // 若鼠标在黑边区域，则认为不在视频区域内
-    if (labelPoint.x() < offsetX || labelPoint.y() < offsetY ||
-        labelPoint.x() > offsetX + scaledW || labelPoint.y() > offsetY + scaledH) {
+    if (effectivePoint.x() < offsetX || effectivePoint.y() < offsetY ||
+        effectivePoint.x() > offsetX + scaledW || effectivePoint.y() > offsetY + scaledH) {
         return QPoint(-1, -1);
     }
 
-    const double srcXf = (static_cast<double>(labelPoint.x() - offsetX)) / scale;
-    const double srcYf = (static_cast<double>(labelPoint.y() - offsetY)) / scale;
+    const double srcXf = (static_cast<double>(effectivePoint.x() - offsetX)) / scale;
+    const double srcYf = (static_cast<double>(effectivePoint.y() - offsetY)) / scale;
     int srcX = static_cast<int>(srcXf);
     int srcY = static_cast<int>(srcYf);
 
@@ -909,6 +935,14 @@ QPoint VideoDisplayWidget::mapLabelToSource(const QPoint &labelPoint) const
     if (srcY < 0) srcY = 0;
     if (srcX >= frameSize.width()) srcX = frameSize.width() - 1;
     if (srcY >= frameSize.height()) srcY = frameSize.height() - 1;
+
+    // static int logCount = 0;
+    // if (++logCount % 60 == 0) {
+    //     qDebug() << "[ViewerMap] Label(" << labelPoint.x() << "," << labelPoint.y() << ") "
+    //              << "Eff(" << effectivePoint.x() << "," << effectivePoint.y() << ") "
+    //              << "FrameSize:" << frameSize 
+    //              << " -> Src(" << srcX << "," << srcY << ")";
+    // }
 
     return QPoint(srcX, srcY);
 }
@@ -930,6 +964,8 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
         }
         case QEvent::MouseButtonPress: {
             QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            QPoint localPos = m_videoLabel->mapFromGlobal(me->globalPosition().toPoint());
+            
             // 次键：清屏（考虑系统交换左右键）
             bool isSecondary = (!m_mouseButtonsSwapped && me->button() == Qt::RightButton) ||
                                (m_mouseButtonsSwapped && me->button() == Qt::LeftButton);
@@ -967,7 +1003,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 m_isAnnotating = false;
                 return true; // 消费右键事件
             }
-            QPoint src = mapLabelToSource(me->pos());
+            QPoint src = mapLabelToSource(localPos);
             if (src.x() >= 0 && isPrimary) {
                 if (m_toolMode == 0 && m_annotationEnabled) {
                     m_isAnnotating = true;
@@ -998,7 +1034,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                         edit->setText("");
                         edit->setMinimumWidth(80);
                         edit->resize(200, m_textFontSize + 10);
-                        edit->move(me->pos());
+                        edit->move(localPos);
                         edit->setStyleSheet("QLineEdit { background: rgba(0,0,0,120); color: white; border: 1px solid rgba(255,255,255,180); padding: 2px; } ");
                         edit->setFocusPolicy(Qt::StrongFocus);
                         edit->setFocus();
@@ -1022,8 +1058,10 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
         }
         case QEvent::MouseMove: {
             QMouseEvent *me = static_cast<QMouseEvent*>(event);
+            QPoint localPos = m_videoLabel->mapFromGlobal(me->globalPosition().toPoint());
+            
             if (m_isAnnotating) {
-                QPoint src = mapLabelToSource(me->pos());
+                QPoint src = mapLabelToSource(localPos);
                 if (src.x() >= 0 && m_receiver) {
                     if (m_toolMode == 0) {
                         m_receiver->sendAnnotationEvent("move", src.x(), src.y(), m_currentColorId);
@@ -1040,7 +1078,7 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
                 return true;
             }
             {
-                QPoint src = mapLabelToSource(me->pos());
+                QPoint src = mapLabelToSource(localPos);
                 if (src.x() >= 0 && m_receiver) {
                     m_receiver->sendViewerCursor(src.x(), src.y());
                 }
@@ -1053,7 +1091,8 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
         }
         case QEvent::MouseButtonRelease: {
             QMouseEvent *me = static_cast<QMouseEvent*>(event);
-            QPoint src = mapLabelToSource(me->pos());
+            QPoint localPos = m_videoLabel->mapFromGlobal(me->globalPosition().toPoint());
+            QPoint src = mapLabelToSource(localPos);
             bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
                                (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
             if (m_isAnnotating && src.x() >= 0 && isPrimary) {

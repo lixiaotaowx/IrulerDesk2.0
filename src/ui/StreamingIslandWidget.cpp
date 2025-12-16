@@ -1,4 +1,5 @@
 #include "StreamingIslandWidget.h"
+#include "SnippetOverlay.h"
 #include <QScreen>
 #include <QApplication>
 #include <QMouseEvent>
@@ -148,6 +149,32 @@ void StreamingIslandWidget::setupUI()
              }
         }
     });
+
+    connect(m_toolbar, &AnnotationToolbar::snippetRequested, this, [this]() {
+        // [Fix] Support multi-screen screenshot
+        QRect totalRect;
+        const auto screens = QGuiApplication::screens();
+        for (QScreen *s : screens) {
+            totalRect = totalRect.united(s->geometry());
+        }
+        
+        QPixmap fullPix(totalRect.size());
+        fullPix.fill(Qt::black);
+        
+        QPainter p(&fullPix);
+        // Paint each screen's content into the full pixmap
+        for (QScreen *s : screens) {
+            QPixmap sPix = s->grabWindow(0);
+            // Calculate position relative to the virtual desktop top-left
+            QPoint pos = s->geometry().topLeft() - totalRect.topLeft();
+            p.drawPixmap(pos, sPix);
+        }
+        p.end();
+
+        SnippetOverlay *overlay = new SnippetOverlay(fullPix);
+        overlay->setGeometry(totalRect);
+        overlay->show();
+    });
     
     connect(m_toolbar, &AnnotationToolbar::clearRequested, m_annotationWidget, &ScreenAnnotationWidget::clear);
 }
@@ -168,8 +195,14 @@ void StreamingIslandWidget::showOnScreen()
         
         move(x, y);
 
-        // Position Annotation Widget (Fullscreen on target screen)
-        m_annotationWidget->setGeometry(screen->geometry());
+        // [Fix] Make Annotation Widget cover ALL screens
+        QRect totalRect;
+        const auto screens = QGuiApplication::screens();
+        for (QScreen *s : screens) {
+            totalRect = totalRect.united(s->geometry());
+        }
+        
+        m_annotationWidget->setGeometry(totalRect);
         m_annotationWidget->show(); 
     }
     

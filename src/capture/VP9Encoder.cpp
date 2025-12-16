@@ -120,7 +120,7 @@ void VP9Encoder::cleanup()
     m_initialized = false;
 }
 
-QByteArray VP9Encoder::encode(const QByteArray &frameData)
+QByteArray VP9Encoder::encode(const QByteArray &frameData, int inputWidth, int inputHeight)
 {
     QMutexLocker locker(&m_mutex);
     
@@ -130,6 +130,12 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     
     if (frameData.isEmpty()) {
         return QByteArray();
+    }
+    
+    // 确定输入尺寸
+    if (inputWidth <= 0 || inputHeight <= 0) {
+        inputWidth = m_frameSize.width();
+        inputHeight = m_frameSize.height();
     }
     
     auto encodeStartTime = std::chrono::high_resolution_clock::now();
@@ -160,7 +166,7 @@ QByteArray VP9Encoder::encode(const QByteArray &frameData)
     
     // 转换RGBA到YUV420
     uint8_t *yuvPlanes[3] = { m_yPlane, m_uPlane, m_vPlane };
-    if (!convertRGBAToYUV420(frameData, yuvPlanes)) {
+    if (!convertRGBAToYUV420(frameData, inputWidth, inputHeight, yuvPlanes)) {
         return QByteArray();
     }
     
@@ -346,15 +352,36 @@ bool VP9Encoder::initializeEncoder()
     return true;
 }
 
-bool VP9Encoder::convertRGBAToYUV420(const QByteArray &rgbaData, uint8_t **yuvPlanes)
+bool VP9Encoder::convertRGBAToYUV420(const QByteArray &rgbaData, int inputWidth, int inputHeight, uint8_t **yuvPlanes)
 {
-    if (rgbaData.size() != m_frameSize.width() * m_frameSize.height() * 4) {
+    if (rgbaData.size() != inputWidth * inputHeight * 4) {
         return false;
     }
     
     const uint8_t *rgbaPtr = reinterpret_cast<const uint8_t*>(rgbaData.constData());
     int width = m_frameSize.width();
     int height = m_frameSize.height();
+    
+    // 如果输入尺寸与目标尺寸不一致，需要进行缩放
+    if (inputWidth != width || inputHeight != height) {
+        // 调整缓冲区大小
+        int dstSize = width * height * 4;
+        if (m_scaledArgbBuffer.size() != dstSize) {
+            m_scaledArgbBuffer.resize(dstSize);
+        }
+        
+        uint8_t *dstData = reinterpret_cast<uint8_t*>(m_scaledArgbBuffer.data());
+        
+        // 使用libyuv进行缩放
+        libyuv::ARGBScale(rgbaPtr, inputWidth * 4,
+                          inputWidth, inputHeight,
+                          dstData, width * 4,
+                          width, height,
+                          libyuv::kFilterBox);
+                          
+        // 使用缩放后的数据作为转换源
+        rgbaPtr = dstData;
+    }
     
     // 使用libyuv库进行硬件加速的RGBA到YUV420转换
     // 修复颜色空间转换，使用正确的BT.709色彩空间

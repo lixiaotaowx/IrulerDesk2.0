@@ -18,6 +18,10 @@
 #include <QStyleOptionButton>
 #include <QMenu>
 #include <QAction>
+#include <QScreen>
+#include <QGuiApplication>
+#include <QDateTime>
+#include <QDebug>
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -44,11 +48,46 @@ protected:
 NewUiWindow::NewUiWindow(QWidget *parent)
     : QWidget(parent)
 {
+    // --- GLOBAL SIZE CONTROL (ONE VALUE TO RULE THEM ALL) ---
+    // [User Setting] 只要修改这个数值，所有尺寸自动计算
+    m_cardBaseWidth = 240; // 卡片可见区域的宽度 (Restored to 220)
+    
+    // [Advanced Setting] 底部按钮区域的高度
+    m_bottomAreaHeight = 45; 
+    
+    // --- Automatic Calculations (Do not modify) ---
+    m_shadowSize = 5; // Shadow margin
+    m_aspectRatio = 16.0 / 9.0;
+    
+    // 1. Visible Card Height = (Width / 1.77) + Bottom Area
+    m_cardBaseHeight = (int)(m_cardBaseWidth / m_aspectRatio) + m_bottomAreaHeight;
+    
+    // 2. Total Item Size (including shadow)
+    m_totalItemWidth = m_cardBaseWidth + (2 * m_shadowSize);
+    m_totalItemHeight = m_cardBaseHeight + (2 * m_shadowSize);
+    
+    // 3. Image Dimensions
+    // Width = Card Width * 0.94 (3% margin on each side)
+    m_imgWidth = (int)(m_cardBaseWidth * 0.94);
+    // Height = Width / 1.77
+    m_imgHeight = (int)(m_imgWidth / m_aspectRatio);
+    
+    // 4. Internal Margins (To center the image and create the border)
+    m_marginX = (m_cardBaseWidth - m_imgWidth) / 2;
+    // Vertical centering in the top area: (TopAreaHeight - ImageHeight) / 2
+    m_topAreaHeight = m_cardBaseHeight - m_bottomAreaHeight;
+    m_marginTop = (m_topAreaHeight - m_imgHeight) / 2;
+
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setAttribute(Qt::WA_TranslucentBackground);
     resize(1260, 600);
     
     setupUi();
+
+    // Timer for screenshot
+    m_timer = new QTimer(this);
+    connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
+    m_timer->start(500); // 0.5 seconds
 }
 
 void NewUiWindow::setupUi()
@@ -317,57 +356,28 @@ void NewUiWindow::setupUi()
     QVBoxLayout *listContainerLayout = new QVBoxLayout(listContainer);
     listContainerLayout->setContentsMargins(15, 15, 5, 15); // Right margin smaller for scrollbar, others for spacing
     
-    // --- GLOBAL SIZE CONTROL (ONE VALUE TO RULE THEM ALL) ---
-    // [User Setting] 只要修改这个数值，所有尺寸自动计算
-    const int CARD_BASE_WIDTH = 240; // 卡片可见区域的宽度 (Restored to 220)
-    
-    // [Advanced Setting] 底部按钮区域的高度
-    const int BOTTOM_AREA_HEIGHT = 45; 
-    
-    // --- Automatic Calculations (Do not modify) ---
-    const int SHADOW_SIZE = 5; // Shadow margin
-    const double ASPECT_RATIO = 16.0 / 9.0;
-    
-    // 1. Visible Card Height = (Width / 1.77) + Bottom Area
-    const int CARD_BASE_HEIGHT = (int)(CARD_BASE_WIDTH / ASPECT_RATIO) + BOTTOM_AREA_HEIGHT;
-    
-    // 2. Total Item Size (including shadow)
-    const int TOTAL_ITEM_WIDTH = CARD_BASE_WIDTH + (2 * SHADOW_SIZE);
-    const int TOTAL_ITEM_HEIGHT = CARD_BASE_HEIGHT + (2 * SHADOW_SIZE);
-    
-    // 3. Image Dimensions
-    // Width = Card Width * 0.94 (3% margin on each side)
-    const int IMG_WIDTH = (int)(CARD_BASE_WIDTH * 0.94);
-    // Height = Width / 1.77
-    const int IMG_HEIGHT = (int)(IMG_WIDTH / ASPECT_RATIO);
-    
-    // 4. Internal Margins (To center the image and create the border)
-    const int MARGIN_X = (CARD_BASE_WIDTH - IMG_WIDTH) / 2;
-    // Vertical centering in the top area: (TopAreaHeight - ImageHeight) / 2
-    const int TOP_AREA_HEIGHT = CARD_BASE_HEIGHT - BOTTOM_AREA_HEIGHT;
-    const int MARGIN_TOP = (TOP_AREA_HEIGHT - IMG_HEIGHT) / 2;
-    // --------------------------------------------------------
+    // Constants moved to member variables initialized in constructor
 
-    QListWidget *listWidget = new QListWidget(listContainer);
-    listWidget->setViewMode(QListWidget::IconMode);
+    m_listWidget = new QListWidget(listContainer);
+    m_listWidget->setViewMode(QListWidget::IconMode);
     // Adjust icon size to fit the card widget (roughly card size)
     // Use the global TOTAL size calculated above
-    listWidget->setIconSize(QSize(TOTAL_ITEM_WIDTH, TOTAL_ITEM_HEIGHT)); 
-    listWidget->setSpacing(15); // Expanded spacing (was 3)
-    listWidget->setResizeMode(QListWidget::Adjust);
+    m_listWidget->setIconSize(QSize(m_totalItemWidth, m_totalItemHeight)); 
+    m_listWidget->setSpacing(15); // Expanded spacing (was 3)
+    m_listWidget->setResizeMode(QListWidget::Adjust);
     // [Scroll Settings] Smooth scrolling settings
-    listWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    listWidget->verticalScrollBar()->setSingleStep(10); // Scroll 10 pixels at a time
+    m_listWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_listWidget->verticalScrollBar()->setSingleStep(10); // Scroll 10 pixels at a time
     // Remove default border and background to blend in
-    listWidget->setFrameShape(QFrame::NoFrame);
+    m_listWidget->setFrameShape(QFrame::NoFrame);
 
     // [Context Menu] Right-click menu with rounded corners
-    listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(listWidget, &QListWidget::customContextMenuRequested, [listWidget](const QPoint &pos) {
-        QListWidgetItem *item = listWidget->itemAt(pos);
+    m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_listWidget, &QListWidget::customContextMenuRequested, [this](const QPoint &pos) {
+        QListWidgetItem *item = m_listWidget->itemAt(pos);
         if (!item) return; // Only show menu on items
 
-        QMenu contextMenu(listWidget);
+        QMenu contextMenu(m_listWidget);
         // Enable transparency for rounded corners
         contextMenu.setAttribute(Qt::WA_TranslucentBackground);
         contextMenu.setWindowFlags(contextMenu.windowFlags() | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
@@ -405,9 +415,9 @@ void NewUiWindow::setupUi()
         contextMenu.addAction("删除 (Delete)");
         contextMenu.addAction("属性 (Properties)");
 
-        contextMenu.exec(listWidget->mapToGlobal(pos));
+        contextMenu.exec(m_listWidget->mapToGlobal(pos));
     });
-    listWidget->setStyleSheet(
+    m_listWidget->setStyleSheet(
         "QListWidget {"
         "   background-color: transparent;"
         "   outline: none;"
@@ -426,7 +436,7 @@ void NewUiWindow::setupUi()
     );
     
     // Vertical ScrollBar Styling
-    listWidget->verticalScrollBar()->setStyleSheet(
+    m_listWidget->verticalScrollBar()->setStyleSheet(
         "QScrollBar:vertical {"
         "    border: none;"
         "    background: transparent;" // Transparent track
@@ -458,23 +468,23 @@ void NewUiWindow::setupUi()
     QPixmap srcPix(imgPath);
     // If loading fails, create a fallback
     if (srcPix.isNull()) {
-        srcPix = QPixmap(IMG_WIDTH, IMG_HEIGHT); // Use calculated size
+        srcPix = QPixmap(m_imgWidth, m_imgHeight); // Use calculated size
         srcPix.fill(Qt::darkGray);
     }
 
     for (int i = 0; i < 12; ++i) {
-        QListWidgetItem *item = new QListWidgetItem(listWidget);
+        QListWidgetItem *item = new QListWidgetItem(m_listWidget);
         // Size hint must cover the widget size + shadow margins
         
         // Use the global TOTAL size
-        item->setSizeHint(QSize(TOTAL_ITEM_WIDTH, TOTAL_ITEM_HEIGHT)); 
+        item->setSizeHint(QSize(m_totalItemWidth, m_totalItemHeight)); 
         
         // Create the Item Widget (Container for the card)
         QWidget *itemWidget = new QWidget();
         itemWidget->setAttribute(Qt::WA_TranslucentBackground);
         QVBoxLayout *itemLayout = new QVBoxLayout(itemWidget);
         // Margins for shadow
-        itemLayout->setContentsMargins(SHADOW_SIZE, SHADOW_SIZE, SHADOW_SIZE, SHADOW_SIZE);
+        itemLayout->setContentsMargins(m_shadowSize, m_shadowSize, m_shadowSize, m_shadowSize);
         itemLayout->setSpacing(0);
 
         // The Card Frame (Visible Part)
@@ -500,30 +510,36 @@ void NewUiWindow::setupUi()
         QVBoxLayout *cardLayout = new QVBoxLayout(card);
         // Padding creates the visible border around the image
         // Top: Centering margin, Sides: Centering margin, Bottom: 0 (Controls area handles its own padding)
-        cardLayout->setContentsMargins(MARGIN_X, MARGIN_TOP, MARGIN_X, 0);
+        cardLayout->setContentsMargins(m_marginX, m_marginTop, m_marginX, 0);
         cardLayout->setSpacing(0); 
 
         // Image Label
         QLabel *imgLabel = new QLabel();
         // Width matches the calculated image width
-        imgLabel->setFixedSize(IMG_WIDTH, IMG_HEIGHT); 
+        imgLabel->setFixedSize(m_imgWidth, m_imgHeight); 
         imgLabel->setAlignment(Qt::AlignCenter);
+
+        // Capture the first item's label for video updates
+        if (i == 0) {
+            m_videoLabel = imgLabel;
+            qDebug() << "[NewUiWindow] m_videoLabel assigned successfully at index 0. Widget pointer:" << m_videoLabel;
+        }
         
         // Process Image (Rounded Corners)
-        QPixmap pixmap(IMG_WIDTH, IMG_HEIGHT); 
+        QPixmap pixmap(m_imgWidth, m_imgHeight); 
         pixmap.fill(Qt::transparent);
         QPainter p(&pixmap);
         p.setRenderHint(QPainter::Antialiasing);
         p.setRenderHint(QPainter::SmoothPixmapTransform);
         
-        QPixmap scaledPix = srcPix.scaled(IMG_WIDTH, IMG_HEIGHT, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        QPixmap scaledPix = srcPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
         // Center crop
-        int x = (IMG_WIDTH - scaledPix.width()) / 2;
-        int y = (IMG_HEIGHT - scaledPix.height()) / 2;
+        int x = (m_imgWidth - scaledPix.width()) / 2;
+        int y = (m_imgHeight - scaledPix.height()) / 2;
         
         QPainterPath path;
         // All corners rounded to match the inner look
-        path.addRoundedRect(0, 0, IMG_WIDTH, IMG_HEIGHT, 8, 8);
+        path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
         p.setClipPath(path);
         
         p.drawPixmap(x, y, scaledPix);
@@ -598,18 +614,18 @@ void NewUiWindow::setupUi()
 
         itemLayout->addWidget(card);
         
-        listWidget->setItemWidget(item, itemWidget);
+        m_listWidget->setItemWidget(item, itemWidget);
     }
 
-    listContainerLayout->addWidget(listWidget);
+    listContainerLayout->addWidget(m_listWidget);
     rightLayout->addWidget(titleBar);
     rightLayout->addWidget(listContainer);
 
     // Connect selection change to update styles
-    connect(listWidget, &QListWidget::itemSelectionChanged, [listWidget]() {
-        for(int i = 0; i < listWidget->count(); ++i) {
-            QListWidgetItem *item = listWidget->item(i);
-            QWidget *w = listWidget->itemWidget(item);
+    connect(m_listWidget, &QListWidget::itemSelectionChanged, [this]() {
+        for(int i = 0; i < m_listWidget->count(); ++i) {
+            QListWidgetItem *item = m_listWidget->item(i);
+            QWidget *w = m_listWidget->itemWidget(item);
             if (w) {
                 QFrame *card = w->findChild<QFrame*>("CardFrame");
                 if (card) {
@@ -799,4 +815,43 @@ void NewUiWindow::mouseReleaseEvent(QMouseEvent *event)
         m_dragging = false;
         event->accept();
     }
+}
+
+void NewUiWindow::onTimerTimeout()
+{
+    // Ensure we have a target label to update
+    if (!m_videoLabel) return;
+
+    // 1. Capture Screen
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (!screen) return;
+    QPixmap originalPixmap = screen->grabWindow(0);
+    
+    // 2. Prepare Image (Scale to 300px width as requested)
+    QPixmap srcPix = originalPixmap.scaledToWidth(300, Qt::SmoothTransformation);
+
+    // 3. Process Image (Rounded Corners) - Reusing logic from setupUi for consistency
+    QPixmap pixmap(m_imgWidth, m_imgHeight); 
+    pixmap.fill(Qt::transparent);
+    
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    
+    // Scale to fit the label size (m_imgWidth x m_imgHeight)
+    QPixmap scaledPix = srcPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    
+    // Center crop calculation
+    int x = (m_imgWidth - scaledPix.width()) / 2;
+    int y = (m_imgHeight - scaledPix.height()) / 2;
+    
+    QPainterPath path;
+    path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
+    p.setClipPath(path);
+    
+    p.drawPixmap(x, y, scaledPix);
+    p.end();
+
+    // 4. Update the label directly (Video effect)
+    m_videoLabel->setPixmap(pixmap);
 }

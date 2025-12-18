@@ -9,18 +9,23 @@ set(CMAKE_AUTORCC ON)
 # Update this path if necessary or rely on system path
 set(CMAKE_PREFIX_PATH "C:/Qt/6.8.3/msvc2022_64")
 
-find_package(Qt6 COMPONENTS Core Widgets Gui REQUIRED)
+find_package(Qt6 COMPONENTS Core Widgets Gui WebSockets REQUIRED)
 
 add_executable(NewUiTest
     main.cpp
     NewUiWindow.cpp
     NewUiWindow.h
+    StreamClient.cpp
+    StreamClient.h
+    LoginClient.cpp
+    LoginClient.h
 )
 
 target_link_libraries(NewUiTest PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::Gui
+    Qt6::WebSockets
 )
 
 # Copy resources

@@ -41,6 +41,8 @@ set(MAIN_SOURCES
     src/MainWindow.h                      # 主窗口声明：成员与信号槽声明
     src/NewUi/NewUiWindow.cpp             # 新UI窗口实现
     src/NewUi/NewUiWindow.h               # 新UI窗口声明
+    src/NewUi/StreamClient.cpp            # 流媒体客户端实现
+    src/NewUi/StreamClient.h              # 流媒体客户端声明
     src/common/ConsoleLogger.cpp          # 控制台日志重定向
     src/common/ConsoleLogger.h            # 控制台日志重定向声明
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印

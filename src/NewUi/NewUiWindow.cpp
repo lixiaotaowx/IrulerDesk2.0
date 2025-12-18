@@ -22,6 +22,7 @@
 #include <QGuiApplication>
 #include <QDateTime>
 #include <QDebug>
+#include <QRandomGenerator>
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -88,6 +89,277 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
     m_timer->start(500); // 0.5 seconds
+
+    // Setup StreamClient
+    m_streamClient = new StreamClient(this);
+    connect(m_streamClient, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
+    
+    // Connect to server (Cloud or Local)
+    // Using Cloud IP from project config: 123.207.222.92
+    // Generate a random ID for this session to support multiple pushers
+    quint32 randomId = QRandomGenerator::global()->bounded(10000, 99999);
+    m_myStreamId = QString("user_%1").arg(randomId);
+    m_myUserName = QString("User %1").arg(randomId);
+    
+    // 1. Connect Stream Client (Push)
+    QString serverUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(m_myStreamId);
+    
+    emit onStreamLog(QString("Generated Stream ID: %1").arg(m_myStreamId));
+    m_streamClient->connectToServer(QUrl(serverUrl));
+
+    // 2. Connect Login Client (User List & Discovery)
+    m_loginClient = new LoginClient(this);
+    connect(m_loginClient, &LoginClient::logMessage, this, &NewUiWindow::onStreamLog);
+    connect(m_loginClient, &LoginClient::userListUpdated, this, &NewUiWindow::onUserListUpdated);
+    connect(m_loginClient, &LoginClient::connected, this, &NewUiWindow::onLoginConnected);
+
+    QString loginUrl = "ws://123.207.222.92:8765/login";
+    m_loginClient->connectToServer(QUrl(loginUrl));
+}
+
+NewUiWindow::~NewUiWindow()
+{
+    if (m_timer && m_timer->isActive()) {
+        m_timer->stop();
+    }
+}
+
+void NewUiWindow::onLoginConnected()
+{
+    // Auto-login after connection
+    m_loginClient->login(m_myStreamId, m_myUserName);
+}
+
+void NewUiWindow::onUserListUpdated(const QJsonArray &users)
+{
+    updateListWidget(users);
+}
+
+void NewUiWindow::updateListWidget(const QJsonArray &users)
+{
+    if (!m_listWidget) return;
+
+    // Collect current remote users from the list
+    QSet<QString> currentRemoteUsers;
+    for (const QJsonValue &val : users) {
+        QJsonObject user = val.toObject();
+        QString id = user["id"].toString();
+        if (id != m_myStreamId) {
+            currentRemoteUsers.insert(id);
+        }
+    }
+
+    // 1. Identify users to REMOVE
+    // Iterate over our tracking map
+    QList<QString> usersToRemove;
+    for (auto it = m_remoteStreams.begin(); it != m_remoteStreams.end(); ++it) {
+        if (!currentRemoteUsers.contains(it.key())) {
+            usersToRemove.append(it.key());
+        }
+    }
+
+    for (const QString &id : usersToRemove) {
+        // Stop stream
+        StreamClient *client = m_remoteStreams.take(id);
+        if (client) {
+            client->disconnectFromServer();
+            client->deleteLater();
+        }
+
+        // Remove label reference
+        m_userLabels.remove(id);
+
+        // Remove list item
+        QListWidgetItem *item = m_userItems.take(id);
+        if (item) {
+            int row = m_listWidget->row(item);
+            if (row >= 0) {
+                delete m_listWidget->takeItem(row);
+            }
+            // item is deleted by takeItem if we manage it correctly, or we delete it manually
+            // QListWidget::takeItem returns the item, ownership is transferred to caller.
+        }
+    }
+
+    // 2. Identify users to ADD or UPDATE
+    QString appDir = QCoreApplication::applicationDirPath();
+
+    for (const QJsonValue &val : users) {
+        QJsonObject user = val.toObject();
+        QString id = user["id"].toString();
+        QString name = user["name"].toString();
+
+        if (id == m_myStreamId) continue;
+
+        if (m_remoteStreams.contains(id)) {
+            // Already exists, maybe update name?
+            // For now, do nothing or update title label if we tracked it
+            continue;
+        }
+
+        // NEW USER -> Add to List & Subscribe
+        QListWidgetItem *item = new QListWidgetItem(m_listWidget);
+        item->setSizeHint(QSize(m_totalItemWidth, m_totalItemHeight));
+
+        // Create the Item Widget (Container for the card)
+        QWidget *itemWidget = new QWidget();
+        itemWidget->setAttribute(Qt::WA_TranslucentBackground);
+        QVBoxLayout *itemLayout = new QVBoxLayout(itemWidget);
+        // Margins for shadow
+        itemLayout->setContentsMargins(m_shadowSize, m_shadowSize, m_shadowSize, m_shadowSize);
+        itemLayout->setSpacing(0);
+
+        // The Card Frame (Visible Part)
+        QFrame *card = new QFrame();
+        card->setObjectName("CardFrame");
+        card->setStyleSheet(
+            "#CardFrame {"
+            "   background-color: #3b3b3b;"
+            "   border-radius: 12px;"
+            "}"
+            "#CardFrame:hover {"
+            "   background-color: #444;"
+            "}"
+        );
+        
+        // Shadow Effect
+        QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect();
+        shadow->setBlurRadius(10); 
+        shadow->setColor(QColor(0, 0, 0, 80));
+        shadow->setOffset(0, 2);
+        card->setGraphicsEffect(shadow);
+
+        QVBoxLayout *cardLayout = new QVBoxLayout(card);
+        // Padding creates the visible border around the image
+        // Top: Centering margin, Sides: Centering margin, Bottom: 0 (Controls area handles its own padding)
+        cardLayout->setContentsMargins(m_marginX, m_marginTop, m_marginX, 0);
+        cardLayout->setSpacing(0); 
+
+        // Image Label
+        QLabel *imgLabel = new QLabel();
+        // Width matches the calculated image width
+        imgLabel->setFixedSize(m_imgWidth, m_imgHeight); 
+        imgLabel->setAlignment(Qt::AlignCenter);
+        imgLabel->setText("Loading Stream...");
+        imgLabel->setStyleSheet("color: #888; font-size: 10px;");
+
+        // Bottom Controls Layout
+        QHBoxLayout *bottomLayout = new QHBoxLayout();
+        // Zero side margins because parent cardLayout already provides MARGIN_X
+        // But we might want buttons to extend a bit wider? No, keep alignment.
+        // Add a bit of bottom padding
+        bottomLayout->setContentsMargins(0, 0, 0, 5); 
+        bottomLayout->setSpacing(5);
+
+        // Left Button (tab1.png)
+        QPushButton *tabBtn = new QPushButton();
+        tabBtn->setFixedSize(14, 14);
+        tabBtn->setCursor(Qt::PointingHandCursor);
+        tabBtn->setFlat(true);
+        tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+        tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
+        tabBtn->setIconSize(QSize(14, 14));
+        
+        // Text Label (Middle)
+        QLabel *txtLabel = new QLabel(name.isEmpty() ? id : name);
+        txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
+        txtLabel->setAlignment(Qt::AlignCenter);
+
+        // Mic Toggle
+        QPushButton *micBtn = new QPushButton();
+        micBtn->setFixedSize(14, 14);
+        micBtn->setCursor(Qt::PointingHandCursor);
+        micBtn->setProperty("isOn", false);
+        micBtn->setFlat(true);
+        micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+        micBtn->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
+        micBtn->setIconSize(QSize(14, 14));
+
+        connect(micBtn, &QPushButton::clicked, [micBtn, appDir]() {
+            bool isOn = micBtn->property("isOn").toBool();
+            isOn = !isOn;
+            micBtn->setProperty("isOn", isOn);
+            QString iconName = isOn ? "Mic_on.png" : "Mic_off.png";
+            micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+        });
+
+        // Speaker Toggle
+        QPushButton *labaBtn = new QPushButton();
+        labaBtn->setFixedSize(14, 14);
+        labaBtn->setCursor(Qt::PointingHandCursor);
+        labaBtn->setProperty("isOn", false);
+        labaBtn->setFlat(true);
+        labaBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+        labaBtn->setIcon(QIcon(appDir + "/maps/logo/laba_off.png"));
+        labaBtn->setIconSize(QSize(14, 14));
+
+        connect(labaBtn, &QPushButton::clicked, [labaBtn, appDir]() {
+            bool isOn = labaBtn->property("isOn").toBool();
+            isOn = !isOn;
+            labaBtn->setProperty("isOn", isOn);
+            QString iconName = isOn ? "laba_on.png" : "laba_off.png";
+            labaBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+        });
+
+        bottomLayout->addWidget(tabBtn);
+        bottomLayout->addWidget(txtLabel);
+        bottomLayout->addWidget(micBtn);
+        bottomLayout->addWidget(labaBtn);
+
+        cardLayout->addWidget(imgLabel);
+        cardLayout->addLayout(bottomLayout);
+
+        itemLayout->addWidget(card);
+
+        m_listWidget->setItemWidget(item, itemWidget);
+
+        // --- Track & Subscribe ---
+        m_userItems.insert(id, item);
+        m_userLabels.insert(id, imgLabel);
+
+        // Create Client
+        StreamClient *client = new StreamClient(this);
+        m_remoteStreams.insert(id, client);
+
+        // Connect signals
+        connect(client, &StreamClient::frameReceived, this, [this, id](const QPixmap &frame) {
+            if (m_userLabels.contains(id)) {
+                QLabel *lbl = m_userLabels[id];
+                if (lbl) {
+                    // Apply rounded corners and scaling exactly like local user
+                    QPixmap pixmap(m_imgWidth, m_imgHeight); 
+                    pixmap.fill(Qt::transparent);
+                    QPainter p(&pixmap);
+                    p.setRenderHint(QPainter::Antialiasing);
+                    p.setRenderHint(QPainter::SmoothPixmapTransform);
+                    
+                    QPixmap scaledPix = frame.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                    int x = (m_imgWidth - scaledPix.width()) / 2;
+                    int y = (m_imgHeight - scaledPix.height()) / 2;
+                    
+                    QPainterPath path;
+                    path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
+                    p.setClipPath(path);
+                    
+                    p.drawPixmap(x, y, scaledPix);
+                    p.end();
+                    
+                    lbl->setPixmap(pixmap);
+                }
+            }
+        });
+        
+        // Connect to Subscribe URL
+        QString subUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(id);
+        client->connectToServer(QUrl(subUrl));
+        
+        qDebug() << "Subscribing to user:" << id << " URL:" << subUrl;
+    }
+}
+
+void NewUiWindow::onStreamLog(const QString &msg)
+{
+    qDebug() << "[StreamClient]" << msg;
 }
 
 void NewUiWindow::setupUi()
@@ -472,7 +744,8 @@ void NewUiWindow::setupUi()
         srcPix.fill(Qt::darkGray);
     }
 
-    for (int i = 0; i < 12; ++i) {
+    // Create Local User Item (Index 0)
+    {
         QListWidgetItem *item = new QListWidgetItem(m_listWidget);
         // Size hint must cover the widget size + shadow margins
         
@@ -519,11 +792,9 @@ void NewUiWindow::setupUi()
         imgLabel->setFixedSize(m_imgWidth, m_imgHeight); 
         imgLabel->setAlignment(Qt::AlignCenter);
 
-        // Capture the first item's label for video updates
-        if (i == 0) {
-            m_videoLabel = imgLabel;
-            qDebug() << "[NewUiWindow] m_videoLabel assigned successfully at index 0. Widget pointer:" << m_videoLabel;
-        }
+        // Capture for video updates
+        m_videoLabel = imgLabel;
+        qDebug() << "[NewUiWindow] m_videoLabel assigned successfully. Widget pointer:" << m_videoLabel;
         
         // Process Image (Rounded Corners)
         QPixmap pixmap(m_imgWidth, m_imgHeight); 
@@ -564,7 +835,7 @@ void NewUiWindow::setupUi()
         tabBtn->setIconSize(QSize(14, 14));
         
         // Text Label (Middle)
-        QLabel *txtLabel = new QLabel(QString("Card Item %1").arg(i + 1));
+        QLabel *txtLabel = new QLabel(QString("Local Screen (Me)"));
         txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
         txtLabel->setAlignment(Qt::AlignCenter);
 
@@ -854,4 +1125,14 @@ void NewUiWindow::onTimerTimeout()
 
     // 4. Update the label directly (Video effect)
     m_videoLabel->setPixmap(pixmap);
+
+    // 5. Send frame to server
+    if (m_streamClient && m_streamClient->isConnected()) {
+        // Send the smaller 300px image or the original?
+        // Requirement said "0.5秒截图一次，300像素，，然后显示在列表的第一个"
+        // It didn't explicitly say push 300px, but usually for streaming preview we push what we see.
+        // Or we might want to push higher quality?
+        // "实现单路图片的推流功能" - let's push the same image we show for now to save bandwidth.
+        m_streamClient->sendFrame(pixmap);
+    }
 }

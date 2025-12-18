@@ -4,6 +4,8 @@
 #include <QListWidget>
 #include <QTimer>
 #include <QLabel>
+#include "StreamClient.h"
+#include "LoginClient.h"
 
 class NewUiWindow : public QWidget
 {
@@ -11,7 +13,7 @@ class NewUiWindow : public QWidget
 
 public:
     explicit NewUiWindow(QWidget *parent = nullptr);
-    ~NewUiWindow() override = default;
+    ~NewUiWindow();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -20,9 +22,13 @@ protected:
 
 private slots:
     void onTimerTimeout();
+    void onStreamLog(const QString &msg);
+    void onUserListUpdated(const QJsonArray &users);
+    void onLoginConnected();
 
 private:
     void setupUi();
+    void updateListWidget(const QJsonArray &users);
     
     // Dragging support
     bool m_dragging = false;
@@ -30,7 +36,17 @@ private:
 
     QListWidget *m_listWidget = nullptr;
     QTimer *m_timer = nullptr;
-    QLabel *m_videoLabel = nullptr;
+    QLabel *m_videoLabel = nullptr; // Local preview label (Index 0)
+    StreamClient *m_streamClient = nullptr;
+    LoginClient *m_loginClient = nullptr;
+
+    QString m_myStreamId; // Store my own ID to identify myself in the list
+    QString m_myUserName;
+
+    // Remote Stream Management
+    QMap<QString, StreamClient*> m_remoteStreams; // userId -> StreamClient
+    QMap<QString, QListWidgetItem*> m_userItems;  // userId -> ListWidgetItem
+    QMap<QString, QLabel*> m_userLabels;          // userId -> Image Label (for updating frame)
 
     // Layout constants
     int m_cardBaseWidth;

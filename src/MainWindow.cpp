@@ -866,20 +866,17 @@ void MainWindow::stopProcesses()
 
     // 停止捕获进程
     if (m_captureProcess) {
-        m_captureProcess->terminate();
-        if (!m_captureProcess->waitForFinished(3000)) {
-            m_captureProcess->kill();
-        }
+        // [Fix] Use kill() to avoid 3s freeze on Windows where terminate() (WM_CLOSE) is ignored
+        m_captureProcess->kill();
+        m_captureProcess->waitForFinished(100); 
         m_captureProcess->deleteLater();
         m_captureProcess = nullptr;
     }
     
     // 停止播放进程
     if (m_playerProcess) {
-        m_playerProcess->terminate();
-        if (!m_playerProcess->waitForFinished(3000)) {
-            m_playerProcess->kill();
-        }
+        m_playerProcess->kill();
+        m_playerProcess->waitForFinished(100);
         m_playerProcess->deleteLater();
         m_playerProcess = nullptr;
     }

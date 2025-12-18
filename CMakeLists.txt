@@ -39,6 +39,8 @@ set(MAIN_SOURCES
     src/main.cpp                          # 程序入口：初始化应用并启动主窗口
     src/MainWindow.cpp                    # 主窗口实现：主界面布局、交互逻辑、控制流程
     src/MainWindow.h                      # 主窗口声明：成员与信号槽声明
+    src/NewUi/NewUiWindow.cpp             # 新UI窗口实现
+    src/NewUi/NewUiWindow.h               # 新UI窗口声明
     src/common/ConsoleLogger.cpp          # 控制台日志重定向
     src/common/ConsoleLogger.h            # 控制台日志重定向声明
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
@@ -208,6 +210,14 @@ add_custom_command(TARGET ScreenStreamApp POST_BUILD
     "${CMAKE_CURRENT_SOURCE_DIR}/src/audio/ling2.wav"
     "$<TARGET_FILE_DIR:ScreenStreamApp>/audio/ling2.wav"
     COMMENT "Copying audio assets..."
+)
+
+# 复制 maps 目录到构建目录
+add_custom_command(TARGET ScreenStreamApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/maps"
+    "$<TARGET_FILE_DIR:ScreenStreamApp>/maps"
+    COMMENT "Copying maps assets..."
 )
 
 # 拷贝更新日志文件

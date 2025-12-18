@@ -14,13 +14,39 @@
 #include <QPropertyAnimation>
 #include <QSequentialAnimationGroup>
 #include <QGraphicsDropShadowEffect>
+#include <QStylePainter>
+#include <QStyleOptionButton>
+#include <QMenu>
+#include <QAction>
+
+// [Standard Approach] Custom Button for High-Performance Visual Feedback
+// Overrides paintEvent to scale icon when pressed, ensuring instant response.
+class ResponsiveButton : public QPushButton {
+public:
+    using QPushButton::QPushButton; // Use base constructors
+
+protected:
+    void paintEvent(QPaintEvent *event) override {
+        QStylePainter p(this);
+        QStyleOptionButton option;
+        initStyleOption(&option);
+
+        if (isDown()) {
+            // Scale down icon size by 15% when pressed
+            QSize originalSize = option.iconSize;
+            option.iconSize = originalSize * 0.85; 
+        }
+
+        p.drawControl(QStyle::CE_PushButton, option);
+    }
+};
 
 NewUiWindow::NewUiWindow(QWidget *parent)
     : QWidget(parent)
 {
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setAttribute(Qt::WA_TranslucentBackground);
-    resize(1000, 600);
+    resize(1260, 600);
     
     setupUi();
 }
@@ -145,7 +171,7 @@ void NewUiWindow::setupUi()
     );
 
     QVBoxLayout *rightLayout = new QVBoxLayout(rightPanel);
-    rightLayout->setContentsMargins(40, 10, 40, 40); // Increased margins to make the list container smaller
+    rightLayout->setContentsMargins(10, 10, 10, 10); // Reduced margins (was 40, 10, 40, 40) to expand content
     rightLayout->setSpacing(10);
 
     // Title Bar Area
@@ -181,6 +207,10 @@ void NewUiWindow::setupUi()
         "   background-color: rgba(255, 255, 255, 30);"
         "   border-radius: 17px;" // Adjusted radius for smaller hover area (40-6)/2
         "}"
+        // Pressed state handled by ResponsiveButton paintEvent for icon scaling
+        "QPushButton:pressed {"
+        "   background-color: rgba(255, 255, 255, 40);"
+        "}"
     );
 
     QHBoxLayout *toolsLayout = new QHBoxLayout(toolsContainer);
@@ -189,21 +219,21 @@ void NewUiWindow::setupUi()
     toolsLayout->setAlignment(Qt::AlignCenter);
 
     // d.png
-    QPushButton *toolBtn1 = new QPushButton();
+    ResponsiveButton *toolBtn1 = new ResponsiveButton();
     toolBtn1->setFixedSize(40, 40); 
     toolBtn1->setIcon(QIcon(appDir + "/maps/logo/d.png"));
     toolBtn1->setIconSize(QSize(24, 24)); 
     toolBtn1->setCursor(Qt::PointingHandCursor);
 
     // log.png
-    QPushButton *toolBtn2 = new QPushButton();
+    ResponsiveButton *toolBtn2 = new ResponsiveButton();
     toolBtn2->setFixedSize(40, 40); 
     toolBtn2->setIcon(QIcon(appDir + "/maps/logo/log.png"));
     toolBtn2->setIconSize(QSize(24, 24)); 
     toolBtn2->setCursor(Qt::PointingHandCursor);
 
     // clearn.png
-    QPushButton *toolBtn3 = new QPushButton();
+    ResponsiveButton *toolBtn3 = new ResponsiveButton();
     toolBtn3->setFixedSize(40, 40); 
     toolBtn3->setIcon(QIcon(appDir + "/maps/logo/clearn.png"));
     toolBtn3->setIconSize(QSize(24, 24)); 
@@ -245,14 +275,14 @@ void NewUiWindow::setupUi()
     controlLayout->setAlignment(Qt::AlignCenter);
 
     // Menu Button
-    QPushButton *menuBtn = new QPushButton();
+    ResponsiveButton *menuBtn = new ResponsiveButton();
     menuBtn->setFixedSize(48, 48); 
     menuBtn->setIcon(QIcon(appDir + "/maps/logo/menu.png"));
     menuBtn->setIconSize(QSize(32, 32)); 
     menuBtn->setCursor(Qt::PointingHandCursor);
 
     // Minimize Button
-    QPushButton *minBtn = new QPushButton();
+    ResponsiveButton *minBtn = new ResponsiveButton();
     minBtn->setFixedSize(48, 48); 
     minBtn->setIcon(QIcon(appDir + "/maps/logo/mini.png"));
     minBtn->setIconSize(QSize(32, 32)); 
@@ -260,7 +290,7 @@ void NewUiWindow::setupUi()
     connect(minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
 
     // Close Button
-    QPushButton *closeBtn = new QPushButton();
+    ResponsiveButton *closeBtn = new ResponsiveButton();
     closeBtn->setFixedSize(48, 48); 
     closeBtn->setIcon(QIcon(appDir + "/maps/logo/close.png"));
     closeBtn->setIconSize(QSize(32, 32)); 
@@ -289,7 +319,7 @@ void NewUiWindow::setupUi()
     
     // --- GLOBAL SIZE CONTROL (ONE VALUE TO RULE THEM ALL) ---
     // [User Setting] 只要修改这个数值，所有尺寸自动计算
-    const int CARD_BASE_WIDTH = 220; // 卡片可见区域的宽度
+    const int CARD_BASE_WIDTH = 240; // 卡片可见区域的宽度 (Restored to 220)
     
     // [Advanced Setting] 底部按钮区域的高度
     const int BOTTOM_AREA_HEIGHT = 45; 
@@ -325,8 +355,58 @@ void NewUiWindow::setupUi()
     listWidget->setIconSize(QSize(TOTAL_ITEM_WIDTH, TOTAL_ITEM_HEIGHT)); 
     listWidget->setSpacing(15); // Expanded spacing (was 3)
     listWidget->setResizeMode(QListWidget::Adjust);
+    // [Scroll Settings] Smooth scrolling settings
+    listWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    listWidget->verticalScrollBar()->setSingleStep(10); // Scroll 10 pixels at a time
     // Remove default border and background to blend in
     listWidget->setFrameShape(QFrame::NoFrame);
+
+    // [Context Menu] Right-click menu with rounded corners
+    listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(listWidget, &QListWidget::customContextMenuRequested, [listWidget](const QPoint &pos) {
+        QListWidgetItem *item = listWidget->itemAt(pos);
+        if (!item) return; // Only show menu on items
+
+        QMenu contextMenu(listWidget);
+        // Enable transparency for rounded corners
+        contextMenu.setAttribute(Qt::WA_TranslucentBackground);
+        contextMenu.setWindowFlags(contextMenu.windowFlags() | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+        
+        contextMenu.setStyleSheet(
+            "QMenu {"
+            "    background-color: #2b2b2b;"
+            "    border: 1px solid #444;"
+            "    border-radius: 12px;"
+            "    padding: 6px;"
+            "    color: #e0e0e0;"
+            "    font-size: 13px;"
+            "}"
+            "QMenu::item {"
+            "    background-color: transparent;"
+            "    padding: 8px 24px;"
+            "    margin: 2px 4px;"
+            "    border-radius: 6px;"
+            "}"
+            "QMenu::item:selected {"
+            "    background-color: #0078d4;" // Windows blue style
+            "    color: white;"
+            "}"
+            "QMenu::separator {"
+            "    height: 1px;"
+            "    background: #444;"
+            "    margin: 4px 10px;"
+            "}"
+        );
+
+        // Add Actions
+        contextMenu.addAction("打开 (Open)");
+        contextMenu.addAction("重命名 (Rename)");
+        contextMenu.addSeparator();
+        contextMenu.addAction("删除 (Delete)");
+        contextMenu.addAction("属性 (Properties)");
+
+        contextMenu.exec(listWidget->mapToGlobal(pos));
+    });
     listWidget->setStyleSheet(
         "QListWidget {"
         "   background-color: transparent;"
@@ -560,9 +640,139 @@ void NewUiWindow::setupUi()
         }
     });
 
+    // --- Far Right Panel (New Interface) ---
+    QWidget *farRightPanel = new QWidget(this);
+    farRightPanel->setObjectName("FarRightPanel");
+    farRightPanel->setFixedWidth(240); // Wider than left panel (80px)
+    farRightPanel->setStyleSheet(
+        "QWidget#FarRightPanel {"
+        "   background-color: #2b2b2b;"
+        "   border-radius: 20px;"
+        "}"
+    );
+
+    QVBoxLayout *farRightLayout = new QVBoxLayout(farRightPanel);
+    farRightLayout->setContentsMargins(20, 20, 20, 20);
+    farRightLayout->setSpacing(15);
+
+    // Title
+    QLabel *frTitle = new QLabel("龙哥房间"); 
+    frTitle->setStyleSheet("color: white; font-size: 16px; font-weight: bold; background: transparent;");
+    frTitle->setAlignment(Qt::AlignCenter);
+    farRightLayout->addWidget(frTitle);
+
+    // List
+    QListWidget *frList = new QListWidget();
+    frList->setFrameShape(QFrame::NoFrame);
+    // Enable auto-adjust to prevent horizontal scrollbar issues
+    frList->setResizeMode(QListWidget::Adjust); 
+    frList->setStyleSheet(
+        "QListWidget {"
+        "   background: transparent;"
+        "   border: none;"
+        "   outline: none;"
+        "}"
+        "QListWidget::item {"
+        "   background: transparent;"
+        "   border-bottom: 1px solid #444;"
+        "}"
+        "QListWidget::item:hover {"
+        "   background: rgba(255, 255, 255, 10);"
+        "}"
+        "QListWidget::item:selected {"
+        "   background: transparent;"
+        "}"
+        // Style the vertical scrollbar to be thin and unobtrusive
+        "QScrollBar:vertical {"
+        "    border: none;"
+        "    background: transparent;"
+        "    width: 6px;"
+        "    margin: 0px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "    background: #555;"
+        "    min-height: 20px;"
+        "    border-radius: 3px;"
+        "}"
+    );
+    frList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    frList->verticalScrollBar()->setSingleStep(10); // Small scroll step
+    frList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); 
+    
+    // Add items to Far Right List
+    for (int i = 0; i < 15; ++i) {
+        QListWidgetItem *item = new QListWidgetItem(frList);
+        // Reduced width hint to ensure it fits within the panel even with scrollbar
+        // Panel Width (240) - Panel Margin (40) - Scrollbar (approx 10) - Buffer = 180
+        item->setSizeHint(QSize(180, 50));
+        
+        QWidget *w = new QWidget();
+        w->setStyleSheet("background: transparent;");
+        QHBoxLayout *l = new QHBoxLayout(w);
+        // Standard margins
+        l->setContentsMargins(10, 0, 10, 0); 
+        
+        QLabel *txt = new QLabel(QString("用户名 %1").arg(i+1));
+        txt->setStyleSheet("color: #dddddd; font-size: 14px; border: none;");
+        
+        QPushButton *mic = new QPushButton();
+        mic->setFixedSize(24, 24);
+        mic->setCursor(Qt::PointingHandCursor);
+        mic->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
+        mic->setIconSize(QSize(18, 18));
+        mic->setFlat(true);
+        mic->setStyleSheet("border: none; background: transparent;");
+        
+        // Simple toggle logic for this mic
+        mic->setProperty("isOn", false);
+        connect(mic, &QPushButton::clicked, [mic, appDir]() {
+            bool isOn = mic->property("isOn").toBool();
+            isOn = !isOn;
+            mic->setProperty("isOn", isOn);
+            QString iconName = isOn ? "Mic_on.png" : "Mic_off.png";
+            mic->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+        });
+        
+        l->addWidget(txt);
+        l->addStretch();
+        l->addWidget(mic);
+        // Removed explicit spacing at the end, relying on margins and width hint
+        
+        frList->setItemWidget(item, w);
+    }
+    
+    farRightLayout->addWidget(frList);
+
+    // Quit Button
+    QPushButton *quitBtn = new QPushButton("退出");
+    quitBtn->setCursor(Qt::PointingHandCursor);
+    quitBtn->setFixedHeight(30);
+    quitBtn->setFixedWidth(80);
+    quitBtn->setStyleSheet(
+        "QPushButton {"
+        "   background-color: #220505ff;" // Dark Red
+        "   color: white;"
+        "   font-size: 14px;"
+        "   border-radius: 8px;"
+        "   border: none;"
+        "}"
+        "QPushButton:hover {"
+        "   background-color: #290505ff;" // Lighter Red (Brownish)
+        "}"
+        "QPushButton:pressed {"
+        "   background-color: #350909ff;" // Very Dark Red
+        "}"
+    );
+    // Connect to application quit
+    connect(quitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
+
+    // Center the button horizontally
+    farRightLayout->addWidget(quitBtn, 0, Qt::AlignHCenter);
+
     // Assemble Main Layout
     mainLayout->addWidget(leftPanel);
     mainLayout->addWidget(rightPanel);
+    mainLayout->addWidget(farRightPanel);
 }
 
 void NewUiWindow::mousePressEvent(QMouseEvent *event)

@@ -23,6 +23,7 @@
 #include "common/ConsoleLogger.h"
 #include "common/CrashGuard.h"
 #include "MainWindow.h"
+#include "NewUi/NewUiWindow.h"
 #include "ui/TransparentImageList.h"
 
 int main(int argc, char *argv[])
@@ -168,6 +169,10 @@ int main(int argc, char *argv[])
 
     // 创建并显示主窗口
     MainWindow window;
+
+    // [New UI Integration] Launch New UI Window
+    NewUiWindow newUi;
+    newUi.show();
 
     QLocalServer *instServer = new QLocalServer(&app);
     QLocalServer::removeServer("IrulerDeskpro_SingleInstance");

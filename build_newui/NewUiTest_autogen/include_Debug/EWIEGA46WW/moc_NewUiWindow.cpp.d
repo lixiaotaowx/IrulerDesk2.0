@@ -1,5 +1,8 @@
 G:/c/2025/lunzi/IrulerDeskpro/build_newui/NewUiTest_autogen/include_Debug/EWIEGA46WW/moc_NewUiWindow.cpp: G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/NewUiWindow.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QFlags \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonArray \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonDocument \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QRect \
@@ -34,6 +37,8 @@ G:/c/2025/lunzi/IrulerDeskpro/build_newui/NewUiTest_autogen/include_Debug/EWIEGA
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qbytearraylist.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qbytearrayview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcalendar.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcborcommon.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcborvalue.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qchar.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcompare.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qcompare_impl.h \
@@ -73,6 +78,10 @@ G:/c/2025/lunzi/IrulerDeskpro/build_newui/NewUiTest_autogen/include_Debug/EWIEGA
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qitemselectionmodel.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qiterable.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qiterator.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsonarray.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsondocument.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsonobject.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/qjsonvalue.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qlatin1stringview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qline.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qlist.h \
@@ -145,6 +154,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build_newui/NewUiTest_autogen/include_Debug/EWIEGA
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qtypes.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qurl.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qutf8stringview.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/quuid.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvariant.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qversiontagging.h \
@@ -239,4 +249,5 @@ G:/c/2025/lunzi/IrulerDeskpro/build_newui/NewUiTest_autogen/include_Debug/EWIEGA
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qtwidgetsexports.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qtwidgetsglobal.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qwidget.h \
+  G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/LoginClient.h \
   G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/StreamClient.h

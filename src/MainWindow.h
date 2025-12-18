@@ -25,7 +25,7 @@
 
 // 前向声明
 class VideoWindow;
-class TransparentImageList;
+class NewUiWindow; // Replaces TransparentImageList
 class AvatarSettingsWindow;
 class QSoundEffect;
 
@@ -36,7 +36,7 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-    class TransparentImageList* transparentImageList() const;
+    NewUiWindow* transparentImageList() const;
 
 signals:
     void appInitialized();
@@ -151,8 +151,8 @@ private:
     // 视频窗口
     VideoWindow *m_videoWindow;
     
-    // 透明图片列表
-    TransparentImageList *m_transparentImageList;
+    // New UI Window (Replaces TransparentImageList)
+    NewUiWindow *m_transparentImageList;
     
     // 头像设置窗口
     AvatarSettingsWindow *m_avatarSettingsWindow;

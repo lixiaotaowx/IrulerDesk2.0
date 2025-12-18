@@ -1,0 +1,170 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_main\ScreenStreamApp_autogen\mocs_compilation_Debug.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\MainWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\NewUi\NewUiWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\NewUi\StreamClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\ConsoleLogger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\CrashGuard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\VideoDisplayWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\VideoWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\TransparentImageList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\ScreenAnnotationWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\AnnotationToolbar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\BubbleTipWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\AvatarSettingsWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\SystemSettingsWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\ColorCircleButton.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\RainbowToolButton.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\FirstLaunchWizard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\StreamingIslandWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\SnippetOverlay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\AudioPlayer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\VP9Decoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\DxvaVP9Decoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\WebSocketReceiver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_main\ScreenStreamApp_autogen\mocs_compilation_Release.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_main\ScreenStreamApp_autogen\mocs_compilation_MinSizeRel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_main\ScreenStreamApp_autogen\mocs_compilation_RelWithDebInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\MainWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\NewUi\NewUiWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\NewUi\StreamClient.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\ConsoleLogger.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\CrashGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\VideoDisplayWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\VideoWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\ScreenAnnotationWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\AnnotationToolbar.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\TransparentImageList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\BubbleTipWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\AvatarSettingsWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\SystemSettingsWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\ColorCircleButton.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\RainbowToolButton.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\FirstLaunchWizard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\StreamingIslandWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\SnippetOverlay.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\AudioPlayer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\VP9Decoder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\DxvaVP9Decoder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\player\WebSocketReceiver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="G:\c\2025\lunzi\IrulerDeskpro\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_main\app_icon.rc">
+      <Filter>Source Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{8FEB143A-5970-383C-BDE4-B7BDAC821CC8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{8C6292D0-92DA-3FCB-917D-A3B7B2F2B837}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -42,7 +42,7 @@ VideoWindow::VideoWindow(QWidget *parent)
     setupUI();
     
     // 设置窗口属性
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint);
     setAttribute(Qt::WA_TranslucentBackground);
     
     // 设置16:9比例的视频内容区域尺寸（标题栏高度额外计算）
@@ -129,6 +129,9 @@ void VideoWindow::setupUI()
     // 颜色变化时更新标题栏按钮外观
     connect(m_videoDisplayWidget, &VideoDisplayWidget::annotationColorChanged,
             this, [this](int colorId){ updateColorButtonVisual(colorId); });
+    
+    connect(m_videoDisplayWidget, &VideoDisplayWidget::avatarUpdateReceived, this, &VideoWindow::avatarUpdateReceived);
+    connect(m_videoDisplayWidget, &VideoDisplayWidget::receivingStopped, this, &VideoWindow::receivingStopped);
     
     m_mainLayout->addWidget(m_videoDisplayWidget, 1);
 

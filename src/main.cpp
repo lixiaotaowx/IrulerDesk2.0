@@ -24,7 +24,6 @@
 #include "common/CrashGuard.h"
 #include "MainWindow.h"
 #include "NewUi/NewUiWindow.h"
-#include "ui/TransparentImageList.h"
 
 int main(int argc, char *argv[])
 {
@@ -170,10 +169,6 @@ int main(int argc, char *argv[])
     // 创建并显示主窗口
     MainWindow window;
 
-    // [New UI Integration] Launch New UI Window
-    NewUiWindow newUi;
-    newUi.show();
-
     QLocalServer *instServer = new QLocalServer(&app);
     QLocalServer::removeServer("IrulerDeskpro_SingleInstance");
     instServer->listen("IrulerDeskpro_SingleInstance");
@@ -192,9 +187,10 @@ int main(int argc, char *argv[])
         splashTimer->stop();
         splashTimer->deleteLater();
         QRect startRect = splash.geometry();
-        TransparentImageList *target = window.transparentImageList();
+        NewUiWindow *target = window.transparentImageList();
         QPoint destCenter;
         if (target) {
+            target->show();
             QRect tGlobal(target->pos(), target->size());
             destCenter = tGlobal.center();
         } else {

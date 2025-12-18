@@ -51,7 +51,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 {
     // --- GLOBAL SIZE CONTROL (ONE VALUE TO RULE THEM ALL) ---
     // [User Setting] 只要修改这个数值，所有尺寸自动计算
-    m_cardBaseWidth = 240; // 卡片可见区域的宽度 (Restored to 220)
+    m_cardBaseWidth = 300; // 卡片可见区域的宽度 (Changed to 300 as requested)
     
     // [Advanced Setting] 底部按钮区域的高度
     m_bottomAreaHeight = 45; 
@@ -79,9 +79,10 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_topAreaHeight = m_cardBaseHeight - m_bottomAreaHeight;
     m_marginTop = (m_topAreaHeight - m_imgHeight) / 2;
 
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground);
-    resize(1260, 600);
+    resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
+    move(0, 100); // Default to left side
     
     setupUi();
 
@@ -94,27 +95,57 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_streamClient = new StreamClient(this);
     connect(m_streamClient, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
     
-    // Connect to server (Cloud or Local)
-    // Using Cloud IP from project config: 123.207.222.92
-    // Generate a random ID for this session to support multiple pushers
-    quint32 randomId = QRandomGenerator::global()->bounded(10000, 99999);
-    m_myStreamId = QString("user_%1").arg(randomId);
-    m_myUserName = QString("User %1").arg(randomId);
-    
-    // 1. Connect Stream Client (Push)
-    QString serverUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(m_myStreamId);
-    
-    emit onStreamLog(QString("Generated Stream ID: %1").arg(m_myStreamId));
-    m_streamClient->connectToServer(QUrl(serverUrl));
-
     // 2. Connect Login Client (User List & Discovery)
+    // DISABLED: Main Window controls the user list now.
+    /*
     m_loginClient = new LoginClient(this);
     connect(m_loginClient, &LoginClient::logMessage, this, &NewUiWindow::onStreamLog);
     connect(m_loginClient, &LoginClient::userListUpdated, this, &NewUiWindow::onUserListUpdated);
     connect(m_loginClient, &LoginClient::connected, this, &NewUiWindow::onLoginConnected);
+    */
 
+    // Set initial size
+    // Width calculation for 3 columns:
+    // Sidebar (80) + Gap (20) + 3 * (ItemWidth(300 + 10) + Spacing(15)) + ScrollBar/Margins
+    // 80 + 20 + 3 * 315 = 1045. Let's make it 1100 to be safe and spacious.
+    resize(1100, 800);
+}
+
+void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
+{
+    m_myStreamId = id;
+    m_myUserName = name;
+
+    // Update local user label if it exists
+    if (m_localNameLabel) {
+        QString displayName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
+        QString fullText = displayName; // Only display name
+        m_localNameLabel->setText(fullText);
+    }
+
+    // [Interaction Fix] Update local card userId property for event filter
+    if (m_localCard) {
+        m_localCard->setProperty("userId", m_myStreamId);
+    }
+
+    // 1. Connect Stream Client (Push)
+    QString serverUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(m_myStreamId);
+    
+    emit onStreamLog(QString("Generated Stream ID: %1").arg(m_myStreamId));
+    if (m_streamClient) {
+        m_streamClient->disconnectFromServer();
+        m_streamClient->connectToServer(QUrl(serverUrl));
+    }
+
+    // 2. Connect Login Client
+    // DISABLED: Main Window controls login.
+    /*
     QString loginUrl = "ws://123.207.222.92:8765/login";
-    m_loginClient->connectToServer(QUrl(loginUrl));
+    if (m_loginClient) {
+        m_loginClient->disconnectFromServer();
+        m_loginClient->connectToServer(QUrl(loginUrl));
+    }
+    */
 }
 
 NewUiWindow::~NewUiWindow()
@@ -127,12 +158,14 @@ NewUiWindow::~NewUiWindow()
 void NewUiWindow::onLoginConnected()
 {
     // Auto-login after connection
-    m_loginClient->login(m_myStreamId, m_myUserName);
+    // DISABLED: Main Window handles login
+    // m_loginClient->login(m_myStreamId, m_myUserName);
 }
 
 void NewUiWindow::onUserListUpdated(const QJsonArray &users)
 {
-    updateListWidget(users);
+    // DISABLED: Main Window handles user list updates
+    // updateListWidget(users);
 }
 
 void NewUiWindow::updateListWidget(const QJsonArray &users)
@@ -212,6 +245,10 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         // The Card Frame (Visible Part)
         QFrame *card = new QFrame();
         card->setObjectName("CardFrame");
+        // [Interaction Fix] Install event filter on local card to allow double-click testing
+        card->installEventFilter(this);
+        // m_localCard = card; // REMOVED: Incorrectly assigning remote card to local pointer
+
         card->setStyleSheet(
             "#CardFrame {"
             "   background-color: #3b3b3b;"
@@ -260,8 +297,13 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
         tabBtn->setIconSize(QSize(14, 14));
         
+        connect(tabBtn, &QPushButton::clicked, this, [this, id]() {
+            emit startWatchingRequested(id);
+        });
+        
         // Text Label (Middle)
         QLabel *txtLabel = new QLabel(name.isEmpty() ? id : name);
+        txtLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
         txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
         txtLabel->setAlignment(Qt::AlignCenter);
 
@@ -591,6 +633,7 @@ void NewUiWindow::setupUi()
     menuBtn->setIcon(QIcon(appDir + "/maps/logo/menu.png"));
     menuBtn->setIconSize(QSize(32, 32)); 
     menuBtn->setCursor(Qt::PointingHandCursor);
+    connect(menuBtn, &QPushButton::clicked, this, &NewUiWindow::systemSettingsRequested);
 
     // Minimize Button
     ResponsiveButton *minBtn = new ResponsiveButton();
@@ -734,7 +777,7 @@ void NewUiWindow::setupUi()
 
     // ScrollBar styling ends here
 
-
+    /*
     // Add dummy items
     QString imgPath = appDir + "/maps/t.png";
     QPixmap srcPix(imgPath);
@@ -743,6 +786,16 @@ void NewUiWindow::setupUi()
         srcPix = QPixmap(m_imgWidth, m_imgHeight); // Use calculated size
         srcPix.fill(Qt::darkGray);
     }
+    */
+
+    // Connect double click to watch request
+    connect(m_listWidget, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        QString userId = item->data(Qt::UserRole).toString();
+        // Ignore if it's local user (empty or self ID) or invalid
+        if (!userId.isEmpty() && userId != m_myStreamId) {
+             emit startWatchingRequested(userId);
+        }
+    });
 
     // Create Local User Item (Index 0)
     {
@@ -763,6 +816,12 @@ void NewUiWindow::setupUi()
         // The Card Frame (Visible Part)
         QFrame *card = new QFrame();
         card->setObjectName("CardFrame");
+        
+        // [Interaction Fix] Store local card pointer and install event filter
+        m_localCard = card;
+        card->installEventFilter(this);
+        card->setProperty("userId", m_myStreamId); // Might be empty initially, updated in setMyStreamId
+
         card->setStyleSheet(
             "#CardFrame {"
             "   background-color: #3b3b3b;"
@@ -796,6 +855,17 @@ void NewUiWindow::setupUi()
         m_videoLabel = imgLabel;
         qDebug() << "[NewUiWindow] m_videoLabel assigned successfully. Widget pointer:" << m_videoLabel;
         
+        // Initial placeholder capture
+        QScreen *screen = QGuiApplication::primaryScreen();
+        QPixmap srcPix;
+        if (screen) {
+             QPixmap original = screen->grabWindow(0);
+             srcPix = original.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
+        } else {
+             srcPix = QPixmap(m_cardBaseWidth, (int)(m_cardBaseWidth/1.77));
+             srcPix.fill(Qt::black);
+        }
+
         // Process Image (Rounded Corners)
         QPixmap pixmap(m_imgWidth, m_imgHeight); 
         pixmap.fill(Qt::transparent);
@@ -834,10 +904,22 @@ void NewUiWindow::setupUi()
         tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
         tabBtn->setIconSize(QSize(14, 14));
         
+        // [Interaction Fix] Connect local tab button for testing
+        connect(tabBtn, &QPushButton::clicked, this, [this]() {
+             if (!m_myStreamId.isEmpty()) {
+                 emit startWatchingRequested(m_myStreamId);
+             }
+        });
+
         // Text Label (Middle)
-        QLabel *txtLabel = new QLabel(QString("Local Screen (Me)"));
-        txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
-        txtLabel->setAlignment(Qt::AlignCenter);
+    QString displayName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
+    // Format: Name only (ID removed as requested)
+    QString fullText = displayName;
+    QLabel *txtLabel = new QLabel(fullText);
+    txtLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_localNameLabel = txtLabel; // Store pointer for updates
+    txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
+    txtLabel->setAlignment(Qt::AlignCenter);
 
         // Mic Toggle
         QPushButton *micBtn = new QPushButton();
@@ -928,32 +1010,33 @@ void NewUiWindow::setupUi()
     });
 
     // --- Far Right Panel (New Interface) ---
-    QWidget *farRightPanel = new QWidget(this);
-    farRightPanel->setObjectName("FarRightPanel");
-    farRightPanel->setFixedWidth(240); // Wider than left panel (80px)
-    farRightPanel->setStyleSheet(
+    m_farRightPanel = new QWidget(this);
+    m_farRightPanel->setObjectName("FarRightPanel");
+    m_farRightPanel->setFixedWidth(240); // Wider than left panel (80px)
+    m_farRightPanel->setVisible(false); // Default hidden
+    m_farRightPanel->setStyleSheet(
         "QWidget#FarRightPanel {"
         "   background-color: #2b2b2b;"
         "   border-radius: 20px;"
         "}"
     );
 
-    QVBoxLayout *farRightLayout = new QVBoxLayout(farRightPanel);
+    QVBoxLayout *farRightLayout = new QVBoxLayout(m_farRightPanel);
     farRightLayout->setContentsMargins(20, 20, 20, 20);
     farRightLayout->setSpacing(15);
 
     // Title
-    QLabel *frTitle = new QLabel("龙哥房间"); 
+    QLabel *frTitle = new QLabel("我的房间"); 
     frTitle->setStyleSheet("color: white; font-size: 16px; font-weight: bold; background: transparent;");
     frTitle->setAlignment(Qt::AlignCenter);
     farRightLayout->addWidget(frTitle);
 
     // List
-    QListWidget *frList = new QListWidget();
-    frList->setFrameShape(QFrame::NoFrame);
+    m_viewerList = new QListWidget();
+    m_viewerList->setFrameShape(QFrame::NoFrame);
     // Enable auto-adjust to prevent horizontal scrollbar issues
-    frList->setResizeMode(QListWidget::Adjust); 
-    frList->setStyleSheet(
+    m_viewerList->setResizeMode(QListWidget::Adjust); 
+    m_viewerList->setStyleSheet(
         "QListWidget {"
         "   background: transparent;"
         "   border: none;"
@@ -982,53 +1065,13 @@ void NewUiWindow::setupUi()
         "    border-radius: 3px;"
         "}"
     );
-    frList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    frList->verticalScrollBar()->setSingleStep(10); // Small scroll step
-    frList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); 
+    m_viewerList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_viewerList->verticalScrollBar()->setSingleStep(10); // Small scroll step
+    m_viewerList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); 
     
-    // Add items to Far Right List
-    for (int i = 0; i < 15; ++i) {
-        QListWidgetItem *item = new QListWidgetItem(frList);
-        // Reduced width hint to ensure it fits within the panel even with scrollbar
-        // Panel Width (240) - Panel Margin (40) - Scrollbar (approx 10) - Buffer = 180
-        item->setSizeHint(QSize(180, 50));
-        
-        QWidget *w = new QWidget();
-        w->setStyleSheet("background: transparent;");
-        QHBoxLayout *l = new QHBoxLayout(w);
-        // Standard margins
-        l->setContentsMargins(10, 0, 10, 0); 
-        
-        QLabel *txt = new QLabel(QString("用户名 %1").arg(i+1));
-        txt->setStyleSheet("color: #dddddd; font-size: 14px; border: none;");
-        
-        QPushButton *mic = new QPushButton();
-        mic->setFixedSize(24, 24);
-        mic->setCursor(Qt::PointingHandCursor);
-        mic->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
-        mic->setIconSize(QSize(18, 18));
-        mic->setFlat(true);
-        mic->setStyleSheet("border: none; background: transparent;");
-        
-        // Simple toggle logic for this mic
-        mic->setProperty("isOn", false);
-        connect(mic, &QPushButton::clicked, [mic, appDir]() {
-            bool isOn = mic->property("isOn").toBool();
-            isOn = !isOn;
-            mic->setProperty("isOn", isOn);
-            QString iconName = isOn ? "Mic_on.png" : "Mic_off.png";
-            mic->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
-        });
-        
-        l->addWidget(txt);
-        l->addStretch();
-        l->addWidget(mic);
-        // Removed explicit spacing at the end, relying on margins and width hint
-        
-        frList->setItemWidget(item, w);
-    }
+    // Items will be added dynamically via addViewer()
     
-    farRightLayout->addWidget(frList);
+    farRightLayout->addWidget(m_viewerList);
 
     // Quit Button
     QPushButton *quitBtn = new QPushButton("退出");
@@ -1059,7 +1102,7 @@ void NewUiWindow::setupUi()
     // Assemble Main Layout
     mainLayout->addWidget(leftPanel);
     mainLayout->addWidget(rightPanel);
-    mainLayout->addWidget(farRightPanel);
+    mainLayout->addWidget(m_farRightPanel);
 }
 
 void NewUiWindow::mousePressEvent(QMouseEvent *event)
@@ -1088,6 +1131,155 @@ void NewUiWindow::mouseReleaseEvent(QMouseEvent *event)
     }
 }
 
+bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    // Handle single click on local card to toggle "My Room" panel
+    if (watched == m_localCard && event->type() == QEvent::MouseButtonRelease) {
+        if (m_farRightPanel) {
+            m_farRightPanel->setVisible(!m_farRightPanel->isVisible());
+        }
+        return true; // Consume event
+    }
+
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        QString userId = watched->property("userId").toString();
+        // [Interaction Fix] Allow any valid user ID
+        // For local user (m_localCard), we prevent double-click streaming because single-click handles side panel
+        if (!userId.isEmpty()) {
+            if (watched == m_localCard) {
+                return true; // Consume double click on self without action
+            }
+            emit startWatchingRequested(userId);
+            return true; // Event handled
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void NewUiWindow::addViewer(const QString &id, const QString &name)
+{
+    // [Fix] Prevent duplicate items but allow name updates
+    if (m_viewerItems.contains(id)) {
+        QListWidgetItem *existingItem = m_viewerItems.value(id);
+        if (existingItem) {
+             QWidget *w = m_viewerList->itemWidget(existingItem);
+             if (w) {
+                 QList<QLabel*> labels = w->findChildren<QLabel*>();
+                 for (auto label : labels) {
+                     // Update name if changed
+                     label->setText(name.isEmpty() ? id : name);
+                     break; 
+                 }
+             }
+        }
+        return; 
+    }
+
+    if (!m_viewerList) return;
+
+    QString appDir = QCoreApplication::applicationDirPath();
+
+    QListWidgetItem *item = new QListWidgetItem(m_viewerList);
+    // [Fix] Store ID in UserRole for reliable lookup
+    item->setData(Qt::UserRole, id);
+
+    // Reduced width hint to ensure it fits within the panel even with scrollbar
+    // Panel Width (240) - Panel Margin (40) - Scrollbar (approx 10) - Buffer = 180
+    item->setSizeHint(QSize(180, 50));
+    
+    QWidget *w = new QWidget();
+    w->setStyleSheet("background: transparent;");
+    QHBoxLayout *l = new QHBoxLayout(w);
+    // Standard margins
+    l->setContentsMargins(10, 0, 10, 0); 
+    
+    QLabel *txt = new QLabel(name.isEmpty() ? id : name);
+    txt->setStyleSheet("color: #dddddd; font-size: 14px; border: none;");
+    
+    QPushButton *mic = new QPushButton();
+    mic->setFixedSize(24, 24);
+    mic->setCursor(Qt::PointingHandCursor);
+    // [UI Only] Default mic state to ON as requested
+    mic->setIcon(QIcon(appDir + "/maps/logo/Mic_on.png"));
+    mic->setIconSize(QSize(18, 18));
+    mic->setFlat(true);
+    mic->setStyleSheet("border: none; background: transparent;");
+    
+    // Simple toggle logic for this mic (UI Only)
+    mic->setProperty("isOn", true);
+    connect(mic, &QPushButton::clicked, [mic, appDir]() {
+        bool isOn = mic->property("isOn").toBool();
+        isOn = !isOn;
+        mic->setProperty("isOn", isOn);
+        QString iconName = isOn ? "Mic_on.png" : "Mic_off.png";
+        mic->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+    });
+    
+    l->addWidget(txt);
+    l->addStretch();
+    l->addWidget(mic);
+    
+    m_viewerList->setItemWidget(item, w);
+    m_viewerItems.insert(id, item);
+}
+
+void NewUiWindow::removeViewer(const QString &id)
+{
+    // 1. Try to remove using the map
+    if (m_viewerItems.contains(id)) {
+        QListWidgetItem *item = m_viewerItems.take(id);
+        if (item) {
+            int row = m_viewerList->row(item);
+            if (row >= 0) {
+                m_viewerList->takeItem(row);
+            }
+            delete item;
+        }
+    }
+    
+    // 2. [Safety] Iterate to clean up any duplicates or map desyncs
+    // Loop backwards to safely remove items
+    for(int i = m_viewerList->count() - 1; i >= 0; --i) {
+        QListWidgetItem* item = m_viewerList->item(i);
+        // Check UserRole first (most reliable)
+        if (item->data(Qt::UserRole).toString() == id) {
+             m_viewerList->takeItem(i);
+             delete item;
+             continue;
+        }
+
+        // Fallback: Check label text if UserRole is missing (legacy items)
+        QWidget* w = m_viewerList->itemWidget(item);
+        if(w) {
+             QList<QLabel*> labels = w->findChildren<QLabel*>();
+             for(auto label : labels) {
+                 // Check if text exactly matches ID (fallback)
+                 if(label->text() == id) {
+                     m_viewerList->takeItem(i);
+                     delete item;
+                     break;
+                 }
+             }
+        }
+    }
+}
+
+void NewUiWindow::clearViewers()
+{
+    if (!m_viewerList) return;
+    
+    m_viewerList->clear();
+    m_viewerItems.clear();
+}
+
+int NewUiWindow::getViewerCount() const
+{
+    if (!m_viewerList) return 0;
+    return m_viewerItems.size();
+}
+
+
+
 void NewUiWindow::onTimerTimeout()
 {
     // Ensure we have a target label to update
@@ -1099,7 +1291,8 @@ void NewUiWindow::onTimerTimeout()
     QPixmap originalPixmap = screen->grabWindow(0);
     
     // 2. Prepare Image (Scale to 300px width as requested)
-    QPixmap srcPix = originalPixmap.scaledToWidth(300, Qt::SmoothTransformation);
+    // Use m_cardBaseWidth to ensure we capture enough resolution for the UI
+    QPixmap srcPix = originalPixmap.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
 
     // 3. Process Image (Rounded Corners) - Reusing logic from setupUi for consistency
     QPixmap pixmap(m_imgWidth, m_imgHeight); 
@@ -1128,11 +1321,191 @@ void NewUiWindow::onTimerTimeout()
 
     // 5. Send frame to server
     if (m_streamClient && m_streamClient->isConnected()) {
-        // Send the smaller 300px image or the original?
-        // Requirement said "0.5秒截图一次，300像素，，然后显示在列表的第一个"
-        // It didn't explicitly say push 300px, but usually for streaming preview we push what we see.
-        // Or we might want to push higher quality?
-        // "实现单路图片的推流功能" - let's push the same image we show for now to save bandwidth.
         m_streamClient->sendFrame(pixmap);
     }
+}
+
+void NewUiWindow::addUser(const QString &userId, const QString &userName)
+{
+    addUser(userId, userName, 0);
+}
+
+void NewUiWindow::addUser(const QString &userId, const QString &userName, int iconId)
+{
+    if (userId == m_myStreamId) return; 
+    if (m_userItems.contains(userId)) return; 
+
+    QString appDir = QCoreApplication::applicationDirPath();
+
+    // Create List Item
+    QListWidgetItem *item = new QListWidgetItem(m_listWidget);
+    item->setSizeHint(QSize(m_totalItemWidth, m_totalItemHeight));
+    item->setData(Qt::UserRole, userId); 
+
+    // Create Widget
+    QWidget *itemWidget = new QWidget();
+    itemWidget->setAttribute(Qt::WA_TranslucentBackground);
+    QVBoxLayout *itemLayout = new QVBoxLayout(itemWidget);
+    itemLayout->setContentsMargins(m_shadowSize, m_shadowSize, m_shadowSize, m_shadowSize);
+    itemLayout->setSpacing(0);
+
+    // Card Frame
+    QFrame *card = new QFrame();
+    card->setObjectName("CardFrame");
+    // [Interaction Fix] Install event filter to capture double clicks on the card
+    card->setProperty("userId", userId);
+    card->installEventFilter(this);
+
+    card->setStyleSheet(
+        "#CardFrame {"
+        "   background-color: #3b3b3b;"
+        "   border-radius: 12px;"
+        "}"
+        "#CardFrame:hover {"
+        "   background-color: #444;"
+        "}"
+    );
+    
+    QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect();
+    shadow->setBlurRadius(10); 
+    shadow->setColor(QColor(0, 0, 0, 80));
+    shadow->setOffset(0, 2);
+    card->setGraphicsEffect(shadow);
+
+    QVBoxLayout *cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(m_marginX, m_marginTop, m_marginX, 0);
+    cardLayout->setSpacing(0); 
+
+    // Image Label
+    QLabel *imgLabel = new QLabel();
+    imgLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    imgLabel->setFixedSize(m_imgWidth, m_imgHeight); 
+    imgLabel->setAlignment(Qt::AlignCenter);
+    imgLabel->setText("Loading...");
+    imgLabel->setStyleSheet("color: #888; font-size: 10px;");
+
+    // Bottom Controls
+    QHBoxLayout *bottomLayout = new QHBoxLayout();
+    bottomLayout->setContentsMargins(0, 0, 0, 5); 
+    bottomLayout->setSpacing(5);
+
+    // Watch Button
+    QPushButton *tabBtn = new QPushButton();
+    tabBtn->setFixedSize(14, 14);
+    tabBtn->setCursor(Qt::PointingHandCursor);
+    tabBtn->setFlat(true);
+    tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+    tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
+    tabBtn->setIconSize(QSize(14, 14));
+    
+    connect(tabBtn, &QPushButton::clicked, this, [this, userId]() {
+        emit startWatchingRequested(userId);
+    });
+
+    // Name Label
+    QLabel *txtLabel = new QLabel(userName.isEmpty() ? userId : userName);
+    txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
+    txtLabel->setAlignment(Qt::AlignCenter);
+
+    // Mic/Speaker Buttons
+    QPushButton *micBtn = new QPushButton();
+    micBtn->setFixedSize(14, 14);
+    micBtn->setCursor(Qt::PointingHandCursor);
+    micBtn->setProperty("isOn", false);
+    micBtn->setFlat(true);
+    micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+    micBtn->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
+    micBtn->setIconSize(QSize(14, 14));
+
+    QPushButton *labaBtn = new QPushButton();
+    labaBtn->setFixedSize(14, 14);
+    labaBtn->setCursor(Qt::PointingHandCursor);
+    labaBtn->setProperty("isOn", false);
+    labaBtn->setFlat(true);
+    labaBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+    labaBtn->setIcon(QIcon(appDir + "/maps/logo/laba_off.png"));
+    labaBtn->setIconSize(QSize(14, 14));
+
+    bottomLayout->addWidget(tabBtn);
+    bottomLayout->addWidget(txtLabel);
+    bottomLayout->addWidget(micBtn);
+    bottomLayout->addWidget(labaBtn);
+
+    cardLayout->addWidget(imgLabel);
+    cardLayout->addLayout(bottomLayout);
+
+    itemLayout->addWidget(card);
+    m_listWidget->setItemWidget(item, itemWidget);
+
+    // Track Item
+    m_userItems.insert(userId, item);
+    m_userLabels.insert(userId, imgLabel);
+
+    // Start Stream Subscription
+    StreamClient *client = new StreamClient(this);
+    QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(userId);
+    
+    connect(client, &StreamClient::frameReceived, this, [this, userId](const QPixmap &frame) {
+        if (m_userLabels.contains(userId)) {
+             QLabel *label = m_userLabels[userId];
+             
+             QPixmap pixmap(m_imgWidth, m_imgHeight); 
+             pixmap.fill(Qt::transparent);
+             QPainter p(&pixmap);
+             p.setRenderHint(QPainter::Antialiasing);
+             p.setRenderHint(QPainter::SmoothPixmapTransform);
+             
+             QPixmap scaledPix = frame.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+             int x = (m_imgWidth - scaledPix.width()) / 2;
+             int y = (m_imgHeight - scaledPix.height()) / 2;
+             
+             QPainterPath path;
+             path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
+             p.setClipPath(path);
+             p.drawPixmap(x, y, scaledPix);
+             p.end();
+
+             label->setPixmap(pixmap);
+        }
+    });
+
+    client->connectToServer(QUrl(subscribeUrl));
+    m_remoteStreams.insert(userId, client);
+}
+
+void NewUiWindow::removeUser(const QString &userId)
+{
+    if (m_remoteStreams.contains(userId)) {
+        StreamClient *client = m_remoteStreams.take(userId);
+        client->disconnectFromServer();
+        client->deleteLater();
+    }
+
+    m_userLabels.remove(userId);
+
+    if (m_userItems.contains(userId)) {
+        QListWidgetItem *item = m_userItems.take(userId);
+        int row = m_listWidget->row(item);
+        if (row >= 0) {
+            delete m_listWidget->takeItem(row);
+        }
+    }
+}
+
+void NewUiWindow::clearUserList()
+{
+    QList<QString> keys = m_remoteStreams.keys();
+    for (const QString &id : keys) {
+        removeUser(id);
+    }
+}
+
+void NewUiWindow::updateUserAvatar(const QString &userId, int iconId)
+{
+    // Not implemented yet
+}
+
+QString NewUiWindow::getCurrentUserId() const
+{
+    return m_myStreamId;
 }

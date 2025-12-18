@@ -19,12 +19,35 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void onTimerTimeout();
     void onStreamLog(const QString &msg);
     void onUserListUpdated(const QJsonArray &users);
     void onLoginConnected();
+
+public:
+    void setMyStreamId(const QString &id, const QString &name = QString());
+
+    // Viewer List Management
+    void addViewer(const QString &id, const QString &name);
+    void removeViewer(const QString &id);
+    void clearViewers(); // Clear all viewers
+    int getViewerCount() const; // Get current viewer count
+
+public:
+    // Main Program Integration Methods
+    void addUser(const QString &userId, const QString &userName);
+    void addUser(const QString &userId, const QString &userName, int iconId);
+    void removeUser(const QString &userId);
+    void clearUserList();
+    void updateUserAvatar(const QString &userId, int iconId);
+    QString getCurrentUserId() const; // Returns the local user ID
+
+signals:
+    void startWatchingRequested(const QString &targetId);
+    void systemSettingsRequested();
 
 private:
     void setupUi();
@@ -37,6 +60,11 @@ private:
     QListWidget *m_listWidget = nullptr;
     QTimer *m_timer = nullptr;
     QLabel *m_videoLabel = nullptr; // Local preview label (Index 0)
+    QWidget *m_farRightPanel = nullptr; // Far right panel (My Room)
+    QListWidget *m_viewerList = nullptr; // Viewer list widget
+    QMap<QString, QListWidgetItem*> m_viewerItems; // Viewer ID -> List Item
+    QLabel *m_localNameLabel = nullptr; // Local name label (Index 0)
+    QFrame *m_localCard = nullptr; // Local card frame (Index 0)
     StreamClient *m_streamClient = nullptr;
     LoginClient *m_loginClient = nullptr;
 

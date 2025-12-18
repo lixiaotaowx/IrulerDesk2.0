@@ -2,7 +2,7 @@
 #include "VideoWindow.h"
 #include <QSoundEffect>
 #include <QUrl>
-#include "ui/TransparentImageList.h"
+#include "NewUi/NewUiWindow.h"
 #include "video_components/VideoDisplayWidget.h"
 #include "ui/ScreenAnnotationWidget.h"
 #include "ui/AvatarSettingsWindow.h"
@@ -239,7 +239,7 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
 }
 #endif
 
-TransparentImageList* MainWindow::transparentImageList() const
+NewUiWindow* MainWindow::transparentImageList() const
 {
     return m_transparentImageList;
 }
@@ -271,6 +271,7 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
         m_waitingDialog = nullptr;
     }
     m_waitingDialog = new QMessageBox(this);
+    m_waitingDialog->setWindowFlags(m_waitingDialog->windowFlags() | Qt::WindowStaysOnTopHint);
     m_waitingDialog->setWindowTitle(QStringLiteral("等待同意"));
     m_waitingDialog->setText(QStringLiteral("已发送请求，等待对方同意..."));
     
@@ -303,6 +304,8 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
 
     m_waitingDialog->setModal(false); // 非模态，不阻塞UI事件循环
     m_waitingDialog->show();
+    m_waitingDialog->raise();
+    m_waitingDialog->activateWindow();
 }
 
 void MainWindow::startVideoReceiving(const QString& targetDeviceId)
@@ -582,9 +585,26 @@ void MainWindow::setupUI()
             connect(vd, &VideoDisplayWidget::avatarUpdateReceived,
                     this, [this](const QString &userId, int iconId) {
                 if (m_transparentImageList) {
-                    m_transparentImageList->updateUserAvatar(userId, iconId);
+                     m_transparentImageList->updateUserAvatar(userId, iconId);
                 }
             });
+
+            // [Fix] Handle self-loopback cleanup locally
+            connect(vd, &VideoDisplayWidget::receivingStopped,
+                    this, [this](const QString &viewerId, const QString &targetId) {
+                // If we were watching ourselves, clean up locally because the server message might be delayed or dropped
+                if (targetId == getDeviceId() && viewerId == getDeviceId()) {
+                     qInfo() << "[MainWindow] Self-viewing stopped, cleaning up local viewer:" << viewerId;
+                     if (m_transparentImageList) {
+                         m_transparentImageList->removeViewer(viewerId);
+                         // Check if we need to stop streaming (if no other viewers)
+                         if (m_transparentImageList->getViewerCount() == 0 && m_isStreaming) {
+                             stopStreaming();
+                         }
+                     }
+                }
+            });
+
             vd->selectAudioOutputFollowSystem();
             bool micFollow = loadMicInputFollowSystemFromConfig();
             QString micId = loadMicInputDeviceIdFromConfig();
@@ -600,8 +620,21 @@ void MainWindow::setupUI()
         }
     }
     
-    // 创建透明图片列表
-    m_transparentImageList = new TransparentImageList();
+    // 创建新UI窗口 (Replacing TransparentImageList)
+    m_transparentImageList = new NewUiWindow();
+    
+    // 设置当前用户信息
+    m_transparentImageList->setMyStreamId(getDeviceId(), m_userName.isEmpty() ? "Me" : m_userName);
+    
+    // 连接观看请求信号
+    connect(m_transparentImageList, &NewUiWindow::startWatchingRequested,
+            this, &MainWindow::sendWatchRequest);
+            
+    // Connect system settings signal
+    connect(m_transparentImageList, &NewUiWindow::systemSettingsRequested,
+            this, &MainWindow::onSystemSettingsRequested);
+
+    /*
     QString appDir = QCoreApplication::applicationDirPath();
     m_transparentImageList->setDefaultAvatarPath(QString("%1/maps/ii.png").arg(appDir));
     
@@ -635,6 +668,7 @@ void MainWindow::setupUI()
             this, &MainWindow::onMicToggleRequested);
     connect(m_transparentImageList, &TransparentImageList::speakerToggleRequested,
             this, &MainWindow::onSpeakerToggleRequested);
+    */
 
     // Initialize Streaming Island
     m_islandWidget = new StreamingIslandWidget(nullptr); 
@@ -699,6 +733,10 @@ void MainWindow::stopStreaming()
         return;
     }
     
+    // [Fix] Do NOT force clear viewers here.
+    // Let individual viewer_exit events handle removal.
+    // m_transparentImageList->clearViewers(); is removed as per user request.
+
     m_statusLabel->setText("正在停止流媒体...");
     m_statusLabel->setStyleSheet(
         "QLabel {"
@@ -1559,6 +1597,11 @@ void MainWindow::initializeLoginSystem()
         }
         m_userName = name;
     }
+    
+    // [Fix] Update NewUiWindow with the loaded user info immediately
+    if (m_transparentImageList) {
+        m_transparentImageList->setMyStreamId(m_userId, m_userName);
+    }
     m_loginWebSocket = new QWebSocket();
     connect(m_loginWebSocket, &QWebSocket::connected, this, &MainWindow::onLoginWebSocketConnected);
     connect(m_loginWebSocket, &QWebSocket::disconnected, this, &MainWindow::onLoginWebSocketDisconnected);
@@ -1720,7 +1763,11 @@ void MainWindow::updateUserList(const QJsonArray& users)
         }
         
         // 新增到透明图片列表 (addUser会自动处理去重和更新)
-        m_transparentImageList->addUser(userId, userName, iconId);
+        // [New UI Integration] Use NewUiWindow integration
+        // m_transparentImageList is now NewUiWindow*
+        if (m_transparentImageList) {
+            m_transparentImageList->addUser(userId, userName, iconId);
+        }
     }
     
     // 检查目标用户在线状态
@@ -1878,8 +1925,12 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_approvalDialog->close();
                 m_approvalDialog->deleteLater();
                 m_approvalDialog = nullptr;
-                QMessageBox::information(this, QStringLiteral("未接提醒"), 
-                    QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+                QMessageBox msgBox(this);
+                msgBox.setIcon(QMessageBox::Information);
+                msgBox.setWindowTitle(QStringLiteral("未接提醒"));
+                msgBox.setText(QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+                msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
+                msgBox.exec();
             } else {
                 qInfo() << "No approval dialog to close for canceled request (via action)";
             }
@@ -1940,7 +1991,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_approvalDialog->setWindowFlags(m_approvalDialog->windowFlags() | Qt::WindowStaysOnTopHint);
 
             // 连接同意按钮
-            connect(acceptBtn, &QPushButton::clicked, this, [this, viewerId, targetId]() {
+            // [Fix] Capture viewerName for use in lambda
+            connect(acceptBtn, &QPushButton::clicked, this, [this, viewerId, targetId, viewerName]() {
                 if (!m_approvalDialog) return;
 
                 // 同意
@@ -1951,6 +2003,11 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 QJsonDocument accDoc(accepted);
                 if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
                     m_loginWebSocket->sendTextMessage(accDoc.toJson(QJsonDocument::Compact));
+                }
+
+                // [Fix] Add to "My Room" list
+                if (m_transparentImageList) {
+                    m_transparentImageList->addViewer(viewerId, viewerName);
                 }
 
                 // [Local Control] 本地直接通知捕获进程开始推流
@@ -2028,6 +2085,11 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 QJsonDocument responseDoc(streamOkResponse);
                 m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
             }
+            
+            // [Fix] Add to "My Room" list for auto-approve case
+            if (m_transparentImageList) {
+                m_transparentImageList->addViewer(viewerId, viewerName);
+            }
         }
     } else if (type == "watch_request_canceled") {
         QString viewerId = obj["viewer_id"].toString();
@@ -2048,8 +2110,12 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_approvalDialog = nullptr;
             
             // 显示未接提醒
-            QMessageBox::information(this, QStringLiteral("未接提醒"), 
-                QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+            QMessageBox msgBox(this);
+            msgBox.setIcon(QMessageBox::Information);
+            msgBox.setWindowTitle(QStringLiteral("未接提醒"));
+            msgBox.setText(QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+            msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
+            msgBox.exec();
         } else {
             qInfo() << "No approval dialog to close for canceled request";
         }
@@ -2099,21 +2165,31 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 return;
             }
 
-            QMessageBox::information(this, QStringLiteral("观看被拒绝"), QStringLiteral("对方拒绝了观看请求"));
+            QMessageBox msgBox(this);
+            msgBox.setIcon(QMessageBox::Information);
+            msgBox.setWindowTitle(QStringLiteral("观看被拒绝"));
+            msgBox.setText(QStringLiteral("对方拒绝了观看请求"));
+            msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
+            msgBox.exec();
         }
     } else if (type == "viewer_exit" || type == "stop_streaming") {
         // 处理观众退出或停止观看的通知
         QString viewerId = obj["viewer_id"].toString();
         
-        if (m_isStreaming) {
-            qInfo() << "Received stop command (" << type << ") from viewer" << viewerId;
+        // [Fix] Remove ONLY the specific viewer
+        bool hasViewers = false;
+        if (m_transparentImageList) {
+            m_transparentImageList->removeViewer(viewerId);
+            if (m_transparentImageList->getViewerCount() > 0) {
+                hasViewers = true;
+            }
+        }
+
+        // Only stop streaming if NO viewers remain
+        if (m_isStreaming && !hasViewers) {
+            // qInfo() << "Received stop command (" << type << ") from viewer" << viewerId;
             // 停止推流（这也将关闭灵动岛）
             stopStreaming();
-            
-            // 可选：如果需要通知用户
-            // if (m_trayIcon) {
-            //     m_trayIcon->showMessage("推流结束", QString("用户 %1 已停止观看").arg(viewerId), QSystemTrayIcon::Information, 3000);
-            // }
         }
     } else if (type == "streaming_ok") {
         // 处理推流OK响应，开始拉流播放
@@ -2145,6 +2221,18 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (obj.contains("device_id")) userId = obj.value("device_id").toString();
         else if (obj.contains("id")) userId = obj.value("id").toString();
         else if (obj.contains("user_id")) userId = obj.value("user_id").toString();
+        
+        // [Fix] Handle name updates for "My Room" viewer list
+        QString name;
+        if (obj.contains("name")) name = obj["name"].toString();
+        else if (obj.contains("user_name")) name = obj["user_name"].toString();
+        else if (obj.contains("viewer_name")) name = obj["viewer_name"].toString();
+
+        if (!userId.isEmpty() && !name.isEmpty() && m_transparentImageList) {
+             // addViewer updates the name if the user is already in the list
+             m_transparentImageList->addViewer(userId, name);
+        }
+
         int iconId = -1;
         if (obj.contains("icon_id")) {
             QJsonValue v = obj.value("icon_id");
@@ -2996,6 +3084,12 @@ void MainWindow::onUserNameChanged(const QString &name)
     if (n == m_userName) return;
     m_userName = n;
     saveUserNameToConfig(n);
+    
+    // [Fix] Update NewUiWindow when username changes
+    if (m_transparentImageList) {
+        m_transparentImageList->setMyStreamId(m_userId, m_userName);
+    }
+    
     if (m_isLoggedIn) {
         sendLoginRequest();
     }

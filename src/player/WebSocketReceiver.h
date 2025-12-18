@@ -66,11 +66,17 @@ public:
     // 通知采集端：该观众主动退出
     void sendViewerExit();
     
+    // 停止音频处理（停止定时器，清空队列），用于在不完全断开连接的情况下静音
+    void stopAudio();
+public:
     // 断开连接
     void disconnectFromServer();
-    
+
     // 检查连接状态
     bool isConnected() const;
+
+private:
+    bool m_audioStopped = false; // 防止音频被意外重启的标志
     
     // 获取接收统计信息
     struct ReceiverStats {

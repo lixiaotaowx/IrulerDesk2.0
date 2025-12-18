@@ -276,15 +276,28 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
             if (m_receiver->isConnected()) {
                 m_receiver->sendViewerExit();
             }
+            // Stop audio first to prevent log spam
+            m_receiver->stopAudio();
             m_receiver->disconnectFromServer();
             m_receiver.reset();
         }
         return;
     }
     
+    // [Optimization] Emit signal immediately to update UI
+    emit receivingStopped(m_lastViewerId, m_lastTargetId);
+
     if (m_receiver && m_receiver->isConnected()) {
         m_receiver->sendViewerExit();
+        m_receiver->sendStopStreaming();
     }
+    
+    if (m_receiver) {
+        m_receiver->stopAudio();
+        // Disconnect audio signal to prevent processing any queued signals
+        disconnect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived, this, nullptr);
+    }
+
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
@@ -305,6 +318,8 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
     m_isReceiving = false;
     updateButtonText();
     
+    // emit receivingStopped(m_lastViewerId, m_lastTargetId); // Moved to top
+
     // 重置统计数据
     m_stats = VideoStats();
     m_stats.connectionStatus = "Disconnected";
@@ -1500,11 +1515,27 @@ void VideoDisplayWidget::setMicSendEnabled(bool enabled)
 
 void VideoDisplayWidget::pauseReceiving()
 {
+    // [Optimization] Emit signal immediately to update UI (remove viewer from list)
+    // This must be done first to ensure the UI is responsive even if network operations take time
+    emit receivingStopped(m_lastViewerId, m_lastTargetId);
+
     // 保留WebSocket连接，仅通知采集端停止推流，便于下次快速恢复
     if (m_receiver && m_isReceiving) {
-        m_receiver->sendStopStreaming();
-        // 为确保服务器侧流量归零，同时断开订阅连接
-        m_receiver->disconnectFromServer();
+        // [Fix] Ensure viewer_exit is sent so producer cleans up the user from list
+        if (m_receiver->isConnected()) {
+             m_receiver->sendViewerExit();
+             m_receiver->sendStopStreaming();
+        }
+        
+        // [Fix] Do NOT call disconnectFromServer() here to avoid UI freeze (3s delay).
+        // The receiver will be recreated in startReceiving() anyway.
+        // m_receiver->disconnectFromServer();
+        
+        // Stop internal audio processing loop to prevent "Soft Underrun" log spam
+        m_receiver->stopAudio();
+
+        // Stop feeding audio data to player
+        disconnect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived, this, nullptr);
     }
     // 停止音频播放
     if (m_audioPlayer) {
@@ -1515,6 +1546,7 @@ void VideoDisplayWidget::pauseReceiving()
     showWaitingSplash();
     m_stats.connectionStatus = "Disconnected";
     emit connectionStatusChanged(m_stats.connectionStatus);
+    
     m_isReceiving = false;
     updateButtonText();
 }

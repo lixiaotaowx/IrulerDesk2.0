@@ -108,6 +108,8 @@ signals:
     void connectionStatusChanged(const QString &status);
     void frameReceived();
     void statsUpdated(const VideoStats &stats);
+    // 停止接收信号，用于本地清理
+    void receivingStopped(const QString &viewerId, const QString &targetId);
     // 双击视频区域触发全屏切换
     void fullscreenToggleRequested();
     // 批注颜色变化（用于持久化与UI同步）

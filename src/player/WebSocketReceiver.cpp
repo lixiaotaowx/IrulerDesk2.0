@@ -355,6 +355,9 @@ bool WebSocketReceiver::connectToServer(const QString &url)
         return true;
     }
     
+    // 重置音频停止标志
+    m_audioStopped = false;
+    
     // 如果已经连接但URL不同，先断开之前的连接
     if (m_connected) {
         m_reconnectEnabled = false;
@@ -380,8 +383,36 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     return true;
 }
 
+void WebSocketReceiver::stopAudio()
+{
+    QMutexLocker locker(&m_mutex);
+    m_audioStopped = true;
+
+    // 停止音频定时器
+    if (m_audioTimer && m_audioTimer->isActive()) {
+        m_audioTimer->stop();
+    }
+    // 清空内部队列
+    m_opusQueue.clear();
+    
+    // 清空所有 Peer 的队列和状态
+    m_peerQueues.clear();
+    m_peerBuffering.clear();
+    m_peerSilenceCounts.clear();
+    
+    // 重置 underrun 计数，防止下次启动时误报
+    m_consecutiveUnderruns = 0;
+    m_producerBuffering = true;
+    m_hasAudioStarted = false;
+    
+    // 注意：我们不销毁解码器，以便快速恢复
+}
+
 void WebSocketReceiver::disconnectFromServer()
 {
+    // 先停止音频，防止资源竞争和日志刷屏
+    stopAudio();
+
     QMutexLocker locker(&m_mutex);
     
     m_reconnectEnabled = false;
@@ -392,9 +423,14 @@ void WebSocketReceiver::disconnectFromServer()
         QJsonObject stopMsg;
         stopMsg["type"] = "stop_streaming";
         QJsonDocument stopDoc(stopMsg);
-        m_webSocket->sendTextMessage(stopDoc.toJson(QJsonDocument::Compact));
-
-        m_webSocket->close();
+        
+        // 使用 invokeMethod 异步发送，避免在锁内执行可能耗时的操作
+        QMetaObject::invokeMethod(m_webSocket, [ws = m_webSocket, data = stopDoc.toJson(QJsonDocument::Compact)]() {
+            if (ws && ws->state() == QAbstractSocket::ConnectedState) {
+                ws->sendTextMessage(data);
+                ws->close();
+            }
+        }, Qt::QueuedConnection);
     }
     
     // 停止音频定时器与清空音频队列，销毁解码器，避免断开后仍有PLC输出
@@ -618,6 +654,11 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
         } else if (type == "audio_opus") {
             // Remove target_id filtering as we now use precise room routing on server
             
+            // 如果音频已被停止，直接丢弃数据，防止重启定时器
+            if (m_audioStopped) {
+                return;
+            }
+
             int sampleRate = obj.value("sample_rate").toInt(16000);
             int channels = obj.value("channels").toInt(1);
             int frameSamples = obj.value("frame_samples").toInt(sampleRate / 50);
@@ -1207,6 +1248,7 @@ void WebSocketReceiver::sendStopStreaming()
 
     QJsonDocument stopDoc(stopMsg);
     m_webSocket->sendTextMessage(stopDoc.toJson(QJsonDocument::Compact));
+    m_webSocket->flush();
 }
 
 void WebSocketReceiver::sendSetQuality(const QString &quality)

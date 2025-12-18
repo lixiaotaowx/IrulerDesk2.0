@@ -40,6 +40,10 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
+signals:
+    void avatarUpdateReceived(const QString &userId, int iconId);
+    void receivingStopped(const QString &viewerId, const QString &targetId);
+
 private slots:
     void onMinimizeClicked();
     void onMaximizeClicked();

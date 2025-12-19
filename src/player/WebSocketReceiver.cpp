@@ -7,6 +7,7 @@
 #include <QPoint>
 #include <QSslError>
 #include <QNetworkProxy>
+#include <QDebug>
 #include <cmath>
 #include <iostream>
 #include <QtMultimedia/QAudioSource>
@@ -682,7 +683,6 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             
             initOpusDecoderIfNeeded(mixSampleRate, channels);
             if (!m_opusInitialized || !m_opusDecoder) {
-                qDebug() << "[Receiver] Opus decoder init failed!";
                 return; // 解码器不可用
             }
             // 入队以按固定20ms节拍解码，降低颤抖
@@ -701,7 +701,6 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 }
                 static int dropLogCount = 0;
                 if (++dropLogCount % 10 == 0) {
-                     qDebug() << "[Receiver] Latency control: dropped" << dropCount << "frames. Queue size:" << m_opusQueue.size();
                 }
             }
 
@@ -716,7 +715,6 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                     m_audioLastTimestamp = timestamp;
                     m_nextAudioTick = QDateTime::currentMSecsSinceEpoch();
                     m_audioTimer->start();
-                    qDebug() << "[Receiver] Audio timer started. Prebuffer:" << m_opusQueue.size() << " Threshold:" << threshold;
                 }
             }
             return;
@@ -728,7 +726,6 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                     // Debug: Filtered own echo
                     static int echoFilterCount = 0;
                     if (++echoFilterCount % 100 == 0) {
-                        qDebug() << "[Receiver] Filtered own echo from viewer_id:" << fromId;
                     }
                     return;
                 }
@@ -782,12 +779,33 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                     m_audioLastTimestamp = timestamp; 
                     m_nextAudioTick = QDateTime::currentMSecsSinceEpoch();
                     m_audioTimer->start(); 
-                    qDebug() << "[Receiver] Audio timer started (Peer trigger). Prebuffer:" << q.size() << " Threshold:" << threshold;
                 }
             }
             return;
         } else if (type == "streaming_ok") {
             emit streamingStarted();
+            return;
+        } else if (type == "kick_viewer") {
+            QString viewerId = obj.value("viewer_id").toString();
+            QString targetId = obj.value("target_id").toString();
+            QString myViewerId;
+            {
+                QMutexLocker locker(&m_mutex);
+                myViewerId = m_lastViewerId;
+            }
+            QString payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+            qInfo().noquote() << "[KickDiag] kick_viewer received on stream ws"
+                              << " viewer_id=" << viewerId
+                              << " target_id=" << targetId
+                              << " session_viewer_id=" << myViewerId
+                              << " payload=" << payload;
+            if (!viewerId.isEmpty() && !myViewerId.isEmpty() && viewerId == myViewerId) {
+                qInfo().noquote() << "[KickDiag] kick_viewer matches session; emitting kicked"
+                                  << " target_id=" << targetId;
+                emit kicked(targetId);
+            } else {
+                qInfo().noquote() << "[KickDiag] kick_viewer ignored on this session";
+            }
             return;
         }
     }
@@ -819,7 +837,6 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
         errorString = "未知错误";
         break;
     }
-    qDebug() << "[Receiver] WebSocket Error:" << error << " String:" << errorString << " URL:" << m_serverUrl;
     emit connectionStatusChanged(QString("连接错误: %1").arg(errorString));
     
     // 如果是网络错误或连接被拒绝，尝试重连
@@ -830,10 +847,7 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
 
 void WebSocketReceiver::onSslErrors(const QList<QSslError> &errors)
 {
-    qDebug() << "[Receiver] SSL Errors:";
-    for (const auto &error : errors) {
-        qDebug() << "  " << error.errorString();
-    }
+    Q_UNUSED(errors);
     m_webSocket->ignoreSslErrors();
 }
 

@@ -35,6 +35,8 @@ public:
     void removeViewer(const QString &id);
     void clearViewers(); // Clear all viewers
     int getViewerCount() const; // Get current viewer count
+    void updateViewerNameIfExists(const QString &id, const QString &name);
+    void sendKickToSubscribers(const QString &viewerId);
 
 public:
     // Main Program Integration Methods
@@ -50,6 +52,7 @@ signals:
     void systemSettingsRequested();
     void clearMarksRequested();
     void toggleStreamingIslandRequested();
+    void kickViewerRequested(const QString &viewerId);
 
 private:
     void setupUi();

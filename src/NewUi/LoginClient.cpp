@@ -55,7 +55,6 @@ void LoginClient::login(const QString &userId, const QString &userName)
 
     QJsonDocument doc(message);
     m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
-    emit logMessage("Sent login request for user: " + userId);
     
     // Start sending heartbeats
     if (!m_heartbeatTimer->isActive()) {
@@ -72,7 +71,6 @@ void LoginClient::onConnected()
 {
     m_isConnected = true;
     emit connected();
-    emit logMessage("LoginClient Connected");
 }
 
 void LoginClient::onDisconnected()
@@ -82,7 +80,6 @@ void LoginClient::onDisconnected()
         m_heartbeatTimer->stop();
     }
     emit disconnected();
-    emit logMessage("LoginClient Disconnected");
 }
 
 void LoginClient::sendHeartbeat()
@@ -100,12 +97,9 @@ void LoginClient::sendHeartbeat()
 
 void LoginClient::onTextMessageReceived(const QString &message)
 {
-    // emit logMessage("LoginClient received: " + message);
-    
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
     if (error.error != QJsonParseError::NoError) {
-        emit logMessage("JSON Parse Error: " + error.errorString());
         return;
     }
 
@@ -117,11 +111,11 @@ void LoginClient::onTextMessageReceived(const QString &message)
     if (type == "online_users_update") {
         QJsonArray users = obj["data"].toArray();
         emit userListUpdated(users);
-        emit logMessage(QString("Received user list update with %1 users").arg(users.size()));
     } else if (type == "login_response") {
         bool success = obj["success"].toBool();
         QString msg = obj["message"].toString();
-        emit logMessage(QString("Login response: %1 (%2)").arg(success ? "Success" : "Failed").arg(msg));
+        Q_UNUSED(success);
+        Q_UNUSED(msg);
     }
 }
 
@@ -129,5 +123,4 @@ void LoginClient::onError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error);
     emit errorOccurred(m_webSocket->errorString());
-    emit logMessage("LoginClient Error: " + m_webSocket->errorString());
 }

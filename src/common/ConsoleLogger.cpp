@@ -25,10 +25,17 @@ namespace {
             msg.contains("Using Qt multimedia with FFmpeg")) {
             return;
         }
+        const bool isKickDiag = msg.contains("[KickDiag]");
+
+#if defined(NDEBUG)
+        if (!isKickDiag && (type == QtDebugMsg || type == QtInfoMsg || type == QtWarningMsg)) {
+            return;
+        }
+#endif
 
 #ifdef DISABLE_ALL_LOGS
         // 静音非致命日志，保留 Critical/Fatal
-        if (type == QtDebugMsg || type == QtInfoMsg || type == QtWarningMsg) {
+        if (!isKickDiag && (type == QtDebugMsg || type == QtInfoMsg || type == QtWarningMsg)) {
             return;
         }
 #endif

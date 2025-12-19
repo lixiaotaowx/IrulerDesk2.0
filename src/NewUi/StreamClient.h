@@ -14,6 +14,7 @@ public:
     void connectToServer(const QUrl &url);
     void disconnectFromServer();
     void sendFrame(const QPixmap &pixmap);
+    qint64 sendTextMessage(const QString &message);
     bool isConnected() const;
 
 signals:

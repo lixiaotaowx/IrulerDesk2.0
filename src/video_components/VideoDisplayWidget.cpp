@@ -97,6 +97,21 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 连接鼠标位置信号
     connect(m_receiver.get(), &WebSocketReceiver::mousePositionReceived,
             this, &VideoDisplayWidget::onMousePositionReceived);
+
+    connect(m_receiver.get(), &WebSocketReceiver::kicked, this, [this](const QString &) {
+        qInfo().noquote() << "[KickDiag] VideoDisplayWidget received kicked; stopping receiving";
+        QTimer::singleShot(0, this, [this]() {
+            if (!m_isReceiving) return;
+            showOfflineReminder(QStringLiteral("你已被房主移除"));
+            stopReceiving(false);
+            QWidget *top = this->window();
+            if (top) {
+                top->hide();
+            } else {
+                this->hide();
+            }
+        });
+    });
             
     // 收到推流成功信号后，自动开启麦克风 (实现双工通话)
     connect(m_receiver.get(), &WebSocketReceiver::streamingStarted, this, [this]() {
@@ -1438,6 +1453,21 @@ void VideoDisplayWidget::recreateReceiver()
 
     connect(m_receiver.get(), &WebSocketReceiver::mousePositionReceived,
             this, &VideoDisplayWidget::onMousePositionReceived);
+
+    connect(m_receiver.get(), &WebSocketReceiver::kicked, this, [this](const QString &) {
+        qInfo().noquote() << "[KickDiag] VideoDisplayWidget received kicked; stopping receiving";
+        QTimer::singleShot(0, this, [this]() {
+            if (!m_isReceiving) return;
+            showOfflineReminder(QStringLiteral("你已被房主移除"));
+            stopReceiving(false);
+            QWidget *top = this->window();
+            if (top) {
+                top->hide();
+            } else {
+                this->hide();
+            }
+        });
+    });
 
 
 

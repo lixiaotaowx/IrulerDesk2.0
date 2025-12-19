@@ -106,6 +106,7 @@ signals:
     void approvalRequired(const QString &targetId);
     void watchRequestRejected(const QString &targetId);
     void watchRequestAccepted(const QString &targetId);
+    void kicked(const QString &targetId);
     
     // 新增：音频帧信号（PCM）
     void audioFrameReceived(const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64 timestamp);

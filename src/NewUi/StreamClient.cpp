@@ -1,6 +1,5 @@
 #include "StreamClient.h"
 #include <QBuffer>
-#include <QDebug>
 
 StreamClient::StreamClient(QObject *parent)
     : QObject(parent)
@@ -24,7 +23,6 @@ StreamClient::~StreamClient()
 
 void StreamClient::connectToServer(const QUrl &url)
 {
-    emit logMessage("Connecting to server: " + url.toString());
     m_webSocket->open(url);
 }
 
@@ -51,6 +49,14 @@ void StreamClient::sendFrame(const QPixmap &pixmap)
     m_webSocket->sendBinaryMessage(bytes);
 }
 
+qint64 StreamClient::sendTextMessage(const QString &message)
+{
+    if (!m_webSocket || m_webSocket->state() != QAbstractSocket::ConnectedState) {
+        return -1;
+    }
+    return m_webSocket->sendTextMessage(message);
+}
+
 bool StreamClient::isConnected() const
 {
     return m_isConnected;
@@ -60,19 +66,17 @@ void StreamClient::onConnected()
 {
     m_isConnected = true;
     emit connected();
-    emit logMessage("WebSocket Connected");
 }
 
 void StreamClient::onDisconnected()
 {
     m_isConnected = false;
     emit disconnected();
-    emit logMessage("WebSocket Disconnected");
 }
 
 void StreamClient::onTextMessageReceived(const QString &message)
 {
-    emit logMessage("Text received: " + message);
+    Q_UNUSED(message);
 }
 
 void StreamClient::onBinaryMessageReceived(const QByteArray &message)
@@ -81,8 +85,6 @@ void StreamClient::onBinaryMessageReceived(const QByteArray &message)
     QPixmap pixmap;
     if (pixmap.loadFromData(message)) {
         emit frameReceived(pixmap);
-    } else {
-        emit logMessage("Received invalid frame data");
     }
 }
 
@@ -90,5 +92,4 @@ void StreamClient::onError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error);
     emit errorOccurred(m_webSocket->errorString());
-    emit logMessage("WebSocket Error: " + m_webSocket->errorString());
 }

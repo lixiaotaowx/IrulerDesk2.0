@@ -10,8 +10,10 @@
 #include <QPainterPath>
 #include <QScrollBar>
 #include <QCoreApplication>
-#include <QApplication>
 #include <QDesktopServices>
+#include <QHelpEvent>
+#include <QPointer>
+#include <QCursor>
 #include <QFrame>
 #include <QPropertyAnimation>
 #include <QSequentialAnimationGroup>
@@ -25,6 +27,8 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QRandomGenerator>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -47,6 +51,95 @@ protected:
         p.drawControl(QStyle::CE_PushButton, option);
     }
 };
+
+class FancyToolTipWidget : public QWidget {
+public:
+    FancyToolTipWidget()
+        : QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint)
+    {
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_ShowWithoutActivating);
+        setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        setWindowFlag(Qt::ToolTip, true);
+
+        auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(kShadowPad + 14, kShadowPad + 10, kShadowPad + 14, kShadowPad + 10);
+        layout->setSpacing(0);
+
+        m_label = new QLabel(this);
+        m_label->setStyleSheet("color: #f4f4f4; background: transparent; font-size: 12px;");
+        m_label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        layout->addWidget(m_label);
+    }
+
+    void setText(const QString &text)
+    {
+        m_label->setText(text);
+        m_label->adjustSize();
+        adjustSize();
+    }
+
+    void showAt(const QPoint &globalPos)
+    {
+        adjustSize();
+        const QPoint offset(16, 24);
+        QPoint pos = globalPos + offset;
+        if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
+            const QRect avail = screen->availableGeometry();
+            const int maxX = avail.right() - width() + 1;
+            const int maxY = avail.bottom() - height() + 1;
+            pos.setX(qBound(avail.left(), pos.x(), maxX));
+            pos.setY(qBound(avail.top(), pos.y(), maxY));
+        }
+        move(pos);
+        show();
+        raise();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        Q_UNUSED(event);
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+
+        const QRectF bubbleRect = QRectF(rect()).adjusted(kShadowPad, kShadowPad, -kShadowPad, -kShadowPad);
+        const qreal radius = 12.0;
+
+        QPainterPath bubblePath;
+        bubblePath.addRoundedRect(bubbleRect, radius, radius);
+
+        for (int i = kShadowPad; i >= 1; --i) {
+            const qreal t = static_cast<qreal>(i) / static_cast<qreal>(kShadowPad);
+            const int a = qBound(0, static_cast<int>(110 * t * t), 255);
+            QPainterPath outer;
+            outer.addRoundedRect(bubbleRect.adjusted(-i, -i, i, i), radius + i, radius + i);
+            p.fillPath(outer.subtracted(bubblePath), QColor(0, 0, 0, a));
+        }
+
+        QLinearGradient g(bubbleRect.topLeft(), bubbleRect.bottomLeft());
+        g.setColorAt(0.0, QColor(70, 70, 70, 235));
+        g.setColorAt(1.0, QColor(35, 35, 35, 235));
+
+        p.fillPath(bubblePath, g);
+        p.setPen(QPen(QColor(255, 255, 255, 35), 1));
+        p.drawPath(bubblePath);
+    }
+
+private:
+    static constexpr int kShadowPad = 16;
+    QLabel *m_label = nullptr;
+};
+
+static FancyToolTipWidget *ensureFancyToolTip()
+{
+    static QPointer<FancyToolTipWidget> tip;
+    if (!tip) {
+        tip = new FancyToolTipWidget();
+        tip->hide();
+    }
+    return tip;
+}
 
 NewUiWindow::NewUiWindow(QWidget *parent)
     : QWidget(parent)
@@ -81,30 +174,9 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_topAreaHeight = m_cardBaseHeight - m_bottomAreaHeight;
     m_marginTop = (m_topAreaHeight - m_imgHeight) / 2;
 
-    static bool tooltipStyled = false;
-    if (!tooltipStyled) {
-        if (auto *app = qobject_cast<QApplication*>(QCoreApplication::instance())) {
-            QString s = app->styleSheet();
-            s += "QToolTip {"
-                 " background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                 "     stop:0 rgba(70, 70, 70, 235),"
-                 "     stop:1 rgba(35, 35, 35, 235)"
-                 " );"
-                 " color: #f4f4f4;"
-                 " border: 1px solid rgba(255, 255, 255, 35);"
-                 " border-radius: 12px;"
-                 " padding: 7px 11px;"
-                 " font-size: 12px;"
-                 " }";
-            app->setStyleSheet(s);
-        }
-        tooltipStyled = true;
-    }
-
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint | Qt::Tool);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint);
     setAttribute(Qt::WA_TranslucentBackground);
     resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
-    move(0, 100); // Default to left side
     
     setupUi();
 
@@ -127,6 +199,13 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     */
 
     resize(1160, 800);
+    if (QScreen *screen = QGuiApplication::screenAt(QCursor::pos())) {
+        const QRect avail = screen->availableGeometry();
+        const QSize sz = size();
+        const QPoint topLeft(avail.x() + (avail.width() - sz.width()) / 2,
+                             avail.y() + (avail.height() - sz.height()) / 2);
+        move(topLeft);
+    }
 }
 
 void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
@@ -149,7 +228,6 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
     // 1. Connect Stream Client (Push)
     QString serverUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(m_myStreamId);
     
-    emit onStreamLog(QString("Generated Stream ID: %1").arg(m_myStreamId));
     if (m_streamClient) {
         m_streamClient->disconnectFromServer();
         m_streamClient->connectToServer(QUrl(serverUrl));
@@ -412,14 +490,12 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         // Connect to Subscribe URL
         QString subUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(id);
         client->connectToServer(QUrl(subUrl));
-        
-        qDebug() << "Subscribing to user:" << id << " URL:" << subUrl;
     }
 }
 
 void NewUiWindow::onStreamLog(const QString &msg)
 {
-    qDebug() << "[StreamClient]" << msg;
+    Q_UNUSED(msg);
 }
 
 void NewUiWindow::setupUi()
@@ -477,6 +553,7 @@ void NewUiWindow::setupUi()
         else if (i == 1) btn->setToolTip("功能 1");
         else if (i == 2) btn->setToolTip("功能 2");
         else if (i == 3) btn->setToolTip("功能 3");
+        btn->installEventFilter(this);
         
         if (i == 0) {
             btn->setObjectName("HomeButton");
@@ -539,6 +616,7 @@ void NewUiWindow::setupUi()
     settingBtn->setFixedSize(40, 40);
     settingBtn->setCursor(Qt::PointingHandCursor);
     settingBtn->setToolTip("设置");
+    settingBtn->installEventFilter(this);
     leftLayout->addWidget(settingBtn);
 
     // --- Right Panel ---
@@ -605,7 +683,8 @@ void NewUiWindow::setupUi()
     toolBtn1->setIcon(QIcon(appDir + "/maps/logo/d.png"));
     toolBtn1->setIconSize(QSize(24, 24)); 
     toolBtn1->setCursor(Qt::PointingHandCursor);
-    toolBtn1->setToolTip("绘制岛");
+    toolBtn1->setToolTip("灵动岛");
+    toolBtn1->installEventFilter(this);
     connect(toolBtn1, &QPushButton::clicked, this, &NewUiWindow::toggleStreamingIslandRequested);
 
     // log.png
@@ -615,6 +694,7 @@ void NewUiWindow::setupUi()
     toolBtn2->setIconSize(QSize(24, 24)); 
     toolBtn2->setCursor(Qt::PointingHandCursor);
     toolBtn2->setToolTip("日志");
+    toolBtn2->installEventFilter(this);
 
     // clearn.png
     ResponsiveButton *toolBtn3 = new ResponsiveButton();
@@ -623,6 +703,7 @@ void NewUiWindow::setupUi()
     toolBtn3->setIconSize(QSize(24, 24)); 
     toolBtn3->setCursor(Qt::PointingHandCursor);
     toolBtn3->setToolTip("清空标注");
+    toolBtn3->installEventFilter(this);
     connect(toolBtn3, &QPushButton::clicked, this, &NewUiWindow::clearMarksRequested);
 
     toolsLayout->addWidget(toolBtn1);
@@ -667,6 +748,7 @@ void NewUiWindow::setupUi()
     menuBtn->setIconSize(QSize(32, 32)); 
     menuBtn->setCursor(Qt::PointingHandCursor);
     menuBtn->setToolTip("系统设置");
+    menuBtn->installEventFilter(this);
     connect(menuBtn, &QPushButton::clicked, this, &NewUiWindow::systemSettingsRequested);
 
     // Minimize Button
@@ -676,6 +758,7 @@ void NewUiWindow::setupUi()
     minBtn->setIconSize(QSize(32, 32)); 
     minBtn->setCursor(Qt::PointingHandCursor);
     minBtn->setToolTip("最小化");
+    minBtn->installEventFilter(this);
     connect(minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
 
     // Close Button
@@ -685,6 +768,7 @@ void NewUiWindow::setupUi()
     closeBtn->setIconSize(QSize(32, 32)); 
     closeBtn->setCursor(Qt::PointingHandCursor);
     closeBtn->setToolTip("关闭");
+    closeBtn->installEventFilter(this);
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
 
     controlLayout->addWidget(menuBtn);
@@ -889,7 +973,6 @@ void NewUiWindow::setupUi()
 
         // Capture for video updates
         m_videoLabel = imgLabel;
-        qDebug() << "[NewUiWindow] m_videoLabel assigned successfully. Widget pointer:" << m_videoLabel;
         
         // Initial placeholder capture
         QScreen *screen = QGuiApplication::primaryScreen();
@@ -1110,7 +1193,7 @@ void NewUiWindow::setupUi()
     farRightLayout->addWidget(m_viewerList);
 
     // Quit Button
-    QPushButton *quitBtn = new QPushButton("退出");
+    QPushButton *quitBtn = new QPushButton("解散");
     quitBtn->setCursor(Qt::PointingHandCursor);
     quitBtn->setFixedHeight(30);
     quitBtn->setFixedWidth(80);
@@ -1169,6 +1252,47 @@ void NewUiWindow::mouseReleaseEvent(QMouseEvent *event)
 
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event->type() == QEvent::Enter || event->type() == QEvent::HoverEnter) {
+        auto *w = qobject_cast<QWidget*>(watched);
+        FancyToolTipWidget *tip = ensureFancyToolTip();
+        if (w && tip) {
+            const QString text = w->toolTip();
+            if (!text.isEmpty()) {
+                tip->setText(text);
+                tip->showAt(QCursor::pos());
+            }
+        }
+    }
+
+    if (event->type() == QEvent::ToolTip) {
+        auto *w = qobject_cast<QWidget*>(watched);
+        FancyToolTipWidget *tip = ensureFancyToolTip();
+        if (w && tip) {
+            const QString text = w->toolTip();
+            if (!text.isEmpty()) {
+                tip->setText(text);
+                QPoint gp = QCursor::pos();
+                if (auto *he = dynamic_cast<QHelpEvent*>(event)) {
+                    gp = he->globalPos();
+                }
+                tip->showAt(gp);
+            } else {
+                tip->hide();
+            }
+        }
+        return true;
+    }
+
+    if (event->type() == QEvent::Leave ||
+        event->type() == QEvent::MouseButtonPress ||
+        event->type() == QEvent::MouseButtonRelease ||
+        event->type() == QEvent::Wheel ||
+        event->type() == QEvent::FocusOut) {
+        if (auto *tip = ensureFancyToolTip()) {
+            tip->hide();
+        }
+    }
+
     if (watched == m_logoLabel && event->type() == QEvent::MouseButtonRelease) {
         QDesktopServices::openUrl(QUrl("http://www.iruler.cn"));
         return true;
@@ -1176,10 +1300,14 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
 
     // Handle single click on local card to toggle "My Room" panel
     if (watched == m_localCard && event->type() == QEvent::MouseButtonRelease) {
+        auto *me = static_cast<QMouseEvent*>(event);
+        if (me->button() != Qt::LeftButton) {
+            return false;
+        }
         if (m_farRightPanel) {
             m_farRightPanel->setVisible(!m_farRightPanel->isVisible());
         }
-        return true; // Consume event
+        return true;
     }
 
     if (event->type() == QEvent::MouseButtonDblClick) {
@@ -1236,6 +1364,23 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     
     QLabel *txt = new QLabel(name.isEmpty() ? id : name);
     txt->setStyleSheet("color: #dddddd; font-size: 14px; border: none;");
+
+    QPushButton *removeBtn = new QPushButton();
+    removeBtn->setFixedSize(24, 24);
+    removeBtn->setCursor(Qt::PointingHandCursor);
+    removeBtn->setIcon(QIcon(appDir + "/maps/logo/Remove.png"));
+    removeBtn->setIconSize(QSize(18, 18));
+    removeBtn->setFlat(true);
+    removeBtn->setStyleSheet("border: none; background: transparent;");
+    removeBtn->setToolTip("移除");
+    removeBtn->installEventFilter(this);
+
+    connect(removeBtn, &QPushButton::clicked, this, [this, id]() {
+        qInfo().noquote() << "[KickDiag] kick button clicked"
+                          << " viewer_id=" << id
+                          << " my_id=" << m_myStreamId;
+        emit kickViewerRequested(id);
+    });
     
     QPushButton *mic = new QPushButton();
     mic->setFixedSize(24, 24);
@@ -1245,6 +1390,8 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     mic->setIconSize(QSize(18, 18));
     mic->setFlat(true);
     mic->setStyleSheet("border: none; background: transparent;");
+    mic->setToolTip("麦克风");
+    mic->installEventFilter(this);
     
     // Simple toggle logic for this mic (UI Only)
     mic->setProperty("isOn", true);
@@ -1258,10 +1405,45 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     
     l->addWidget(txt);
     l->addStretch();
+    l->addWidget(removeBtn);
     l->addWidget(mic);
     
     m_viewerList->setItemWidget(item, w);
     m_viewerItems.insert(id, item);
+}
+
+void NewUiWindow::updateViewerNameIfExists(const QString &id, const QString &name)
+{
+    if (!m_viewerItems.contains(id)) return;
+    QListWidgetItem *existingItem = m_viewerItems.value(id);
+    if (!existingItem) return;
+    QWidget *w = m_viewerList ? m_viewerList->itemWidget(existingItem) : nullptr;
+    if (!w) return;
+    QList<QLabel*> labels = w->findChildren<QLabel*>();
+    for (auto label : labels) {
+        label->setText(name.isEmpty() ? id : name);
+        break;
+    }
+}
+
+void NewUiWindow::sendKickToSubscribers(const QString &viewerId)
+{
+    if (!m_streamClient || !m_streamClient->isConnected()) {
+        qInfo().noquote() << "[KickDiag] kick not sent to room: stream client not connected"
+                          << " viewer_id=" << viewerId
+                          << " my_id=" << m_myStreamId;
+        return;
+    }
+    QJsonObject msg;
+    msg["type"] = "kick_viewer";
+    msg["viewer_id"] = viewerId;
+    msg["target_id"] = m_myStreamId;
+    msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    QString payload = QJsonDocument(msg).toJson(QJsonDocument::Compact);
+    qint64 bytes = m_streamClient->sendTextMessage(payload);
+    qInfo().noquote() << "[KickDiag] kick_viewer sent to room"
+                      << " bytes=" << bytes
+                      << " payload=" << payload;
 }
 
 void NewUiWindow::removeViewer(const QString &id)

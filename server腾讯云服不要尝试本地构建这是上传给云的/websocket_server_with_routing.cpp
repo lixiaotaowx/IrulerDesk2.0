@@ -503,6 +503,23 @@ private slots:
                                  << "已向观看者" << viewerId << "转发推流就绪消息";
                     }
                     return;
+                } else if (type == "kick_viewer") {
+                    QString viewerId = obj.value("viewer_id").toString();
+                    QString targetId = obj.value("target_id").toString();
+                    QWebSocket *viewerSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == viewerId) { viewerSocket = it.key(); break; }
+                    }
+                    if (viewerSocket && viewerSocket->state() == QAbstractSocket::ConnectedState) {
+                        QJsonDocument doc(obj);
+                        viewerSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "已向观看者" << viewerId << "转发踢出消息，房主:" << targetId;
+                    } else {
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "观看者" << viewerId << "不在线或连接已断开，无法转发踢出消息";
+                    }
+                    return;
                 } else if (type == "heartbeat") {
                     QString uid = obj.value("id").toString();
                     if (uid.isEmpty()) {

@@ -589,22 +589,6 @@ void MainWindow::setupUI()
                 }
             });
 
-            // [Fix] Handle self-loopback cleanup locally
-            connect(vd, &VideoDisplayWidget::receivingStopped,
-                    this, [this](const QString &viewerId, const QString &targetId) {
-                // If we were watching ourselves, clean up locally because the server message might be delayed or dropped
-                if (targetId == getDeviceId() && viewerId == getDeviceId()) {
-                     qInfo() << "[MainWindow] Self-viewing stopped, cleaning up local viewer:" << viewerId;
-                     if (m_transparentImageList) {
-                         m_transparentImageList->removeViewer(viewerId);
-                         // Check if we need to stop streaming (if no other viewers)
-                         if (m_transparentImageList->getViewerCount() == 0 && m_isStreaming) {
-                             stopStreaming();
-                         }
-                     }
-                }
-            });
-
             vd->selectAudioOutputFollowSystem();
             bool micFollow = loadMicInputFollowSystemFromConfig();
             QString micId = loadMicInputDeviceIdFromConfig();
@@ -637,6 +621,35 @@ void MainWindow::setupUI()
             this, &MainWindow::onClearMarksRequested);
     connect(m_transparentImageList, &NewUiWindow::toggleStreamingIslandRequested,
             this, &MainWindow::onToggleStreamingIsland);
+
+    connect(m_transparentImageList, &NewUiWindow::kickViewerRequested,
+            this, [this](const QString &viewerId) {
+        if (!m_loginWebSocket) {
+            qInfo().noquote() << "[KickDiag] kick_viewer not sent: login socket is null"
+                              << " viewer_id=" << viewerId;
+            return;
+        }
+        if (m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
+            qInfo().noquote() << "[KickDiag] kick_viewer not sent: login socket not connected"
+                              << " state=" << static_cast<int>(m_loginWebSocket->state())
+                              << " viewer_id=" << viewerId;
+            return;
+        }
+        QJsonObject msg;
+        msg["type"] = "kick_viewer";
+        msg["viewer_id"] = viewerId;
+        msg["target_id"] = getDeviceId();
+        msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+        QString payload = QJsonDocument(msg).toJson(QJsonDocument::Compact);
+        qint64 bytes = m_loginWebSocket->sendTextMessage(payload);
+        qInfo().noquote() << "[KickDiag] kick_viewer sent"
+                          << " bytes=" << bytes
+                          << " payload=" << payload;
+        if (m_transparentImageList) {
+            m_transparentImageList->removeViewer(viewerId);
+            m_transparentImageList->sendKickToSubscribers(viewerId);
+        }
+    });
 
     // Initialize Streaming Island
     m_islandWidget = new StreamingIslandWidget(nullptr); 
@@ -968,11 +981,10 @@ void MainWindow::onWatchdogNewConnection()
     m_currentWatchdogSocket = clientConnection;
     
     // 如果有待发送的审批指令，立即发送
-    if (m_pendingApproval) {
+        if (m_pendingApproval) {
         if (m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
              m_currentWatchdogSocket->write("CMD_APPROVE");
              m_currentWatchdogSocket->flush();
-             qDebug() << "Sent queued local approval command to new CaptureProcess connection";
              m_pendingApproval = false;
         }
     }
@@ -1817,12 +1829,15 @@ void MainWindow::onLoginWebSocketDisconnected()
 
 void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
 {
-    qDebug() << "Received message:" << message;
-    
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
     
     if (error.error != QJsonParseError::NoError) {
+        if (message.contains("kick_viewer")) {
+            qInfo().noquote() << "[KickDiag] login ws message parse failed"
+                              << " error=" << error.errorString()
+                              << " raw=" << message;
+        }
         return;
     }
     
@@ -1979,10 +1994,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
                     m_currentWatchdogSocket->write("CMD_APPROVE");
                     m_currentWatchdogSocket->flush();
-                    qDebug() << "Sent local approval command to CaptureProcess";
                 } else {
                     m_pendingApproval = true;
-                    qDebug() << "CaptureProcess not ready, queued local approval command";
                 }
 
                 // 开始推流
@@ -2156,6 +2169,35 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             // 停止推流（这也将关闭灵动岛）
             stopStreaming();
         }
+    } else if (type == "kick_viewer") {
+        QString viewerId = obj["viewer_id"].toString();
+        QString targetId = obj["target_id"].toString();
+        qInfo().noquote() << "[KickDiag] kick_viewer received on login ws"
+                          << " viewer_id=" << viewerId
+                          << " target_id=" << targetId
+                          << " my_id=" << getDeviceId();
+
+        if (viewerId == getDeviceId()) {
+            qInfo().noquote() << "[KickDiag] kick_viewer applied on viewer side"
+                              << " target_id=" << targetId;
+            if (m_waitingDialog) {
+                m_waitingDialog->close();
+                m_waitingDialog->deleteLater();
+                m_waitingDialog = nullptr;
+            }
+
+            m_currentTargetId.clear();
+
+            if (m_videoWindow) {
+                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+                    vd->notifyTargetOffline(QStringLiteral("你已被房主移除"));
+                    vd->stopReceiving(false);
+                }
+                m_videoWindow->hide();
+            }
+        } else {
+            qInfo().noquote() << "[KickDiag] kick_viewer ignored on this client";
+        }
     } else if (type == "streaming_ok") {
         // 处理推流OK响应，开始拉流播放
         QString viewerId = obj["viewer_id"].toString();
@@ -2194,8 +2236,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         else if (obj.contains("viewer_name")) name = obj["viewer_name"].toString();
 
         if (!userId.isEmpty() && !name.isEmpty() && m_transparentImageList) {
-             // addViewer updates the name if the user is already in the list
-             m_transparentImageList->addViewer(userId, name);
+             m_transparentImageList->updateViewerNameIfExists(userId, name);
         }
 
         int iconId = -1;

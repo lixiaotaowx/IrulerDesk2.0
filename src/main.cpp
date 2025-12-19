@@ -57,14 +57,13 @@ int main(int argc, char *argv[])
     // 设置现代化样式
     app.setStyle(QStyleFactory::create("Fusion"));
     
-    // 设置深色主题（含黑底白字的工具提示）
+    // 设置深色主题
     QPalette darkPalette;
     darkPalette.setColor(QPalette::Window, QColor(53, 53, 53));
     darkPalette.setColor(QPalette::WindowText, Qt::white);
     darkPalette.setColor(QPalette::Base, QColor(25, 25, 25));
     darkPalette.setColor(QPalette::AlternateBase, QColor(53, 53, 53));
-    // 工具提示：黑背景白文字
-    darkPalette.setColor(QPalette::ToolTipBase, QColor(0, 0, 0));
+    darkPalette.setColor(QPalette::ToolTipBase, QColor(45, 45, 45));
     darkPalette.setColor(QPalette::ToolTipText, Qt::white);
     darkPalette.setColor(QPalette::Text, Qt::white);
     darkPalette.setColor(QPalette::Button, QColor(53, 53, 53));
@@ -78,9 +77,15 @@ int main(int argc, char *argv[])
     // 进一步通过样式表确保所有样式一致
     app.setStyleSheet(
         "QToolTip {\n"
-        "    color: #ffffff;\n"
-        "    background-color: #000000;\n"
-        "    border: 1px solid #4c4c4c;\n"
+        "    color: #f4f4f4;\n"
+        "    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,\n"
+        "        stop:0 rgba(70, 70, 70, 235),\n"
+        "        stop:1 rgba(35, 35, 35, 235)\n"
+        "    );\n"
+        "    border: 1px solid rgba(255, 255, 255, 35);\n"
+        "    border-radius: 12px;\n"
+        "    padding: 7px 11px;\n"
+        "    font-size: 12px;\n"
         "}"
     );
     

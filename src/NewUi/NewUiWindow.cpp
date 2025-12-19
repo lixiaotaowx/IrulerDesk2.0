@@ -12,6 +12,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QSaveFile>
 #include <QDesktopServices>
 #include <QHelpEvent>
@@ -32,6 +33,8 @@
 #include <QRandomGenerator>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QBuffer>
+#include <QImage>
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -358,6 +361,44 @@ QPixmap NewUiWindow::buildTestAvatarPixmap(int size) const
         return QPixmap();
     }
     return makeCircularPixmap(src, s);
+}
+
+void NewUiWindow::pickAndApplyLocalAvatar()
+{
+    if (m_myStreamId.isEmpty()) {
+        return;
+    }
+
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("选择头像"),
+        QString(),
+        QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.webp);;All Files (*)")
+    );
+    if (path.isEmpty()) {
+        return;
+    }
+
+    QPixmap src(path);
+    if (src.isNull()) {
+        return;
+    }
+
+    ensureAvatarCacheDir();
+    const QPixmap savePix = makeCircularPixmap(src, 256);
+    if (savePix.isNull()) {
+        return;
+    }
+
+    QSaveFile f(avatarCacheFilePath(m_myStreamId));
+    if (f.open(QIODevice::WriteOnly)) {
+        savePix.save(&f, "PNG");
+        f.commit();
+    }
+
+    m_localAvatarPublishPixmap = makeCircularPixmap(savePix, 128);
+    refreshLocalAvatarFromCache();
+    publishLocalAvatarOnce();
 }
 
 QString NewUiWindow::avatarCacheDirPath() const
@@ -978,6 +1019,9 @@ void NewUiWindow::setupUi()
     QLabel *toolbarAvatarLabel = new QLabel(titleBar);
     toolbarAvatarLabel->setFixedSize(30, 30);
     toolbarAvatarLabel->setAlignment(Qt::AlignCenter);
+    toolbarAvatarLabel->setCursor(Qt::PointingHandCursor);
+    toolbarAvatarLabel->setToolTip(QStringLiteral("更换头像"));
+    toolbarAvatarLabel->installEventFilter(this);
     toolbarAvatarLabel->setStyleSheet(
         "QLabel {"
         "   background: transparent;"
@@ -1338,6 +1382,9 @@ void NewUiWindow::setupUi()
         avatarLabel->setFixedSize(30, 30);
         avatarLabel->move(6, 6);
         avatarLabel->setAlignment(Qt::AlignCenter);
+        avatarLabel->setCursor(Qt::PointingHandCursor);
+        avatarLabel->setToolTip(QStringLiteral("更换头像"));
+        avatarLabel->installEventFilter(this);
         avatarLabel->setStyleSheet(
             "QLabel {"
             "   background: transparent;"
@@ -1634,6 +1681,15 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
 
+    if ((watched == m_toolbarAvatarLabel || watched == m_localAvatarLabel) &&
+        event->type() == QEvent::MouseButtonRelease) {
+        auto *me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton) {
+            pickAndApplyLocalAvatar();
+            return true;
+        }
+    }
+
     // Handle single click on local card to toggle "My Room" panel
     if (watched == m_localCard && event->type() == QEvent::MouseButtonRelease) {
         auto *me = static_cast<QMouseEvent*>(event);
@@ -1876,11 +1932,39 @@ void NewUiWindow::onTimerTimeout()
     p.end();
 
     // 4. Update the label directly (Video effect)
-    m_videoLabel->setPixmap(pixmap);
+    QPixmap previewPix = pixmap;
+    QPixmap sendPix = pixmap;
+    if (sendPix.width() > 250) {
+        sendPix = sendPix.scaledToWidth(250, Qt::SmoothTransformation);
+    }
+    {
+        const int previewJpegQuality = 30;
+        QByteArray bytes;
+        QBuffer buffer(&bytes);
+        buffer.open(QIODevice::WriteOnly);
+        if (sendPix.save(&buffer, "JPG", previewJpegQuality)) {
+            QImage decoded;
+            if (decoded.loadFromData(bytes, "JPG") && !decoded.isNull()) {
+                QPixmap decodedPix = QPixmap::fromImage(decoded);
+                QPixmap scaledDecoded = decodedPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                QPixmap finalPreview(m_imgWidth, m_imgHeight);
+                finalPreview.fill(Qt::black);
+                QPainter pp(&finalPreview);
+                pp.setRenderHint(QPainter::Antialiasing);
+                pp.setRenderHint(QPainter::SmoothPixmapTransform);
+                const int dx = (m_imgWidth - scaledDecoded.width()) / 2;
+                const int dy = (m_imgHeight - scaledDecoded.height()) / 2;
+                pp.drawPixmap(dx, dy, scaledDecoded);
+                pp.end();
+                previewPix = finalPreview;
+            }
+        }
+    }
+    m_videoLabel->setPixmap(previewPix);
 
     // 5. Send frame to server
     if (m_streamClient && m_streamClient->isConnected()) {
-        m_streamClient->sendFrame(pixmap);
+        m_streamClient->sendFrame(sendPix);
     }
 }
 

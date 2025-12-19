@@ -70,6 +70,7 @@ private:
     void updateListWidget(const QJsonArray &users);
     QIcon buildSpinnerIcon(int size, int angleDeg) const;
     QPixmap buildTestAvatarPixmap(int size) const;
+    void pickAndApplyLocalAvatar();
     QString avatarCacheDirPath() const;
     QString avatarCacheFilePath(const QString &userId) const;
     void ensureAvatarCacheDir();

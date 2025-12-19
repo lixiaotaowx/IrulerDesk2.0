@@ -38,8 +38,7 @@ void StreamClient::sendFrame(const QPixmap &pixmap)
     QByteArray bytes;
     QBuffer buffer(&bytes);
     buffer.open(QIODevice::WriteOnly);
-    // Save as JPG for smaller size, quality 75
-    pixmap.save(&buffer, "JPG", 75); 
+    pixmap.save(&buffer, "JPG", 30); 
     
     // In a real scenario, we might want to wrap this in a protocol (e.g., JSON header + binary body)
     // For now, based on previous stage 1, we just send binary data or simple text? 

@@ -37,6 +37,7 @@ private:
     QWidget *m_contentWidget;
     QHBoxLayout *m_layout;
     
+    QLabel *m_avatarLabel = nullptr;
     AnnotationToolbar *m_toolbar;
     
     ScreenAnnotationWidget *m_annotationWidget;

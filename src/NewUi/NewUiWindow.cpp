@@ -10,6 +10,9 @@
 #include <QPainterPath>
 #include <QScrollBar>
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
+#include <QSaveFile>
 #include <QDesktopServices>
 #include <QHelpEvent>
 #include <QPointer>
@@ -191,6 +194,13 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Setup StreamClient
     m_streamClient = new StreamClient(this);
     connect(m_streamClient, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
+
+    m_avatarPublisher = new StreamClient(this);
+    connect(m_avatarPublisher, &StreamClient::connected, this, &NewUiWindow::publishLocalAvatarOnce);
+
+    m_avatarPublishTimer = new QTimer(this);
+    connect(m_avatarPublishTimer, &QTimer::timeout, this, &NewUiWindow::publishLocalAvatarOnce);
+    m_avatarPublishTimer->start(3000);
     
     // 2. Connect Login Client (User List & Discovery)
     // DISABLED: Main Window controls the user list now.
@@ -213,6 +223,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 
 void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
 {
+    const QString oldId = m_myStreamId;
     m_myStreamId = id;
     m_myUserName = name;
 
@@ -228,12 +239,56 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         m_localCard->setProperty("userId", m_myStreamId);
     }
 
+    if (m_localAvatarLabel) {
+        if (!oldId.isEmpty()) {
+            m_userAvatarLabels.remove(oldId);
+        }
+        if (!m_myStreamId.isEmpty()) {
+            m_userAvatarLabels.insert(m_myStreamId, m_localAvatarLabel);
+        }
+    }
+
     // 1. Connect Stream Client (Push)
     QString serverUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(m_myStreamId);
     
     if (m_streamClient) {
         m_streamClient->disconnectFromServer();
         m_streamClient->connectToServer(QUrl(serverUrl));
+    }
+
+    if (!m_myStreamId.isEmpty()) {
+        ensureAvatarCacheDir();
+        const QString cacheFile = avatarCacheFilePath(m_myStreamId);
+        if (!QFileInfo::exists(cacheFile)) {
+            const QString appDir = QCoreApplication::applicationDirPath();
+            const QString headPath = QDir(appDir).filePath("maps/logo/head.jpg");
+            QPixmap src(headPath);
+            if (src.isNull()) {
+                src = QPixmap(128, 128);
+                src.fill(QColor(90, 90, 90));
+            }
+            QPixmap savePix = src.scaled(128, 128, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            QSaveFile f(cacheFile);
+            if (f.open(QIODevice::WriteOnly)) {
+                savePix.save(&f, "PNG");
+                f.commit();
+            }
+        }
+
+        QPixmap cached(cacheFile);
+        if (!cached.isNull()) {
+            m_localAvatarPublishPixmap = cached.scaled(128, 128, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        }
+
+        if (m_avatarPublisher) {
+            m_avatarPublisher->disconnectFromServer();
+            const QString channelId = QString("avatar_%1").arg(m_myStreamId);
+            const QString pubUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(channelId);
+            m_avatarPublisher->connectToServer(QUrl(pubUrl));
+        }
+
+        ensureAvatarSubscription(m_myStreamId);
+        refreshLocalAvatarFromCache();
     }
 
     // 2. Connect Login Client
@@ -254,6 +309,9 @@ NewUiWindow::~NewUiWindow()
     }
     if (m_talkSpinnerTimer && m_talkSpinnerTimer->isActive()) {
         m_talkSpinnerTimer->stop();
+    }
+    if (m_avatarPublishTimer && m_avatarPublishTimer->isActive()) {
+        m_avatarPublishTimer->stop();
     }
 }
 
@@ -285,6 +343,152 @@ QIcon NewUiWindow::buildSpinnerIcon(int size, int angleDeg) const
     p.drawArc(r, start, span);
 
     return QIcon(pix);
+}
+
+QPixmap NewUiWindow::buildTestAvatarPixmap(int size) const
+{
+    const int s = qMax(8, size);
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString candidate1 = QDir(appDir).filePath("maps/logo/head.jpg");
+    const QString candidate2 = QDir::current().filePath("src/maps/logo/head.jpg");
+    const QString avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
+
+    QPixmap src(avatarPath);
+    if (src.isNull()) {
+        return QPixmap();
+    }
+    return makeCircularPixmap(src, s);
+}
+
+QString NewUiWindow::avatarCacheDirPath() const
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    return QDir(appDir).filePath("avatars");
+}
+
+QString NewUiWindow::avatarCacheFilePath(const QString &userId) const
+{
+    return QDir(avatarCacheDirPath()).filePath(userId + ".png");
+}
+
+void NewUiWindow::ensureAvatarCacheDir()
+{
+    QDir dir(avatarCacheDirPath());
+    if (!dir.exists()) {
+        QDir().mkpath(dir.path());
+    }
+}
+
+QPixmap NewUiWindow::makeCircularPixmap(const QPixmap &src, int size) const
+{
+    const int s = qMax(8, size);
+    if (src.isNull()) {
+        return QPixmap();
+    }
+
+    QPixmap scaled = src.scaled(s, s, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    QPixmap out(s, s);
+    out.fill(Qt::transparent);
+
+    QPainter p(&out);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    QPainterPath clip;
+    clip.addEllipse(0, 0, s, s);
+    p.setClipPath(clip);
+    p.drawPixmap(0, 0, scaled);
+    p.end();
+
+    return out;
+}
+
+void NewUiWindow::setAvatarLabelPixmap(QLabel *label, const QPixmap &src)
+{
+    if (!label) {
+        return;
+    }
+    const int s = qMin(label->width(), label->height());
+    QPixmap out = makeCircularPixmap(src, s);
+    if (!out.isNull()) {
+        label->setPixmap(out);
+    }
+}
+
+void NewUiWindow::publishLocalAvatarOnce()
+{
+    if (!m_avatarPublisher || !m_avatarPublisher->isConnected()) {
+        return;
+    }
+    if (m_localAvatarPublishPixmap.isNull()) {
+        return;
+    }
+    m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap);
+}
+
+void NewUiWindow::refreshLocalAvatarFromCache()
+{
+    if (m_myStreamId.isEmpty()) {
+        return;
+    }
+
+    ensureAvatarCacheDir();
+    QPixmap cached(avatarCacheFilePath(m_myStreamId));
+    if (!cached.isNull()) {
+        setAvatarLabelPixmap(m_localAvatarLabel, cached);
+        setAvatarLabelPixmap(m_toolbarAvatarLabel, cached);
+        emit avatarPixmapUpdated(m_myStreamId, cached);
+    }
+}
+
+void NewUiWindow::ensureAvatarSubscription(const QString &userId)
+{
+    if (userId.isEmpty()) {
+        return;
+    }
+    if (m_avatarSubscribers.contains(userId)) {
+        return;
+    }
+
+    ensureAvatarCacheDir();
+    const QString cachedPath = avatarCacheFilePath(userId);
+    QPixmap cached(cachedPath);
+    QLabel *label = m_userAvatarLabels.value(userId, nullptr);
+    if (!cached.isNull()) {
+        setAvatarLabelPixmap(label, cached);
+        if (userId == m_myStreamId) {
+            setAvatarLabelPixmap(m_localAvatarLabel, cached);
+            setAvatarLabelPixmap(m_toolbarAvatarLabel, cached);
+        }
+        emit avatarPixmapUpdated(userId, cached);
+    }
+
+    StreamClient *client = new StreamClient(this);
+    m_avatarSubscribers.insert(userId, client);
+    connect(client, &StreamClient::frameReceived, this, [this, userId](const QPixmap &frame) {
+        if (frame.isNull()) {
+            return;
+        }
+
+        QLabel *avatarLabel = m_userAvatarLabels.value(userId, nullptr);
+        setAvatarLabelPixmap(avatarLabel, frame);
+        if (userId == m_myStreamId) {
+            setAvatarLabelPixmap(m_localAvatarLabel, frame);
+            setAvatarLabelPixmap(m_toolbarAvatarLabel, frame);
+        }
+
+        ensureAvatarCacheDir();
+        QPixmap savePix = frame.scaled(128, 128, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        QSaveFile f(avatarCacheFilePath(userId));
+        if (f.open(QIODevice::WriteOnly)) {
+            savePix.save(&f, "PNG");
+            f.commit();
+        }
+
+        emit avatarPixmapUpdated(userId, frame);
+    });
+
+    const QString channelId = QString("avatar_%1").arg(userId);
+    const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(channelId);
+    client->connectToServer(QUrl(subscribeUrl));
 }
 
 void NewUiWindow::setTalkPending(const QString &userId, bool pending)
@@ -472,7 +676,6 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
 
         // Image Label
         QLabel *imgLabel = new QLabel();
-        // Width matches the calculated image width
         imgLabel->setFixedSize(m_imgWidth, m_imgHeight); 
         imgLabel->setAlignment(Qt::AlignCenter);
         imgLabel->setText("Loading Stream...");
@@ -748,7 +951,7 @@ void NewUiWindow::setupUi()
     // Use QFrame to ensure background styling works without custom paintEvent
     QFrame *toolsContainer = new QFrame(titleBar);
     toolsContainer->setObjectName("ToolsContainer");
-    toolsContainer->setFixedSize(160, 40); // Increased length from 140 to 160
+    toolsContainer->setFixedSize(200, 40);
     toolsContainer->setFrameShape(QFrame::NoFrame);
     // REMOVED: setAttribute(Qt::WA_TranslucentBackground); which was hiding the background
     
@@ -777,6 +980,19 @@ void NewUiWindow::setupUi()
     toolsLayout->setContentsMargins(10, 0, 10, 0); // Increased margins to space out buttons
     toolsLayout->setSpacing(5);
     toolsLayout->setAlignment(Qt::AlignCenter);
+
+    QLabel *toolbarAvatarLabel = new QLabel(toolsContainer);
+    toolbarAvatarLabel->setFixedSize(22, 22);
+    toolbarAvatarLabel->setAlignment(Qt::AlignCenter);
+    toolbarAvatarLabel->setStyleSheet(
+        "QLabel {"
+        "   background: transparent;"
+        "   border: 1px solid rgba(255, 255, 255, 140);"
+        "   border-radius: 11px;"
+        "}"
+    );
+    m_toolbarAvatarLabel = toolbarAvatarLabel;
+    refreshLocalAvatarFromCache();
 
     // d.png
     ResponsiveButton *toolBtn1 = new ResponsiveButton();
@@ -810,6 +1026,7 @@ void NewUiWindow::setupUi()
     toolsLayout->addWidget(toolBtn1);
     toolsLayout->addWidget(toolBtn2);
     toolsLayout->addWidget(toolBtn3);
+    toolsLayout->insertWidget(0, toolbarAvatarLabel);
 
     titleLayout->addWidget(toolsContainer);
     titleLayout->addStretch();
@@ -1117,6 +1334,31 @@ void NewUiWindow::setupUi()
         p.end();
         imgLabel->setPixmap(pixmap);
 
+        QWidget *imageContainer = new QWidget();
+        imageContainer->setFixedSize(m_imgWidth, m_imgHeight);
+        imgLabel->setParent(imageContainer);
+        imgLabel->move(0, 0);
+
+        QLabel *avatarLabel = new QLabel(imageContainer);
+        avatarLabel->setFixedSize(22, 22);
+        avatarLabel->move(6, 6);
+        avatarLabel->setAlignment(Qt::AlignCenter);
+        avatarLabel->setStyleSheet(
+            "QLabel {"
+            "   background: transparent;"
+            "   border: 1px solid rgba(255, 255, 255, 140);"
+            "   border-radius: 11px;"
+            "}"
+        );
+        QPixmap avatarPix = buildTestAvatarPixmap(22);
+        if (!avatarPix.isNull()) {
+            avatarLabel->setPixmap(avatarPix);
+        }
+        m_localAvatarLabel = avatarLabel;
+        if (!m_myStreamId.isEmpty()) {
+            m_userAvatarLabels.insert(m_myStreamId, m_localAvatarLabel);
+        }
+
         // Bottom Controls Layout
         QHBoxLayout *bottomLayout = new QHBoxLayout();
         // Zero side margins because parent cardLayout already provides MARGIN_X
@@ -1173,7 +1415,7 @@ void NewUiWindow::setupUi()
         bottomLayout->addWidget(txtLabel);
         bottomLayout->addWidget(micBtn);
 
-        cardLayout->addWidget(imgLabel);
+        cardLayout->addWidget(imageContainer);
         cardLayout->addLayout(bottomLayout);
 
         itemLayout->addWidget(card);
@@ -1707,6 +1949,27 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     imgLabel->setText("Loading...");
     imgLabel->setStyleSheet("color: #888; font-size: 10px;");
 
+    QWidget *imageContainer = new QWidget();
+    imageContainer->setFixedSize(m_imgWidth, m_imgHeight);
+    imgLabel->setParent(imageContainer);
+    imgLabel->move(0, 0);
+
+    QLabel *avatarLabel = new QLabel(imageContainer);
+    avatarLabel->setFixedSize(22, 22);
+    avatarLabel->move(6, 6);
+    avatarLabel->setAlignment(Qt::AlignCenter);
+    avatarLabel->setStyleSheet(
+        "QLabel {"
+        "   background: transparent;"
+        "   border: 1px solid rgba(255, 255, 255, 140);"
+        "   border-radius: 11px;"
+        "}"
+    );
+    QPixmap avatarPix = buildTestAvatarPixmap(22);
+    if (!avatarPix.isNull()) {
+        avatarLabel->setPixmap(avatarPix);
+    }
+
     // Bottom Controls
     QHBoxLayout *bottomLayout = new QHBoxLayout();
     bottomLayout->setContentsMargins(0, 0, 0, 5); 
@@ -1770,7 +2033,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     bottomLayout->addWidget(txtLabel);
     bottomLayout->addWidget(micBtn);
 
-    cardLayout->addWidget(imgLabel);
+    cardLayout->addWidget(imageContainer);
     cardLayout->addLayout(bottomLayout);
 
     itemLayout->addWidget(card);
@@ -1779,6 +2042,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     // Track Item
     m_userItems.insert(userId, item);
     m_userLabels.insert(userId, imgLabel);
+    m_userAvatarLabels.insert(userId, avatarLabel);
 
     // Start Stream Subscription
     StreamClient *client = new StreamClient(this);
@@ -1810,6 +2074,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
     client->connectToServer(QUrl(subscribeUrl));
     m_remoteStreams.insert(userId, client);
+
+    ensureAvatarSubscription(userId);
 }
 
 void NewUiWindow::removeUser(const QString &userId)
@@ -1823,6 +2089,13 @@ void NewUiWindow::removeUser(const QString &userId)
     }
 
     m_userLabels.remove(userId);
+    m_userAvatarLabels.remove(userId);
+
+    if (m_avatarSubscribers.contains(userId)) {
+        StreamClient *client = m_avatarSubscribers.take(userId);
+        client->disconnectFromServer();
+        client->deleteLater();
+    }
 
     if (m_userItems.contains(userId)) {
         QListWidgetItem *item = m_userItems.take(userId);
@@ -1843,7 +2116,18 @@ void NewUiWindow::clearUserList()
 
 void NewUiWindow::updateUserAvatar(const QString &userId, int iconId)
 {
-    // Not implemented yet
+    Q_UNUSED(iconId);
+
+    QLabel *label = m_userAvatarLabels.value(userId, nullptr);
+    if (!label) {
+        return;
+    }
+
+    const int s = qMin(label->width(), label->height());
+    QPixmap avatarPix = buildTestAvatarPixmap(s);
+    if (!avatarPix.isNull()) {
+        label->setPixmap(avatarPix);
+    }
 }
 
 QString NewUiWindow::getCurrentUserId() const

@@ -8,6 +8,7 @@
 #include <QMap>
 #include <QPushButton>
 #include <QIcon>
+#include <QPixmap>
 #include "StreamClient.h"
 #include "LoginClient.h"
 
@@ -62,11 +63,21 @@ signals:
     void kickViewerRequested(const QString &viewerId);
     void closeRoomRequested();
     void talkToggleRequested(const QString &targetId, bool enabled);
+    void avatarPixmapUpdated(const QString &userId, const QPixmap &pixmap);
 
 private:
     void setupUi();
     void updateListWidget(const QJsonArray &users);
     QIcon buildSpinnerIcon(int size, int angleDeg) const;
+    QPixmap buildTestAvatarPixmap(int size) const;
+    QString avatarCacheDirPath() const;
+    QString avatarCacheFilePath(const QString &userId) const;
+    void ensureAvatarCacheDir();
+    QPixmap makeCircularPixmap(const QPixmap &src, int size) const;
+    void setAvatarLabelPixmap(QLabel *label, const QPixmap &src);
+    void ensureAvatarSubscription(const QString &userId);
+    void refreshLocalAvatarFromCache();
+    void publishLocalAvatarOnce();
     
     // Dragging support
     bool m_dragging = false;
@@ -81,8 +92,14 @@ private:
     QMap<QString, QListWidgetItem*> m_viewerItems; // Viewer ID -> List Item
     QLabel *m_localNameLabel = nullptr; // Local name label (Index 0)
     QFrame *m_localCard = nullptr; // Local card frame (Index 0)
+    QLabel *m_toolbarAvatarLabel = nullptr;
+    QLabel *m_localAvatarLabel = nullptr;
     StreamClient *m_streamClient = nullptr;
     LoginClient *m_loginClient = nullptr;
+    StreamClient *m_avatarPublisher = nullptr;
+    QTimer *m_avatarPublishTimer = nullptr;
+    QMap<QString, StreamClient*> m_avatarSubscribers;
+    QPixmap m_localAvatarPublishPixmap;
 
     QString m_myStreamId; // Store my own ID to identify myself in the list
     QString m_myUserName;
@@ -91,6 +108,7 @@ private:
     QMap<QString, StreamClient*> m_remoteStreams; // userId -> StreamClient
     QMap<QString, QListWidgetItem*> m_userItems;  // userId -> ListWidgetItem
     QMap<QString, QLabel*> m_userLabels;          // userId -> Image Label (for updating frame)
+    QMap<QString, QLabel*> m_userAvatarLabels;    // userId -> Avatar Label (top-left overlay)
     QMap<QString, QPushButton*> m_talkButtons;    // userId -> Talk Button (end/get)
     QTimer *m_talkSpinnerTimer = nullptr;
     QMap<QString, int> m_talkSpinnerAngles;

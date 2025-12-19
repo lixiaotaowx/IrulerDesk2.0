@@ -2,8 +2,12 @@
 #include "SnippetOverlay.h"
 #include <QScreen>
 #include <QApplication>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QGraphicsDropShadowEffect>
 #include <QClipboard>
 #include <QTimer>
@@ -74,6 +78,38 @@ void StreamingIslandWidget::setupUI()
     m_layout = new QHBoxLayout(m_contentWidget);
     m_layout->setContentsMargins(12, 0, 4, 0); // Match VideoWindow titlebar margins (right is 4)
     m_layout->setSpacing(2); // Match VideoWindow spacing
+
+    m_avatarLabel = new QLabel(m_contentWidget);
+    m_avatarLabel->setFixedSize(24, 24);
+    m_avatarLabel->setAlignment(Qt::AlignCenter);
+    m_avatarLabel->setStyleSheet(
+        "QLabel {"
+        "   background: transparent;"
+        "}"
+    );
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString candidate1 = appDir + "/maps/logo/head.jpg";
+    const QString candidate2 = QDir::current().filePath("src/maps/logo/head.jpg");
+    const QString avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
+
+    QPixmap avatarSrc(avatarPath);
+    if (!avatarSrc.isNull()) {
+        const int s = qMin(m_avatarLabel->width(), m_avatarLabel->height());
+        QPixmap scaled = avatarSrc.scaled(s, s, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        QPixmap out(s, s);
+        out.fill(Qt::transparent);
+        QPainter p(&out);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        QPainterPath clip;
+        clip.addEllipse(0, 0, s, s);
+        p.setClipPath(clip);
+        p.drawPixmap(0, 0, scaled);
+        p.end();
+        m_avatarLabel->setPixmap(out);
+    }
+
+    m_layout->addWidget(m_avatarLabel);
 
     // Toolbar
     m_toolbar = new AnnotationToolbar(m_contentWidget);

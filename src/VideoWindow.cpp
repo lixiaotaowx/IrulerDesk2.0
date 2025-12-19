@@ -92,6 +92,14 @@ void VideoWindow::setMicChecked(bool checked)
 {
     if (m_micButton) m_micButton->setChecked(checked);
 }
+void VideoWindow::setMicCheckedSilently(bool checked)
+{
+    if (!m_micButton) return;
+    QSignalBlocker blocker(m_micButton);
+    m_micButton->setChecked(checked);
+    m_micButton->setIcon(checked ? m_micIconOn : m_micIconOff);
+    m_micButton->setToolTip(checked ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
+}
 bool VideoWindow::isMicChecked() const
 {
     return m_micButton ? m_micButton->isChecked() : false;

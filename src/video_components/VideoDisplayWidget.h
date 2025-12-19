@@ -189,7 +189,7 @@ private:
     bool m_autoResize;
     QString m_serverUrl;
     VideoStats m_stats;
-    bool m_micSendEnabled = true;
+    bool m_micSendEnabled = false;
     int m_micGainPercent = 100;
     
     std::unique_ptr<AudioPlayer> m_audioPlayer;

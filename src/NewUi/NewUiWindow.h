@@ -4,6 +4,10 @@
 #include <QListWidget>
 #include <QTimer>
 #include <QLabel>
+#include <QFrame>
+#include <QMap>
+#include <QPushButton>
+#include <QIcon>
 #include "StreamClient.h"
 #include "LoginClient.h"
 
@@ -23,12 +27,15 @@ protected:
 
 private slots:
     void onTimerTimeout();
+    void onTalkSpinnerTimeout();
     void onStreamLog(const QString &msg);
     void onUserListUpdated(const QJsonArray &users);
     void onLoginConnected();
 
 public:
     void setMyStreamId(const QString &id, const QString &name = QString());
+    void setTalkPending(const QString &userId, bool pending);
+    void setTalkConnected(const QString &userId, bool connected);
 
     // Viewer List Management
     void addViewer(const QString &id, const QString &name);
@@ -53,10 +60,13 @@ signals:
     void clearMarksRequested();
     void toggleStreamingIslandRequested();
     void kickViewerRequested(const QString &viewerId);
+    void closeRoomRequested();
+    void talkToggleRequested(const QString &targetId, bool enabled);
 
 private:
     void setupUi();
     void updateListWidget(const QJsonArray &users);
+    QIcon buildSpinnerIcon(int size, int angleDeg) const;
     
     // Dragging support
     bool m_dragging = false;
@@ -81,6 +91,9 @@ private:
     QMap<QString, StreamClient*> m_remoteStreams; // userId -> StreamClient
     QMap<QString, QListWidgetItem*> m_userItems;  // userId -> ListWidgetItem
     QMap<QString, QLabel*> m_userLabels;          // userId -> Image Label (for updating frame)
+    QMap<QString, QPushButton*> m_talkButtons;    // userId -> Talk Button (end/get)
+    QTimer *m_talkSpinnerTimer = nullptr;
+    QMap<QString, int> m_talkSpinnerAngles;
 
     // Layout constants
     int m_cardBaseWidth;

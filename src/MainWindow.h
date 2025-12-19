@@ -140,6 +140,9 @@ private:
     // 显示更新日志
     void checkAndShowUpdateLog();
 private:
+    void sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly);
+    void sendWatchRequestWithVideo(const QString& targetDeviceId);
+    void sendWatchRequestAudioOnly(const QString& targetDeviceId);
     
     // UI组件
     QWidget *m_centralWidget;
@@ -203,6 +206,10 @@ private:
     
     // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
     QString m_currentTargetId;
+    QString m_pendingTalkTargetId;
+    bool m_pendingTalkEnabled = false;
+    bool m_pendingShowVideoWindow = true;
+    QString m_audioOnlyTargetId;
     
     // 推流状态灵动岛
     StreamingIslandWidget *m_islandWidget = nullptr;

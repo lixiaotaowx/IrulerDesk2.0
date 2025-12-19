@@ -185,6 +185,9 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
     m_timer->start(500); // 0.5 seconds
 
+    m_talkSpinnerTimer = new QTimer(this);
+    connect(m_talkSpinnerTimer, &QTimer::timeout, this, &NewUiWindow::onTalkSpinnerTimeout);
+
     // Setup StreamClient
     m_streamClient = new StreamClient(this);
     connect(m_streamClient, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
@@ -249,6 +252,9 @@ NewUiWindow::~NewUiWindow()
     if (m_timer && m_timer->isActive()) {
         m_timer->stop();
     }
+    if (m_talkSpinnerTimer && m_talkSpinnerTimer->isActive()) {
+        m_talkSpinnerTimer->stop();
+    }
 }
 
 void NewUiWindow::onLoginConnected()
@@ -256,6 +262,102 @@ void NewUiWindow::onLoginConnected()
     // Auto-login after connection
     // DISABLED: Main Window handles login
     // m_loginClient->login(m_myStreamId, m_myUserName);
+}
+
+QIcon NewUiWindow::buildSpinnerIcon(int size, int angleDeg) const
+{
+    const int s = qMax(8, size);
+    QPixmap pix(s, s);
+    pix.fill(Qt::transparent);
+
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    QPen pen(QColor(230, 230, 230, 230));
+    pen.setWidthF(qMax(1.5, s / 10.0));
+    pen.setCapStyle(Qt::RoundCap);
+    p.setPen(pen);
+
+    const qreal pad = pen.widthF() + 1.0;
+    QRectF r(pad, pad, s - 2 * pad, s - 2 * pad);
+    const int start = (90 - angleDeg) * 16;
+    const int span = 120 * 16;
+    p.drawArc(r, start, span);
+
+    return QIcon(pix);
+}
+
+void NewUiWindow::setTalkPending(const QString &userId, bool pending)
+{
+    QPushButton *btn = m_talkButtons.value(userId, nullptr);
+    if (!btn) {
+        return;
+    }
+
+    btn->setProperty("isPending", pending);
+
+    if (pending) {
+        if (!m_talkSpinnerAngles.contains(userId)) {
+            m_talkSpinnerAngles.insert(userId, 0);
+        }
+        if (m_talkSpinnerTimer && !m_talkSpinnerTimer->isActive()) {
+            m_talkSpinnerTimer->start(60);
+        }
+        onTalkSpinnerTimeout();
+        return;
+    }
+
+    m_talkSpinnerAngles.remove(userId);
+    if (m_talkSpinnerAngles.isEmpty() && m_talkSpinnerTimer && m_talkSpinnerTimer->isActive()) {
+        m_talkSpinnerTimer->stop();
+    }
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const bool isOn = btn->property("isOn").toBool();
+    const QString iconName = isOn ? "get.png" : "end.png";
+    btn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+}
+
+void NewUiWindow::setTalkConnected(const QString &userId, bool connected)
+{
+    QPushButton *btn = m_talkButtons.value(userId, nullptr);
+    if (!btn) {
+        return;
+    }
+
+    btn->setProperty("isOn", connected);
+    setTalkPending(userId, false);
+}
+
+void NewUiWindow::onTalkSpinnerTimeout()
+{
+    if (m_talkSpinnerAngles.isEmpty()) {
+        if (m_talkSpinnerTimer && m_talkSpinnerTimer->isActive()) {
+            m_talkSpinnerTimer->stop();
+        }
+        return;
+    }
+
+    const QStringList ids = m_talkSpinnerAngles.keys();
+    for (const QString &id : ids) {
+        QPushButton *btn = m_talkButtons.value(id, nullptr);
+        if (!btn || !btn->property("isPending").toBool()) {
+            m_talkSpinnerAngles.remove(id);
+            continue;
+        }
+
+        int angle = m_talkSpinnerAngles.value(id, 0);
+        angle = (angle + 30) % 360;
+        m_talkSpinnerAngles[id] = angle;
+
+        const int size = qMin(btn->width(), btn->height());
+        btn->setIcon(buildSpinnerIcon(size, angle));
+        btn->setIconSize(QSize(size, size));
+    }
+
+    if (m_talkSpinnerAngles.isEmpty() && m_talkSpinnerTimer && m_talkSpinnerTimer->isActive()) {
+        m_talkSpinnerTimer->stop();
+    }
 }
 
 void NewUiWindow::onUserListUpdated(const QJsonArray &users)
@@ -410,39 +512,38 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         micBtn->setProperty("isOn", false);
         micBtn->setFlat(true);
         micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        micBtn->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
+        micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
         micBtn->setIconSize(QSize(14, 14));
 
-        connect(micBtn, &QPushButton::clicked, [micBtn, appDir]() {
+        m_talkButtons.insert(id, micBtn);
+        connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, id]() {
             bool isOn = micBtn->property("isOn").toBool();
             isOn = !isOn;
             micBtn->setProperty("isOn", isOn);
-            QString iconName = isOn ? "Mic_on.png" : "Mic_off.png";
-            micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
-        });
-
-        // Speaker Toggle
-        QPushButton *labaBtn = new QPushButton();
-        labaBtn->setFixedSize(14, 14);
-        labaBtn->setCursor(Qt::PointingHandCursor);
-        labaBtn->setProperty("isOn", false);
-        labaBtn->setFlat(true);
-        labaBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        labaBtn->setIcon(QIcon(appDir + "/maps/logo/laba_off.png"));
-        labaBtn->setIconSize(QSize(14, 14));
-
-        connect(labaBtn, &QPushButton::clicked, [labaBtn, appDir]() {
-            bool isOn = labaBtn->property("isOn").toBool();
-            isOn = !isOn;
-            labaBtn->setProperty("isOn", isOn);
-            QString iconName = isOn ? "laba_on.png" : "laba_off.png";
-            labaBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+            if (id == m_myStreamId) {
+                QString iconName = isOn ? "get.png" : "end.png";
+                micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+                return;
+            }
+            if (isOn) {
+                const QStringList keys = m_talkButtons.keys();
+                for (const QString &otherId : keys) {
+                    if (otherId == id) continue;
+                    setTalkConnected(otherId, false);
+                    emit talkToggleRequested(otherId, false);
+                }
+            }
+            if (isOn) {
+                setTalkPending(id, true);
+            } else {
+                setTalkConnected(id, false);
+            }
+            emit talkToggleRequested(id, isOn);
         });
 
         bottomLayout->addWidget(tabBtn);
         bottomLayout->addWidget(txtLabel);
         bottomLayout->addWidget(micBtn);
-        bottomLayout->addWidget(labaBtn);
 
         cardLayout->addWidget(imgLabel);
         cardLayout->addLayout(bottomLayout);
@@ -716,8 +817,8 @@ void NewUiWindow::setupUi()
     QWidget *controlContainer = new QWidget(titleBar);
     // Size adjustment:
     // Buttons: 48x48 (Double size)
-    // Container width: 48*3 = 144. Height: 48.
-    controlContainer->setFixedSize(144, 48); 
+    // Container width: 48*4 = 192. Height: 48.
+    controlContainer->setFixedSize(192, 48); 
     // Important: Ensure the widget itself doesn't paint a background, only the stylesheet image
     controlContainer->setAttribute(Qt::WA_TranslucentBackground);
     controlContainer->setObjectName("TitleControlContainer");
@@ -740,6 +841,15 @@ void NewUiWindow::setupUi()
     controlLayout->setContentsMargins(0, 0, 0, 0); // No margins
     controlLayout->setSpacing(0); // No spacing
     controlLayout->setAlignment(Qt::AlignCenter);
+
+    ResponsiveButton *exitBtn = new ResponsiveButton();
+    exitBtn->setFixedSize(48, 48);
+    exitBtn->setIcon(QIcon(appDir + "/maps/logo/dele.png"));
+    exitBtn->setIconSize(QSize(32, 32));
+    exitBtn->setCursor(Qt::PointingHandCursor);
+    exitBtn->setToolTip("退出软件");
+    exitBtn->installEventFilter(this);
+    connect(exitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
 
     // Menu Button
     ResponsiveButton *menuBtn = new ResponsiveButton();
@@ -771,6 +881,7 @@ void NewUiWindow::setupUi()
     closeBtn->installEventFilter(this);
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
 
+    controlLayout->addWidget(exitBtn);
     controlLayout->addWidget(menuBtn);
     controlLayout->addWidget(minBtn);
     controlLayout->addWidget(closeBtn);
@@ -1047,39 +1158,20 @@ void NewUiWindow::setupUi()
         micBtn->setProperty("isOn", false);
         micBtn->setFlat(true);
         micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        micBtn->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
+        micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
         micBtn->setIconSize(QSize(14, 14));
 
         connect(micBtn, &QPushButton::clicked, [micBtn, appDir]() {
             bool isOn = micBtn->property("isOn").toBool();
             isOn = !isOn;
             micBtn->setProperty("isOn", isOn);
-            QString iconName = isOn ? "Mic_on.png" : "Mic_off.png";
+            QString iconName = isOn ? "get.png" : "end.png";
             micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
-        });
-
-        // Speaker Toggle
-        QPushButton *labaBtn = new QPushButton();
-        labaBtn->setFixedSize(14, 14);
-        labaBtn->setCursor(Qt::PointingHandCursor);
-        labaBtn->setProperty("isOn", false);
-        labaBtn->setFlat(true);
-        labaBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        labaBtn->setIcon(QIcon(appDir + "/maps/logo/laba_off.png"));
-        labaBtn->setIconSize(QSize(14, 14));
-
-        connect(labaBtn, &QPushButton::clicked, [labaBtn, appDir]() {
-            bool isOn = labaBtn->property("isOn").toBool();
-            isOn = !isOn;
-            labaBtn->setProperty("isOn", isOn);
-            QString iconName = isOn ? "laba_on.png" : "laba_off.png";
-            labaBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
         });
 
         bottomLayout->addWidget(tabBtn);
         bottomLayout->addWidget(txtLabel);
         bottomLayout->addWidget(micBtn);
-        bottomLayout->addWidget(labaBtn);
 
         cardLayout->addWidget(imgLabel);
         cardLayout->addLayout(bottomLayout);
@@ -1193,7 +1285,7 @@ void NewUiWindow::setupUi()
     farRightLayout->addWidget(m_viewerList);
 
     // Quit Button
-    QPushButton *quitBtn = new QPushButton("解散");
+    QPushButton *quitBtn = new QPushButton("关闭房间");
     quitBtn->setCursor(Qt::PointingHandCursor);
     quitBtn->setFixedHeight(30);
     quitBtn->setFixedWidth(80);
@@ -1212,8 +1304,16 @@ void NewUiWindow::setupUi()
         "   background-color: #350909ff;" // Very Dark Red
         "}"
     );
-    // Connect to application quit
-    connect(quitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
+    connect(quitBtn, &QPushButton::clicked, this, [this]() {
+        const QStringList viewerIds = m_viewerItems.keys();
+        qInfo().noquote() << "[KickDiag] close_room clicked"
+                          << " my_id=" << m_myStreamId
+                          << " viewer_count=" << viewerIds.size();
+        for (const QString &viewerId : viewerIds) {
+            emit kickViewerRequested(viewerId);
+        }
+        emit closeRoomRequested();
+    });
 
     // Center the button horizontally
     farRightLayout->addWidget(quitBtn, 0, Qt::AlignHCenter);
@@ -1637,22 +1737,38 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     micBtn->setProperty("isOn", false);
     micBtn->setFlat(true);
     micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-    micBtn->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
+    micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
     micBtn->setIconSize(QSize(14, 14));
 
-    QPushButton *labaBtn = new QPushButton();
-    labaBtn->setFixedSize(14, 14);
-    labaBtn->setCursor(Qt::PointingHandCursor);
-    labaBtn->setProperty("isOn", false);
-    labaBtn->setFlat(true);
-    labaBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-    labaBtn->setIcon(QIcon(appDir + "/maps/logo/laba_off.png"));
-    labaBtn->setIconSize(QSize(14, 14));
+    m_talkButtons.insert(userId, micBtn);
+    connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, userId]() {
+        bool isOn = micBtn->property("isOn").toBool();
+        isOn = !isOn;
+        micBtn->setProperty("isOn", isOn);
+        if (userId == m_myStreamId) {
+            QString iconName = isOn ? "get.png" : "end.png";
+            micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+            return;
+        }
+        if (isOn) {
+            const QStringList keys = m_talkButtons.keys();
+            for (const QString &otherId : keys) {
+                if (otherId == userId) continue;
+                setTalkConnected(otherId, false);
+                emit talkToggleRequested(otherId, false);
+            }
+        }
+        if (isOn) {
+            setTalkPending(userId, true);
+        } else {
+            setTalkConnected(userId, false);
+        }
+        emit talkToggleRequested(userId, isOn);
+    });
 
     bottomLayout->addWidget(tabBtn);
     bottomLayout->addWidget(txtLabel);
     bottomLayout->addWidget(micBtn);
-    bottomLayout->addWidget(labaBtn);
 
     cardLayout->addWidget(imgLabel);
     cardLayout->addLayout(bottomLayout);
@@ -1698,6 +1814,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
 void NewUiWindow::removeUser(const QString &userId)
 {
+    m_talkButtons.remove(userId);
+
     if (m_remoteStreams.contains(userId)) {
         StreamClient *client = m_remoteStreams.take(userId);
         client->disconnectFromServer();

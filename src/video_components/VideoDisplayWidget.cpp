@@ -112,15 +112,6 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
             }
         });
     });
-            
-    // 收到推流成功信号后，自动开启麦克风 (实现双工通话)
-    connect(m_receiver.get(), &WebSocketReceiver::streamingStarted, this, [this]() {
-        qDebug() << "[VideoDisplayWidget] Streaming started (Full Duplex), enabling microphone...";
-        // 延迟一点开启，避免瞬间负载
-        QTimer::singleShot(500, this, [this](){
-             setTalkEnabled(true);
-        });
-    });
 
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {

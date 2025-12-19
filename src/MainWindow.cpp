@@ -246,6 +246,25 @@ NewUiWindow* MainWindow::transparentImageList() const
 
 void MainWindow::sendWatchRequest(const QString& targetDeviceId)
 {
+    sendWatchRequestWithVideo(targetDeviceId);
+}
+
+void MainWindow::sendWatchRequestWithVideo(const QString& targetDeviceId)
+{
+    m_pendingShowVideoWindow = true;
+    m_audioOnlyTargetId.clear();
+    sendWatchRequestInternal(targetDeviceId, false);
+}
+
+void MainWindow::sendWatchRequestAudioOnly(const QString& targetDeviceId)
+{
+    m_pendingShowVideoWindow = false;
+    m_audioOnlyTargetId = targetDeviceId;
+    sendWatchRequestInternal(targetDeviceId, true);
+}
+
+void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly)
+{
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
         return;
     }
@@ -255,6 +274,9 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
     // 构建观看请求消息
     QJsonObject watchRequest;
     watchRequest["type"] = "watch_request";
+    if (audioOnly) {
+        watchRequest["audio_only"] = true;
+    }
     watchRequest["viewer_id"] = getDeviceId();
     watchRequest["target_id"] = targetDeviceId;
     watchRequest["viewer_name"] = m_userName;
@@ -263,6 +285,10 @@ void MainWindow::sendWatchRequest(const QString& targetDeviceId)
     QJsonDocument doc(watchRequest);
     QString message = doc.toJson(QJsonDocument::Compact);
     m_loginWebSocket->sendTextMessage(message);
+
+    if (audioOnly) {
+        return;
+    }
     
     // 显示非模态等待对话框
     if (m_waitingDialog) {
@@ -333,21 +359,21 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     // 使用VideoDisplayWidget开始接收视频流
     
     videoWidget->startReceiving(serverUrl);
-    bool spkEnabled = loadSpeakerEnabledFromConfig();
-    // qInfo() << "config.load.speaker_enabled" << spkEnabled;
-    bool micEnabled = true;
-    m_videoWindow->setSpeakerChecked(spkEnabled);
-    m_videoWindow->setMicChecked(micEnabled);
-    videoWidget->setSpeakerEnabled(spkEnabled);
-    videoWidget->setTalkEnabled(micEnabled);
-    videoWidget->setMicSendEnabled(micEnabled);
-
-    
     QString viewerId = getDeviceId();
-    // [Fix] 不在流通道发送watch_request，避免触发服务器的二次同意流程
-    // 使用setSessionInfo替代sendWatchRequest，确保本地和接收器知道viewerId用于批注
     videoWidget->setSessionInfo(viewerId, targetDeviceId);
-    // videoWidget->sendWatchRequest(viewerId, targetDeviceId);
+
+    bool spkEnabled = loadSpeakerEnabledFromConfig();
+    bool micEnabled = loadMicEnabledFromConfig();
+    if (m_pendingTalkEnabled && m_pendingTalkTargetId == targetDeviceId) {
+        micEnabled = true;
+        m_pendingTalkTargetId.clear();
+        m_pendingTalkEnabled = false;
+    }
+    m_videoWindow->setSpeakerChecked(spkEnabled);
+    m_videoWindow->setMicCheckedSilently(micEnabled);
+    videoWidget->setSpeakerEnabled(spkEnabled);
+    videoWidget->setMicSendEnabled(micEnabled);
+    videoWidget->setTalkEnabled(micEnabled);
 }
 
 void MainWindow::startPlayerProcess(const QString& targetDeviceId)
@@ -600,7 +626,7 @@ void MainWindow::setupUI()
             m_videoWindow->setMicChecked(micEnabled);
             vd->setSpeakerEnabled(spkEnabled);
             vd->setTalkEnabled(micEnabled);
-            vd->sendAudioToggle(micEnabled);
+            vd->setMicSendEnabled(micEnabled);
         }
     }
     
@@ -648,6 +674,70 @@ void MainWindow::setupUI()
         if (m_transparentImageList) {
             m_transparentImageList->removeViewer(viewerId);
             m_transparentImageList->sendKickToSubscribers(viewerId);
+        }
+    });
+
+    connect(m_transparentImageList, &NewUiWindow::closeRoomRequested,
+            this, [this]() {
+        qInfo().noquote() << "[KickDiag] close_room requested"
+                          << " my_id=" << getDeviceId()
+                          << " is_streaming=" << m_isStreaming;
+        stopStreaming();
+    });
+
+    connect(m_transparentImageList, &NewUiWindow::talkToggleRequested,
+            this, [this](const QString &targetId, bool enabled) {
+        auto applyTalk = [this](bool on) {
+            if (!m_videoWindow) return;
+            auto *vd = m_videoWindow->getVideoDisplayWidget();
+            if (!vd) return;
+            vd->setTalkEnabled(on);
+            vd->setMicSendEnabled(on);
+            m_videoWindow->setMicCheckedSilently(on);
+        };
+
+        if (enabled) {
+            m_pendingTalkTargetId = targetId;
+            m_pendingTalkEnabled = true;
+            bool hasSession = false;
+            if (m_videoWindow) {
+                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+                    hasSession = vd->isReceiving() && (m_currentTargetId == targetId);
+                }
+            }
+            if (hasSession) {
+                applyTalk(true);
+                if (m_transparentImageList) {
+                    m_transparentImageList->setTalkConnected(targetId, true);
+                }
+            } else {
+                m_currentTargetId = targetId;
+                m_audioOnlyTargetId = targetId;
+                startVideoReceiving(targetId);
+                if (m_transparentImageList) {
+                    m_transparentImageList->setTalkPending(targetId, true);
+                }
+                sendWatchRequestAudioOnly(targetId);
+            }
+        } else {
+            if (m_transparentImageList) {
+                m_transparentImageList->setTalkConnected(targetId, false);
+            }
+            if (m_pendingTalkTargetId == targetId) {
+                m_pendingTalkTargetId.clear();
+                m_pendingTalkEnabled = false;
+            }
+            if (m_currentTargetId == targetId) {
+                applyTalk(false);
+                if (m_audioOnlyTargetId == targetId) {
+                    if (m_videoWindow) {
+                        if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+                            vd->stopReceiving(false);
+                        }
+                    }
+                    m_audioOnlyTargetId.clear();
+                }
+            }
         }
     });
 
@@ -1942,8 +2032,38 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
         }
         
+        const bool audioOnly = obj.value("audio_only").toBool(false);
         bool manualApproval = loadManualApprovalEnabledFromConfig();
         bool isConnected = m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState;
+
+        if (audioOnly && isConnected) {
+            QJsonObject accepted;
+            accepted["type"] = "watch_request_accepted";
+            accepted["viewer_id"] = viewerId;
+            accepted["target_id"] = targetId;
+            QJsonDocument accDoc(accepted);
+            m_loginWebSocket->sendTextMessage(accDoc.toJson(QJsonDocument::Compact));
+
+            if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                m_currentWatchdogSocket->write("CMD_APPROVE");
+                m_currentWatchdogSocket->flush();
+            } else {
+                m_pendingApproval = true;
+            }
+
+            if (!m_isStreaming) {
+                startStreaming();
+            }
+
+            QJsonObject streamOkResponse;
+            streamOkResponse["type"] = "streaming_ok";
+            streamOkResponse["viewer_id"] = viewerId;
+            streamOkResponse["target_id"] = targetId;
+            streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
+            QJsonDocument responseDoc(streamOkResponse);
+            m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+            return;
+        }
 
         if (manualApproval && isConnected) {
             // 1. 发送需要审批的消息给观看端
@@ -2107,6 +2227,17 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_waitingDialog->deleteLater();
             m_waitingDialog = nullptr;
         }
+
+        if (m_transparentImageList && (m_pendingTalkTargetId == targetId || m_audioOnlyTargetId == targetId)) {
+            m_transparentImageList->setTalkConnected(targetId, false);
+        }
+        if (m_pendingTalkTargetId == targetId) {
+            m_pendingTalkTargetId.clear();
+            m_pendingTalkEnabled = false;
+        }
+        if (m_audioOnlyTargetId == targetId) {
+            m_audioOnlyTargetId.clear();
+        }
         
         QMessageBox::warning(this, QStringLiteral("请求失败"), 
             QStringLiteral("无法连接到目标用户 %1: %2").arg(targetId, message));
@@ -2128,7 +2259,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
     } else if (type == "watch_request_rejected") {
         QString viewerId = obj["viewer_id"].toString();
-        // QString targetId = obj["target_id"].toString();
+        QString targetId = obj["target_id"].toString();
         if (viewerId == getDeviceId()) {
             // Close the waiting dialog if any
             if (m_waitingDialog) {
@@ -2141,6 +2272,17 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             if (m_selfCancelled) {
                 m_selfCancelled = false;
                 return;
+            }
+
+            if (m_transparentImageList && !targetId.isEmpty() && (m_pendingTalkTargetId == targetId || m_audioOnlyTargetId == targetId)) {
+                m_transparentImageList->setTalkConnected(targetId, false);
+            }
+            if (m_pendingTalkTargetId == targetId) {
+                m_pendingTalkTargetId.clear();
+                m_pendingTalkEnabled = false;
+            }
+            if (m_audioOnlyTargetId == targetId) {
+                m_audioOnlyTargetId.clear();
             }
 
             QMessageBox msgBox(this);
@@ -2213,16 +2355,24 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_waitingDialog = nullptr;
             }
             
-            // 开始视频接收和播放
-                    if (m_videoWindow) {
-                        m_videoWindow->show();
-                        m_videoWindow->raise();
-                        m_videoWindow->activateWindow();
-                    }
-                    startVideoReceiving(targetId);
-                } else {
-                    // 非当前用户的观看请求，忽略
+            const bool showVideoWindow = m_pendingShowVideoWindow;
+            const bool talkWasPending = (m_pendingTalkEnabled && m_pendingTalkTargetId == targetId);
+            m_pendingShowVideoWindow = true;
+            if (showVideoWindow) {
+                if (m_videoWindow) {
+                    m_videoWindow->show();
+                    m_videoWindow->raise();
+                    m_videoWindow->activateWindow();
                 }
+                m_audioOnlyTargetId.clear();
+            }
+            startVideoReceiving(targetId);
+            if (talkWasPending && m_transparentImageList) {
+                m_transparentImageList->setTalkConnected(targetId, true);
+            }
+        } else {
+            // 非当前用户的观看请求，忽略
+        }
     } else if (type == "avatar_update" || type == "avatar_updated" || type == "user_icon_update") {
         QString userId;
         if (obj.contains("device_id")) userId = obj.value("device_id").toString();
@@ -2820,7 +2970,7 @@ bool MainWindow::loadMicEnabledFromConfig() const
         }
         configFile.close();
     }
-    return true;
+    return false;
 }
 
 void MainWindow::saveSpeakerEnabledToConfig(bool enabled)

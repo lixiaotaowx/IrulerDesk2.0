@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_trae\CaptureProcess_autogen\mocs_compilation_Debug.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\main_capture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\ConsoleLogger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\CrashGuard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\ScreenCapture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\VP9Encoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\WebSocketClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\WebSocketSender.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\MouseCapture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\PerformanceMonitor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\AnnotationOverlay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\CursorOverlay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_trae\CaptureProcess_autogen\mocs_compilation_Release.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_trae\CaptureProcess_autogen\mocs_compilation_MinSizeRel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\build_trae\CaptureProcess_autogen\mocs_compilation_RelWithDebInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\ConsoleLogger.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\common\CrashGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\ScreenCapture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\VP9Encoder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\WebSocketClient.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\WebSocketSender.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\MouseCapture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\PerformanceMonitor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\AnnotationOverlay.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\capture\CursorOverlay.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="G:\c\2025\lunzi\IrulerDeskpro\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{38FE272C-7A87-3D54-8F00-52FA43D6B8F1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{D037C4AB-830C-372A-B4F7-377E6EB22A70}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

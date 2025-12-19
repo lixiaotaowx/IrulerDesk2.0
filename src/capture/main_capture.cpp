@@ -596,7 +596,7 @@ int main(int argc, char *argv[])
     static int audioSampleRate = 16000; // 目标：16kHz 单声道 16bit PCM
     static const int audioChannels = 1;
     static const int audioBitsPerSample = 16;
-    static bool remoteAudioEnabled = true; // 默认开启音频发送，不依赖观看端麦克风状态
+    static bool remoteAudioEnabled = false; // 默认关闭音频发送
     static int audioFrameSendCount = 0; // 发送帧计数
     
     // 远程音频播放相关变量

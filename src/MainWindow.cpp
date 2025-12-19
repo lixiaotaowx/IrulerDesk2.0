@@ -620,7 +620,7 @@ void MainWindow::setupUI()
         }
     }
     
-    // 创建新UI窗口 (Replacing TransparentImageList)
+    // 创建新UI窗口
     m_transparentImageList = new NewUiWindow();
     
     // 设置当前用户信息
@@ -633,42 +633,10 @@ void MainWindow::setupUI()
     // Connect system settings signal
     connect(m_transparentImageList, &NewUiWindow::systemSettingsRequested,
             this, &MainWindow::onSystemSettingsRequested);
-
-    /*
-    QString appDir = QCoreApplication::applicationDirPath();
-    m_transparentImageList->setDefaultAvatarPath(QString("%1/maps/ii.png").arg(appDir));
-    
-    // 设置当前用户信息到透明图片列表
-    m_transparentImageList->setCurrentUserInfo(getDeviceId(), loadOrGenerateIconId());
-    
-    // 连接透明图片列表的点击信号
-    connect(m_transparentImageList, &TransparentImageList::userImageClicked,
-            this, &MainWindow::onUserImageClicked);
-    
-    // 连接透明图片列表的显示主列表信号
-    connect(m_transparentImageList, &TransparentImageList::showMainListRequested,
-            this, &MainWindow::showMainList);
-    
-    // 连接透明图片列表的设置头像信号
-    connect(m_transparentImageList, &TransparentImageList::setAvatarRequested,
-            this, &MainWindow::onSetAvatarRequested);
-    // 连接透明图片列表的系统设置信号
-    connect(m_transparentImageList, &TransparentImageList::systemSettingsRequested,
-            this, &MainWindow::onSystemSettingsRequested);
-    // 新增：连接透明图片列表的清理标记与退出信号
-    connect(m_transparentImageList, &TransparentImageList::clearMarksRequested,
+    connect(m_transparentImageList, &NewUiWindow::clearMarksRequested,
             this, &MainWindow::onClearMarksRequested);
-    connect(m_transparentImageList, &TransparentImageList::exitRequested,
-            this, &MainWindow::onExitRequested);
-    connect(m_transparentImageList, &TransparentImageList::hideRequested,
-            this, &MainWindow::onHideRequested);
-    connect(m_transparentImageList, &TransparentImageList::toggleStreamingIslandRequested,
+    connect(m_transparentImageList, &NewUiWindow::toggleStreamingIslandRequested,
             this, &MainWindow::onToggleStreamingIsland);
-    connect(m_transparentImageList, &TransparentImageList::micToggleRequested,
-            this, &MainWindow::onMicToggleRequested);
-    connect(m_transparentImageList, &TransparentImageList::speakerToggleRequested,
-            this, &MainWindow::onSpeakerToggleRequested);
-    */
 
     // Initialize Streaming Island
     m_islandWidget = new StreamingIslandWidget(nullptr); 
@@ -2448,12 +2416,20 @@ void MainWindow::onSystemSettingsRequested()
                 this, &MainWindow::onLocalQualitySelected);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::userNameChanged,
                 this, &MainWindow::onUserNameChanged);
-        connect(m_systemSettingsWindow, &SystemSettingsWindow::avatarSelected,
-                this, &MainWindow::onAvatarSelected);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::manualApprovalEnabledChanged,
                 this, &MainWindow::onManualApprovalEnabledChanged);
     }
+    const bool wasVisible = m_systemSettingsWindow->isVisible();
+    const Qt::WindowFlags flags = m_systemSettingsWindow->windowFlags();
+    if (!(flags & Qt::WindowStaysOnTopHint)) {
+        if (wasVisible) {
+            m_systemSettingsWindow->hide();
+        }
+        m_systemSettingsWindow->setWindowFlags(flags | Qt::WindowStaysOnTopHint);
+    }
     m_systemSettingsWindow->show();
+    m_systemSettingsWindow->raise();
+    m_systemSettingsWindow->activateWindow();
 }
 
 void MainWindow::onClearMarksRequested()
@@ -3141,4 +3117,3 @@ void MainWindow::saveUserNameToConfig(const QString &name)
         configFile.close();
     }
 }
-

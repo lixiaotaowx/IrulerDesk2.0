@@ -10,6 +10,8 @@
 #include <QPainterPath>
 #include <QScrollBar>
 #include <QCoreApplication>
+#include <QApplication>
+#include <QDesktopServices>
 #include <QFrame>
 #include <QPropertyAnimation>
 #include <QSequentialAnimationGroup>
@@ -79,6 +81,26 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_topAreaHeight = m_cardBaseHeight - m_bottomAreaHeight;
     m_marginTop = (m_topAreaHeight - m_imgHeight) / 2;
 
+    static bool tooltipStyled = false;
+    if (!tooltipStyled) {
+        if (auto *app = qobject_cast<QApplication*>(QCoreApplication::instance())) {
+            QString s = app->styleSheet();
+            s += "QToolTip {"
+                 " background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+                 "     stop:0 rgba(70, 70, 70, 235),"
+                 "     stop:1 rgba(35, 35, 35, 235)"
+                 " );"
+                 " color: #f4f4f4;"
+                 " border: 1px solid rgba(255, 255, 255, 35);"
+                 " border-radius: 12px;"
+                 " padding: 7px 11px;"
+                 " font-size: 12px;"
+                 " }";
+            app->setStyleSheet(s);
+        }
+        tooltipStyled = true;
+    }
+
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground);
     resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
@@ -104,11 +126,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     connect(m_loginClient, &LoginClient::connected, this, &NewUiWindow::onLoginConnected);
     */
 
-    // Set initial size
-    // Width calculation for 3 columns:
-    // Sidebar (80) + Gap (20) + 3 * (ItemWidth(300 + 10) + Spacing(15)) + ScrollBar/Margins
-    // 80 + 20 + 3 * 315 = 1045. Let's make it 1100 to be safe and spacious.
-    resize(1100, 800);
+    resize(1160, 800);
 }
 
 void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
@@ -438,11 +456,14 @@ void NewUiWindow::setupUi()
     leftLayout->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
 
     // App Logo
-    QLabel *logoLabel = new QLabel();
-    logoLabel->setFixedSize(40, 40);
-    logoLabel->setPixmap(QPixmap(appDir + "/maps/logo/iruler.ico").scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    logoLabel->setAlignment(Qt::AlignCenter);
-    leftLayout->addWidget(logoLabel);
+    m_logoLabel = new QLabel();
+    m_logoLabel->setFixedSize(40, 40);
+    m_logoLabel->setPixmap(QPixmap(appDir + "/maps/logo/iruler.ico").scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    m_logoLabel->setAlignment(Qt::AlignCenter);
+    m_logoLabel->setCursor(Qt::PointingHandCursor);
+    m_logoLabel->setToolTip("打开官网：http://www.iruler.cn");
+    m_logoLabel->installEventFilter(this);
+    leftLayout->addWidget(m_logoLabel);
     
     // Spacing between logo and buttons
     leftLayout->addSpacing(20);
@@ -451,6 +472,11 @@ void NewUiWindow::setupUi()
     for (int i = 0; i < 4; ++i) {
         QPushButton *btn = new QPushButton();
         btn->setFixedSize(40, 40);
+        btn->setCursor(Qt::PointingHandCursor);
+        if (i == 0) btn->setToolTip("主页");
+        else if (i == 1) btn->setToolTip("功能 1");
+        else if (i == 2) btn->setToolTip("功能 2");
+        else if (i == 3) btn->setToolTip("功能 3");
         
         if (i == 0) {
             btn->setObjectName("HomeButton");
@@ -511,6 +537,8 @@ void NewUiWindow::setupUi()
     // Bottom setting button
     QPushButton *settingBtn = new QPushButton();
     settingBtn->setFixedSize(40, 40);
+    settingBtn->setCursor(Qt::PointingHandCursor);
+    settingBtn->setToolTip("设置");
     leftLayout->addWidget(settingBtn);
 
     // --- Right Panel ---
@@ -577,6 +605,8 @@ void NewUiWindow::setupUi()
     toolBtn1->setIcon(QIcon(appDir + "/maps/logo/d.png"));
     toolBtn1->setIconSize(QSize(24, 24)); 
     toolBtn1->setCursor(Qt::PointingHandCursor);
+    toolBtn1->setToolTip("绘制岛");
+    connect(toolBtn1, &QPushButton::clicked, this, &NewUiWindow::toggleStreamingIslandRequested);
 
     // log.png
     ResponsiveButton *toolBtn2 = new ResponsiveButton();
@@ -584,6 +614,7 @@ void NewUiWindow::setupUi()
     toolBtn2->setIcon(QIcon(appDir + "/maps/logo/log.png"));
     toolBtn2->setIconSize(QSize(24, 24)); 
     toolBtn2->setCursor(Qt::PointingHandCursor);
+    toolBtn2->setToolTip("日志");
 
     // clearn.png
     ResponsiveButton *toolBtn3 = new ResponsiveButton();
@@ -591,6 +622,8 @@ void NewUiWindow::setupUi()
     toolBtn3->setIcon(QIcon(appDir + "/maps/logo/clearn.png"));
     toolBtn3->setIconSize(QSize(24, 24)); 
     toolBtn3->setCursor(Qt::PointingHandCursor);
+    toolBtn3->setToolTip("清空标注");
+    connect(toolBtn3, &QPushButton::clicked, this, &NewUiWindow::clearMarksRequested);
 
     toolsLayout->addWidget(toolBtn1);
     toolsLayout->addWidget(toolBtn2);
@@ -633,6 +666,7 @@ void NewUiWindow::setupUi()
     menuBtn->setIcon(QIcon(appDir + "/maps/logo/menu.png"));
     menuBtn->setIconSize(QSize(32, 32)); 
     menuBtn->setCursor(Qt::PointingHandCursor);
+    menuBtn->setToolTip("系统设置");
     connect(menuBtn, &QPushButton::clicked, this, &NewUiWindow::systemSettingsRequested);
 
     // Minimize Button
@@ -641,6 +675,7 @@ void NewUiWindow::setupUi()
     minBtn->setIcon(QIcon(appDir + "/maps/logo/mini.png"));
     minBtn->setIconSize(QSize(32, 32)); 
     minBtn->setCursor(Qt::PointingHandCursor);
+    minBtn->setToolTip("最小化");
     connect(minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
 
     // Close Button
@@ -649,6 +684,7 @@ void NewUiWindow::setupUi()
     closeBtn->setIcon(QIcon(appDir + "/maps/logo/close.png"));
     closeBtn->setIconSize(QSize(32, 32)); 
     closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setToolTip("关闭");
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
 
     controlLayout->addWidget(menuBtn);
@@ -1133,6 +1169,11 @@ void NewUiWindow::mouseReleaseEvent(QMouseEvent *event)
 
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == m_logoLabel && event->type() == QEvent::MouseButtonRelease) {
+        QDesktopServices::openUrl(QUrl("http://www.iruler.cn"));
+        return true;
+    }
+
     // Handle single click on local card to toggle "My Room" panel
     if (watched == m_localCard && event->type() == QEvent::MouseButtonRelease) {
         if (m_farRightPanel) {

@@ -25,7 +25,7 @@
 
 // 前向声明
 class VideoWindow;
-class NewUiWindow; // Replaces TransparentImageList
+class NewUiWindow;
 class AvatarSettingsWindow;
 class QSoundEffect;
 
@@ -151,7 +151,6 @@ private:
     // 视频窗口
     VideoWindow *m_videoWindow;
     
-    // New UI Window (Replaces TransparentImageList)
     NewUiWindow *m_transparentImageList;
     
     // 头像设置窗口

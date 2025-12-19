@@ -48,6 +48,8 @@ public:
 signals:
     void startWatchingRequested(const QString &targetId);
     void systemSettingsRequested();
+    void clearMarksRequested();
+    void toggleStreamingIslandRequested();
 
 private:
     void setupUi();
@@ -60,6 +62,7 @@ private:
     QListWidget *m_listWidget = nullptr;
     QTimer *m_timer = nullptr;
     QLabel *m_videoLabel = nullptr; // Local preview label (Index 0)
+    QLabel *m_logoLabel = nullptr;
     QWidget *m_farRightPanel = nullptr; // Far right panel (My Room)
     QListWidget *m_viewerList = nullptr; // Viewer list widget
     QMap<QString, QListWidgetItem*> m_viewerItems; // Viewer ID -> List Item

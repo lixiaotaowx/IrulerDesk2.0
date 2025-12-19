@@ -162,7 +162,6 @@ G:/c/2025/lunzi/IrulerDeskpro/build_main/ScreenStreamApp_autogen/include_Debug/Y
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QButtonGroup \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QDialog \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QFrame \
-  C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QGridLayout \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QLabel \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QLineEdit \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QListWidget \

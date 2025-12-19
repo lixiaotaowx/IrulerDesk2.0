@@ -2298,7 +2298,6 @@ G:/c/2025/lunzi/IrulerDeskpro/src/ui/ColorCircleButton.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qtwidgetsglobal.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qwidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/ColorCircleButton.h
-G:/c/2025/lunzi/IrulerDeskpro/src/ui/BubbleTipWidget.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/ui/FirstLaunchWizard.h
  mmc:Q_OBJECT
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList
@@ -2516,6 +2515,7 @@ G:/c/2025/lunzi/IrulerDeskpro/src/ui/FirstLaunchWizard.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qtwidgetsglobal.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qwidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/FirstLaunchWizard.h
+G:/c/2025/lunzi/IrulerDeskpro/src/ui/BubbleTipWidget.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/ui/ScreenAnnotationWidget.h
  mmc:Q_OBJECT
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList
@@ -2864,7 +2864,6 @@ G:/c/2025/lunzi/IrulerDeskpro/src/ui/SnippetOverlay.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qtwidgetsglobal.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qwidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/SnippetOverlay.h
-G:/c/2025/lunzi/IrulerDeskpro/src/ui/AnnotationToolbar.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/ui/StreamingIslandWidget.h
  mmc:Q_OBJECT
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList
@@ -3098,6 +3097,7 @@ G:/c/2025/lunzi/IrulerDeskpro/src/ui/StreamingIslandWidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/RainbowToolButton.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/ScreenAnnotationWidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/StreamingIslandWidget.h
+G:/c/2025/lunzi/IrulerDeskpro/src/ui/AnnotationToolbar.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/ui/SystemSettingsWindow.h
  mmc:Q_OBJECT
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList
@@ -3263,7 +3263,6 @@ G:/c/2025/lunzi/IrulerDeskpro/src/ui/SystemSettingsWindow.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QButtonGroup
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QDialog
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QFrame
- mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QGridLayout
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QLabel
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QLineEdit
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QListWidget
@@ -3305,7 +3304,6 @@ G:/c/2025/lunzi/IrulerDeskpro/src/ui/SystemSettingsWindow.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qtwidgetsglobal.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qwidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/SystemSettingsWindow.h
-G:/c/2025/lunzi/IrulerDeskpro/src/ui/FirstLaunchWizard.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/ui/TransparentImageList.h
  mmc:Q_OBJECT
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtCore/QEvent
@@ -3552,7 +3550,7 @@ G:/c/2025/lunzi/IrulerDeskpro/src/ui/TransparentImageList.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qwidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/BubbleTipWidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/ui/TransparentImageList.h
-G:/c/2025/lunzi/IrulerDeskpro/src/VideoWindow.cpp
+G:/c/2025/lunzi/IrulerDeskpro/src/ui/FirstLaunchWizard.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/video_components/AudioPlayer.h
  mmc:Q_OBJECT
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtCore/QByteArray
@@ -3683,6 +3681,7 @@ G:/c/2025/lunzi/IrulerDeskpro/src/video_components/AudioPlayer.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtMultimedia/qtmultimediaexports.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtMultimedia/qtmultimediaglobal.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/video_components/AudioPlayer.h
+G:/c/2025/lunzi/IrulerDeskpro/src/VideoWindow.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/video_components/VideoDisplayWidget.h
  mmc:Q_OBJECT
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtCore/QByteArray
@@ -3896,9 +3895,9 @@ G:/c/2025/lunzi/IrulerDeskpro/src/video_components/VideoDisplayWidget.h
  mdp:C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qwidget.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/video_components/AudioPlayer.h
  mdp:G:/c/2025/lunzi/IrulerDeskpro/src/video_components/VideoDisplayWidget.h
-G:/c/2025/lunzi/IrulerDeskpro/src/ui/RainbowToolButton.cpp
-G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/NewUiWindow.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/MainWindow.cpp
+G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/NewUiWindow.cpp
+G:/c/2025/lunzi/IrulerDeskpro/src/ui/RainbowToolButton.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/StreamClient.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/common/ConsoleLogger.cpp
 G:/c/2025/lunzi/IrulerDeskpro/src/common/CrashGuard.cpp

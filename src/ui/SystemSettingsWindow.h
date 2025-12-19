@@ -10,7 +10,6 @@
 #include <QButtonGroup>
 #include <QRadioButton>
 #include <QLineEdit>
-#include <QGridLayout>
 #include <QScrollArea>
 #include <QList>
 #include <QFrame>
@@ -24,7 +23,6 @@ signals:
     void screenSelected(int index);
     void localQualitySelected(const QString& quality);
     void userNameChanged(const QString& name);
-    void avatarSelected(int iconId);
     void manualApprovalEnabledChanged(bool enabled);
 
 public slots:
@@ -34,11 +32,7 @@ private:
     void populateScreens();
     void setupQualityControls();
     void setupUserNameControls();
-    QFrame* setupAvatarControls();
     QFrame* setupManualApprovalControls();
-    void loadAvatarImages();
-    void selectAvatar(int iconId);
-    bool eventFilter(QObject* obj, QEvent* event) override;
     QListWidget* m_list;
     QProgressDialog* m_progress = nullptr;
     // 质量选择控件
@@ -51,10 +45,6 @@ private:
     QLabel* m_userNameLabel = nullptr;
     QLineEdit* m_userNameEdit = nullptr;
     QPushButton* m_userNameConfirmBtn = nullptr;
-    QGridLayout* m_avatarGridLayout = nullptr;
-    QList<QLabel*> m_avatarLabels;
-    QLabel* m_selectedAvatarLabel = nullptr;
-    int m_selectedIconId = -1;
     class QCheckBox* m_manualApprovalCheck = nullptr;
 };
 

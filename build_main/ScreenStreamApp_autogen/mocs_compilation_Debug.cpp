@@ -16,6 +16,5 @@
 #include <YPKJ5OE7LN/moc_SnippetOverlay.cpp>
 #include <YPKJ5OE7LN/moc_StreamingIslandWidget.cpp>
 #include <YPKJ5OE7LN/moc_SystemSettingsWindow.cpp>
-#include <YPKJ5OE7LN/moc_TransparentImageList.cpp>
 #include <C7JQLWOGWL/moc_AudioPlayer.cpp>
 #include <C7JQLWOGWL/moc_VideoDisplayWidget.cpp>

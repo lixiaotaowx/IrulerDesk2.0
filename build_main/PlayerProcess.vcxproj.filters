@@ -31,9 +31,6 @@
     <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\VideoDisplayWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\TransparentImageList.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\BubbleTipWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -73,9 +70,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\video_components\VideoDisplayWidget.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\TransparentImageList.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="G:\c\2025\lunzi\IrulerDeskpro\src\ui\BubbleTipWidget.h">

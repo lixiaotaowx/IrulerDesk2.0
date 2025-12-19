@@ -43,6 +43,8 @@ static constexpr auto qt_meta_stringdata_ZN11NewUiWindowE = QtMocHelpers::string
     "",
     "targetId",
     "systemSettingsRequested",
+    "clearMarksRequested",
+    "toggleStreamingIslandRequested",
     "onTimerTimeout",
     "onStreamLog",
     "msg",
@@ -60,31 +62,35 @@ Q_CONSTINIT static const uint qt_meta_data_ZN11NewUiWindowE[] = {
       12,       // revision
        0,       // classname
        0,    0, // classinfo
-       6,   14, // methods
+       8,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
-       2,       // signalCount
+       4,       // signalCount
 
  // signals: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    1,   50,    2, 0x06,    1 /* Public */,
-       4,    0,   53,    2, 0x06,    3 /* Public */,
+       1,    1,   62,    2, 0x06,    1 /* Public */,
+       4,    0,   65,    2, 0x06,    3 /* Public */,
+       5,    0,   66,    2, 0x06,    4 /* Public */,
+       6,    0,   67,    2, 0x06,    5 /* Public */,
 
  // slots: name, argc, parameters, tag, flags, initial metatype offsets
-       5,    0,   54,    2, 0x08,    4 /* Private */,
-       6,    1,   55,    2, 0x08,    5 /* Private */,
-       8,    1,   58,    2, 0x08,    7 /* Private */,
-      10,    0,   61,    2, 0x08,    9 /* Private */,
+       7,    0,   68,    2, 0x08,    6 /* Private */,
+       8,    1,   69,    2, 0x08,    7 /* Private */,
+      10,    1,   72,    2, 0x08,    9 /* Private */,
+      12,    0,   75,    2, 0x08,   11 /* Private */,
 
  // signals: parameters
     QMetaType::Void, QMetaType::QString,    3,
     QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
 
  // slots: parameters
     QMetaType::Void,
-    QMetaType::Void, QMetaType::QString,    7,
-    QMetaType::Void, QMetaType::QJsonArray,    9,
+    QMetaType::Void, QMetaType::QString,    9,
+    QMetaType::Void, QMetaType::QJsonArray,   11,
     QMetaType::Void,
 
        0        // eod
@@ -103,6 +109,10 @@ Q_CONSTINIT const QMetaObject NewUiWindow::staticMetaObject = { {
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
         // method 'systemSettingsRequested'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'clearMarksRequested'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'toggleStreamingIslandRequested'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'onTimerTimeout'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
@@ -125,10 +135,12 @@ void NewUiWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         switch (_id) {
         case 0: _t->startWatchingRequested((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
         case 1: _t->systemSettingsRequested(); break;
-        case 2: _t->onTimerTimeout(); break;
-        case 3: _t->onStreamLog((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 4: _t->onUserListUpdated((*reinterpret_cast< std::add_pointer_t<QJsonArray>>(_a[1]))); break;
-        case 5: _t->onLoginConnected(); break;
+        case 2: _t->clearMarksRequested(); break;
+        case 3: _t->toggleStreamingIslandRequested(); break;
+        case 4: _t->onTimerTimeout(); break;
+        case 5: _t->onStreamLog((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 6: _t->onUserListUpdated((*reinterpret_cast< std::add_pointer_t<QJsonArray>>(_a[1]))); break;
+        case 7: _t->onLoginConnected(); break;
         default: ;
         }
     }
@@ -145,6 +157,20 @@ void NewUiWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
             using _q_method_type = void (NewUiWindow::*)();
             if (_q_method_type _q_method = &NewUiWindow::systemSettingsRequested; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
                 *result = 1;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (NewUiWindow::*)();
+            if (_q_method_type _q_method = &NewUiWindow::clearMarksRequested; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 2;
+                return;
+            }
+        }
+        {
+            using _q_method_type = void (NewUiWindow::*)();
+            if (_q_method_type _q_method = &NewUiWindow::toggleStreamingIslandRequested; *reinterpret_cast<_q_method_type *>(_a[1]) == _q_method) {
+                *result = 3;
                 return;
             }
         }
@@ -170,14 +196,14 @@ int NewUiWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 6)
+        if (_id < 8)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 6;
+        _id -= 8;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 6)
+        if (_id < 8)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 6;
+        _id -= 8;
     }
     return _id;
 }
@@ -193,5 +219,17 @@ void NewUiWindow::startWatchingRequested(const QString & _t1)
 void NewUiWindow::systemSettingsRequested()
 {
     QMetaObject::activate(this, &staticMetaObject, 1, nullptr);
+}
+
+// SIGNAL 2
+void NewUiWindow::clearMarksRequested()
+{
+    QMetaObject::activate(this, &staticMetaObject, 2, nullptr);
+}
+
+// SIGNAL 3
+void NewUiWindow::toggleStreamingIslandRequested()
+{
+    QMetaObject::activate(this, &staticMetaObject, 3, nullptr);
 }
 QT_WARNING_POP

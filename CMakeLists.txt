@@ -51,12 +51,10 @@ set(MAIN_SOURCES
     src/video_components/VideoDisplayWidget.h   # 视频显示控件声明：接口与状态
     src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件
     src/VideoWindow.h                     # 独立视频窗口声明：公开接口与成员
-    src/ui/TransparentImageList.cpp       # 透明贴图列表实现：管理/选择叠加贴图资源
     src/ui/ScreenAnnotationWidget.cpp     # 屏幕批注透明层实现
     src/ui/ScreenAnnotationWidget.h       # 屏幕批注透明层声明
     src/ui/AnnotationToolbar.cpp          # 批注工具条实现
     src/ui/AnnotationToolbar.h            # 批注工具条声明
-    src/ui/TransparentImageList.h         # 透明贴图列表声明：信号槽与模型接口
     src/ui/BubbleTipWidget.cpp            # 气泡提示控件
     src/ui/BubbleTipWidget.h              # 气泡提示控件声明
     src/ui/AvatarSettingsWindow.cpp       # 头像设置窗口实现：用户头像资源的配置与预览
@@ -132,8 +130,6 @@ set(VIDEO_COMPONENTS_SOURCES
     src/player/DxvaVP9Decoder.h                 # DXVA VP9 解码器声明
     src/player/WebSocketReceiver.cpp            # WebSocket 接收端实现：接收瓦片与批注事件
     src/player/WebSocketReceiver.h              # WebSocket 接收端声明
-    src/ui/TransparentImageList.cpp             # 透明头像列表（用于动画目标识别）
-    src/ui/TransparentImageList.h               # 透明头像列表声明
     src/ui/BubbleTipWidget.cpp                  # 气泡提示控件
     src/ui/BubbleTipWidget.h                    # 气泡提示控件声明
     src/ui/ScreenAnnotationWidget.cpp           # 屏幕批注透明层实现

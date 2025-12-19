@@ -8,11 +8,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QScrollArea>
-#include <QGridLayout>
-#include <QPixmap>
 #include <QCoreApplication>
-#include <QEvent>
-#include <QMouseEvent>
 #include <QCheckBox>
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
@@ -20,20 +16,29 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
 {
     setWindowTitle("系统设置");
     setModal(true);
-    resize(520, 620);
+    resize(560, 680);
     setStyleSheet(
-        "QDialog { background-color: #1a1a1a; }"
-        "QLabel { color: #eaeaea; }"
-        "QFrame#card { background-color: #161616; border: 1px solid #2e2e2e; border-radius: 10px; }"
-        "QGroupBox { border: 1px solid #2e2e2e; border-radius: 10px; margin-top: 16px; color: #9bd28f; }"
-        "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 4px 8px; }"
-        "QPushButton { color: #ffffff; background-color: #2b2b2b; border: 1px solid #444; padding: 6px 14px; border-radius: 6px; }"
-        "QPushButton:hover { background-color: #3a3a3a; }"
-        "QRadioButton { color: #dddddd; }"
-        "QLineEdit { background-color: #121212; color: #f0f0f0; border: 1px solid #333; border-radius: 6px; padding: 6px; }"
-        "QListWidget { background-color: #121212; color: #dddddd; border: 1px solid #2e2e2e; border-radius: 10px; padding: 6px; }"
-        "QListWidget::item { height: 34px; }"
-        "QListWidget::item:selected { background-color: #2a3b2f; color: #ffffff; border: none; }"
+        "QDialog { background-color: #2b2b2b; }"
+        "QLabel { color: #e9e9e9; background: transparent; }"
+        "QFrame#card { background-color: rgba(255, 255, 255, 10); border: 1px solid rgba(255, 255, 255, 14); border-radius: 20px; }"
+        "QFrame#headerCard { background-color: rgba(255, 255, 255, 8); border: 1px solid rgba(255, 255, 255, 12); border-radius: 20px; }"
+        "QPushButton { color: #ffffff; background-color: rgba(255, 255, 255, 14); border: 1px solid rgba(255, 255, 255, 16); padding: 8px 14px; border-radius: 12px; }"
+        "QPushButton:hover { background-color: rgba(255, 255, 255, 18); }"
+        "QPushButton:pressed { background-color: rgba(255, 255, 255, 22); }"
+        "QRadioButton { color: #e0e0e0; spacing: 8px; background: transparent; }"
+        "QRadioButton::indicator { width: 16px; height: 16px; }"
+        "QRadioButton::indicator:unchecked { border: 2px solid #777; border-radius: 8px; background: transparent; }"
+        "QRadioButton::indicator:checked { border: 2px solid #ff6600; border-radius: 8px; background: #ff6600; }"
+        "QCheckBox { color: #e0e0e0; background: transparent; }"
+        "QCheckBox::indicator { width: 18px; height: 18px; }"
+        "QCheckBox::indicator:unchecked { border: 2px solid #777; border-radius: 6px; background: transparent; }"
+        "QCheckBox::indicator:checked { border: 2px solid #ff6600; border-radius: 6px; background: #ff6600; }"
+        "QLineEdit { background-color: rgba(0, 0, 0, 18); color: #f0f0f0; border: 1px solid rgba(255, 255, 255, 14); border-radius: 12px; padding: 8px 10px; }"
+        "QLineEdit:focus { border: 1px solid #ff6600; }"
+        "QListWidget { background-color: rgba(0, 0, 0, 14); color: #e0e0e0; border: 1px solid rgba(255, 255, 255, 10); border-radius: 16px; padding: 6px; }"
+        "QListWidget::item { height: 36px; border-radius: 12px; padding-left: 10px; }"
+        "QListWidget::item:hover { background-color: rgba(255, 255, 255, 25); }"
+        "QListWidget::item:selected { background-color: rgba(255, 102, 0, 70); color: #ffffff; }"
     );
 
     QVBoxLayout* root = new QVBoxLayout(this);
@@ -45,14 +50,15 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scroll->setStyleSheet(
-        "QScrollArea { border: none; }"
-        "QScrollBar:vertical { background-color: #222; width: 16px; margin: 0; border: none; }"
-        "QScrollBar::handle:vertical { background-color: #555; min-height: 32px; border-radius: 8px; }"
-        "QScrollBar::handle:vertical:hover { background-color: #666; }"
+        "QScrollArea { border: none; background: transparent; }"
+        "QScrollArea > QWidget > QWidget { background: transparent; }"
+        "QScrollBar:vertical { background-color: transparent; width: 14px; margin: 8px 6px 8px 0; border: none; }"
+        "QScrollBar::handle:vertical { background-color: rgba(255, 255, 255, 55); min-height: 32px; border-radius: 7px; }"
+        "QScrollBar::handle:vertical:hover { background-color: rgba(255, 255, 255, 75); }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar:horizontal { height: 16px; background: #222; }"
-        "QScrollBar::handle:horizontal { background: #555; min-width: 32px; border-radius: 8px; }"
-        "QScrollBar::handle:horizontal:hover { background: #666; }"
+        "QScrollBar:horizontal { height: 14px; background: transparent; margin: 0 8px 6px 8px; }"
+        "QScrollBar::handle:horizontal { background-color: rgba(255, 255, 255, 55); min-width: 32px; border-radius: 7px; }"
+        "QScrollBar::handle:horizontal:hover { background-color: rgba(255, 255, 255, 75); }"
         "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
     );
     QWidget* content = new QWidget();
@@ -60,9 +66,21 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     layout->setContentsMargins(18, 18, 18, 18);
     layout->setSpacing(16);
 
-    QLabel* header = new QLabel("系统设置", content);
+    QFrame* headerCard = new QFrame(this);
+    headerCard->setObjectName("headerCard");
+    QVBoxLayout* headerBox = new QVBoxLayout(headerCard);
+    headerBox->setContentsMargins(16, 14, 16, 14);
+    headerBox->setSpacing(6);
+
+    QLabel* header = new QLabel("系统设置", headerCard);
     QFont hf = header->font(); hf.setPointSize(16); hf.setBold(true); header->setFont(hf);
-    layout->addWidget(header);
+    headerBox->addWidget(header);
+
+    QLabel* sub = new QLabel("推流源、画质、观看请求处理等选项", headerCard);
+    sub->setStyleSheet("QLabel { color: rgba(255, 255, 255, 150); font-size: 12px; }");
+    headerBox->addWidget(sub);
+
+    layout->addWidget(headerCard);
 
     setupUserNameControls();
     QFrame* userCard = new QFrame(this); userCard->setObjectName("card");
@@ -75,7 +93,7 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     layout->addWidget(userCard);
 
     QLabel* tip = new QLabel("选择一个屏幕作为推流源", this);
-    tip->setStyleSheet("QLabel { color: #9bd28f; }");
+    tip->setStyleSheet("QLabel { color: rgba(255, 255, 255, 170); }");
     QFrame* screenCard = new QFrame(this); screenCard->setObjectName("card");
     QVBoxLayout* screenBox = new QVBoxLayout(screenCard); screenBox->setContentsMargins(12, 12, 12, 12); screenBox->setSpacing(10);
     screenBox->addWidget(tip);
@@ -99,9 +117,6 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
 
     QFrame* manualCard = setupManualApprovalControls();
     layout->addWidget(manualCard);
-
-    QFrame* avatarCard = setupAvatarControls();
-    layout->addWidget(avatarCard);
 
     populateScreens();
 
@@ -243,32 +258,17 @@ void SystemSettingsWindow::notifySwitchSucceeded()
     }
 }
 
-QFrame* SystemSettingsWindow::setupAvatarControls()
-{
-    QFrame* avatarCard = new QFrame(this); avatarCard->setObjectName("card");
-    QVBoxLayout* box = new QVBoxLayout(avatarCard); box->setContentsMargins(12, 12, 12, 12); box->setSpacing(10);
-    QLabel* title = new QLabel("头像设置", avatarCard);
-    box->addWidget(title);
-    QWidget* gridWidget = new QWidget(avatarCard);
-    m_avatarGridLayout = new QGridLayout(gridWidget);
-    m_avatarGridLayout->setSpacing(15);
-    m_avatarGridLayout->setContentsMargins(0, 0, 0, 0);
-    box->addWidget(gridWidget);
-    loadAvatarImages();
-    return avatarCard;
-}
-
 QFrame* SystemSettingsWindow::setupManualApprovalControls()
 {
     QFrame* card = new QFrame(this); card->setObjectName("card");
     QVBoxLayout* box = new QVBoxLayout(card); box->setContentsMargins(12, 12, 12, 12); box->setSpacing(10);
     QLabel* title = new QLabel("观看请求处理", card);
-    title->setStyleSheet("QLabel { font-size: 13px; }");
+    title->setStyleSheet("QLabel { font-size: 13px; font-weight: 600; }");
     box->addWidget(title);
     QHBoxLayout* row = new QHBoxLayout();
     QLabel* lbl = new QLabel("启用手动同意", card);
     m_manualApprovalCheck = new QCheckBox(card);
-    m_manualApprovalCheck->setText(QStringLiteral("启用"));
+    m_manualApprovalCheck->setText(QString());
     row->addWidget(lbl);
     row->addWidget(m_manualApprovalCheck);
     row->addStretch();
@@ -298,102 +298,4 @@ QFrame* SystemSettingsWindow::setupManualApprovalControls()
     });
 
     return card;
-}
-
-void SystemSettingsWindow::loadAvatarImages()
-{
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString mapsDir = QString("%1/maps/icon").arg(appDir);
-    for (int i = 3; i <= 21; ++i) {
-        QString imagePath = QString("%1/%2.png").arg(mapsDir, QString::number(i));
-        QLabel *avatarLabel = new QLabel();
-        avatarLabel->setFixedSize(80, 80);
-        avatarLabel->setStyleSheet(
-            "QLabel {"
-            "    border: 2px solid transparent;"
-            "    border-radius: 8px;"
-            "    background-color: #3a3a3a;"
-            "}"
-            "QLabel:hover {"
-            "    border-color: #4caf50;"
-            "    background-color: #4a4a4a;"
-            "}"
-        );
-        avatarLabel->setAlignment(Qt::AlignCenter);
-        avatarLabel->setScaledContents(true);
-        QPixmap pixmap(imagePath);
-        if (!pixmap.isNull()) {
-            avatarLabel->setPixmap(pixmap);
-        } else {
-            avatarLabel->setText(QString::number(i));
-            avatarLabel->setStyleSheet(avatarLabel->styleSheet() + "QLabel { color: white; font-size: 16px; font-weight: bold; }");
-        }
-        avatarLabel->setProperty("iconId", i);
-        avatarLabel->installEventFilter(this);
-        avatarLabel->setAttribute(Qt::WA_Hover, true);
-        int row = (i - 3) / 4;
-        int col = (i - 3) % 4;
-        m_avatarGridLayout->addWidget(avatarLabel, row, col);
-        m_avatarLabels.append(avatarLabel);
-    }
-    QString configPath = QApplication::applicationDirPath() + "/config/app_config.txt";
-    QFile f(configPath);
-    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&f);
-        while (!in.atEnd()) {
-            QString line = in.readLine();
-            if (line.startsWith("icon_id=")) {
-                bool ok = false;
-                int id = line.mid(QString("icon_id=").length()).trimmed().toInt(&ok);
-                if (ok) selectAvatar(id);
-                break;
-            }
-        }
-        f.close();
-    }
-}
-
-void SystemSettingsWindow::selectAvatar(int iconId)
-{
-    if (m_selectedAvatarLabel) {
-        m_selectedAvatarLabel->setStyleSheet(
-            "QLabel {"
-            "    border: 2px solid transparent;"
-            "    border-radius: 8px;"
-            "    background-color: #3a3a3a;"
-            "}"
-            "QLabel:hover {"
-            "    border-color: #4caf50;"
-            "    background-color: #4a4a4a;"
-            "}"
-        );
-    }
-    m_selectedIconId = iconId;
-    for (QLabel* label : m_avatarLabels) {
-        if (label->property("iconId").toInt() == iconId) {
-            m_selectedAvatarLabel = label;
-            label->setStyleSheet(
-                "QLabel {"
-                "    border: 3px solid #4caf50;"
-                "    border-radius: 8px;"
-                "    background-color: #4a4a4a;"
-                "}"
-            );
-            break;
-        }
-    }
-}
-
-bool SystemSettingsWindow::eventFilter(QObject* obj, QEvent* event)
-{
-    if (event->type() == QEvent::MouseButtonPress) {
-        QLabel* label = qobject_cast<QLabel*>(obj);
-        if (label && m_avatarLabels.contains(label)) {
-            int iconId = label->property("iconId").toInt();
-            selectAvatar(iconId);
-            emit avatarSelected(iconId);
-            return true;
-        }
-    }
-    return QDialog::eventFilter(obj, event);
 }

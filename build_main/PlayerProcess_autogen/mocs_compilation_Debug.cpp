@@ -5,6 +5,5 @@
 #include <6IR33JEFVF/moc_WebSocketReceiver.cpp>
 #include <YPKJ5OE7LN/moc_BubbleTipWidget.cpp>
 #include <YPKJ5OE7LN/moc_ScreenAnnotationWidget.cpp>
-#include <YPKJ5OE7LN/moc_TransparentImageList.cpp>
 #include <C7JQLWOGWL/moc_AudioPlayer.cpp>
 #include <C7JQLWOGWL/moc_VideoDisplayWidget.cpp>

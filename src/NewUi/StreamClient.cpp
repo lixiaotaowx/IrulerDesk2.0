@@ -1,5 +1,6 @@
 #include "StreamClient.h"
 #include <QBuffer>
+#include <QDateTime>
 
 StreamClient::StreamClient(QObject *parent)
     : QObject(parent)
@@ -31,21 +32,28 @@ void StreamClient::disconnectFromServer()
     m_webSocket->close();
 }
 
-void StreamClient::sendFrame(const QPixmap &pixmap)
+void StreamClient::sendFrame(const QPixmap &pixmap, bool force)
 {
     if (!m_isConnected) return;
 
     QByteArray bytes;
     QBuffer buffer(&bytes);
     buffer.open(QIODevice::WriteOnly);
-    pixmap.save(&buffer, "JPG", 30); 
-    
-    // In a real scenario, we might want to wrap this in a protocol (e.g., JSON header + binary body)
-    // For now, based on previous stage 1, we just send binary data or simple text? 
-    // The server expects binary data for frames in the basic implementation usually.
-    // Let's check the server implementation if needed, but for now assuming binary send is okay.
-    
-    m_webSocket->sendBinaryMessage(bytes);
+    if (!pixmap.save(&buffer, "JPG", 30)) {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const qint64 resendSameFrameIntervalMs = 3000;
+    if (!force && !m_lastSentBytes.isEmpty() && bytes == m_lastSentBytes && (nowMs - m_lastSentAtMs) < resendSameFrameIntervalMs) {
+        return;
+    }
+
+    const qint64 sent = m_webSocket->sendBinaryMessage(bytes);
+    if (sent > 0) {
+        m_lastSentBytes = bytes;
+        m_lastSentAtMs = nowMs;
+    }
 }
 
 qint64 StreamClient::sendTextMessage(const QString &message)
@@ -64,6 +72,9 @@ bool StreamClient::isConnected() const
 void StreamClient::onConnected()
 {
     m_isConnected = true;
+    m_lastSentBytes.clear();
+    m_lastReceivedBytes.clear();
+    m_lastSentAtMs = 0;
     emit connected();
 }
 
@@ -81,8 +92,12 @@ void StreamClient::onTextMessageReceived(const QString &message)
 void StreamClient::onBinaryMessageReceived(const QByteArray &message)
 {
     // Handle received binary data (e.g. video frames from other streams)
+    if (!m_lastReceivedBytes.isEmpty() && message == m_lastReceivedBytes) {
+        return;
+    }
     QPixmap pixmap;
     if (pixmap.loadFromData(message)) {
+        m_lastReceivedBytes = message;
         emit frameReceived(pixmap);
     }
 }

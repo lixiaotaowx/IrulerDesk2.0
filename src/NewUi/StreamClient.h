@@ -4,6 +4,7 @@
 #include <QWebSocket>
 #include <QPixmap>
 #include <QUrl>
+#include <QByteArray>
 
 class StreamClient : public QObject {
     Q_OBJECT
@@ -13,7 +14,7 @@ public:
 
     void connectToServer(const QUrl &url);
     void disconnectFromServer();
-    void sendFrame(const QPixmap &pixmap);
+    void sendFrame(const QPixmap &pixmap, bool force = false);
     qint64 sendTextMessage(const QString &message);
     bool isConnected() const;
 
@@ -34,4 +35,7 @@ private slots:
 private:
     QWebSocket *m_webSocket;
     bool m_isConnected;
+    QByteArray m_lastSentBytes;
+    qint64 m_lastSentAtMs = 0;
+    QByteArray m_lastReceivedBytes;
 };

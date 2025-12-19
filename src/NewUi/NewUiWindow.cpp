@@ -456,7 +456,7 @@ void NewUiWindow::publishLocalAvatarOnce()
     if (m_localAvatarPublishPixmap.isNull()) {
         return;
     }
-    m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap);
+    m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap, true);
 }
 
 void NewUiWindow::refreshLocalAvatarFromCache()

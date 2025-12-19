@@ -387,18 +387,12 @@ QPixmap NewUiWindow::makeCircularPixmap(const QPixmap &src, int size) const
     }
 
     QPixmap scaled = src.scaled(s, s, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-    QPixmap out(s, s);
-    out.fill(Qt::transparent);
-
-    QPainter p(&out);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    QPainterPath clip;
-    clip.addEllipse(0, 0, s, s);
-    p.setClipPath(clip);
-    p.drawPixmap(0, 0, scaled);
-    p.end();
-
-    return out;
+    if (scaled.width() == s && scaled.height() == s) {
+        return scaled;
+    }
+    const int x = qMax(0, (scaled.width() - s) / 2);
+    const int y = qMax(0, (scaled.height() - s) / 2);
+    return scaled.copy(x, y, s, s);
 }
 
 void NewUiWindow::setAvatarLabelPixmap(QLabel *label, const QPixmap &src)
@@ -951,7 +945,7 @@ void NewUiWindow::setupUi()
     // Use QFrame to ensure background styling works without custom paintEvent
     QFrame *toolsContainer = new QFrame(titleBar);
     toolsContainer->setObjectName("ToolsContainer");
-    toolsContainer->setFixedSize(200, 40);
+    toolsContainer->setFixedSize(160, 40);
     toolsContainer->setFrameShape(QFrame::NoFrame);
     // REMOVED: setAttribute(Qt::WA_TranslucentBackground); which was hiding the background
     
@@ -981,14 +975,13 @@ void NewUiWindow::setupUi()
     toolsLayout->setSpacing(5);
     toolsLayout->setAlignment(Qt::AlignCenter);
 
-    QLabel *toolbarAvatarLabel = new QLabel(toolsContainer);
-    toolbarAvatarLabel->setFixedSize(22, 22);
+    QLabel *toolbarAvatarLabel = new QLabel(titleBar);
+    toolbarAvatarLabel->setFixedSize(30, 30);
     toolbarAvatarLabel->setAlignment(Qt::AlignCenter);
     toolbarAvatarLabel->setStyleSheet(
         "QLabel {"
         "   background: transparent;"
-        "   border: 1px solid rgba(255, 255, 255, 140);"
-        "   border-radius: 11px;"
+        "   border: none;"
         "}"
     );
     m_toolbarAvatarLabel = toolbarAvatarLabel;
@@ -1026,8 +1019,10 @@ void NewUiWindow::setupUi()
     toolsLayout->addWidget(toolBtn1);
     toolsLayout->addWidget(toolBtn2);
     toolsLayout->addWidget(toolBtn3);
-    toolsLayout->insertWidget(0, toolbarAvatarLabel);
 
+    titleLayout->addSpacing(8);
+    titleLayout->addWidget(toolbarAvatarLabel);
+    titleLayout->addSpacing(8);
     titleLayout->addWidget(toolsContainer);
     titleLayout->addStretch();
 
@@ -1340,17 +1335,16 @@ void NewUiWindow::setupUi()
         imgLabel->move(0, 0);
 
         QLabel *avatarLabel = new QLabel(imageContainer);
-        avatarLabel->setFixedSize(22, 22);
+        avatarLabel->setFixedSize(30, 30);
         avatarLabel->move(6, 6);
         avatarLabel->setAlignment(Qt::AlignCenter);
         avatarLabel->setStyleSheet(
             "QLabel {"
             "   background: transparent;"
-            "   border: 1px solid rgba(255, 255, 255, 140);"
-            "   border-radius: 11px;"
+            "   border: none;"
             "}"
         );
-        QPixmap avatarPix = buildTestAvatarPixmap(22);
+        QPixmap avatarPix = buildTestAvatarPixmap(30);
         if (!avatarPix.isNull()) {
             avatarLabel->setPixmap(avatarPix);
         }
@@ -1955,17 +1949,16 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     imgLabel->move(0, 0);
 
     QLabel *avatarLabel = new QLabel(imageContainer);
-    avatarLabel->setFixedSize(22, 22);
+    avatarLabel->setFixedSize(30, 30);
     avatarLabel->move(6, 6);
     avatarLabel->setAlignment(Qt::AlignCenter);
     avatarLabel->setStyleSheet(
         "QLabel {"
         "   background: transparent;"
-        "   border: 1px solid rgba(255, 255, 255, 140);"
-        "   border-radius: 11px;"
+        "   border: none;"
         "}"
     );
-    QPixmap avatarPix = buildTestAvatarPixmap(22);
+    QPixmap avatarPix = buildTestAvatarPixmap(30);
     if (!avatarPix.isNull()) {
         avatarLabel->setPixmap(avatarPix);
     }

@@ -276,6 +276,7 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
     watchRequest["type"] = "watch_request";
     if (audioOnly) {
         watchRequest["audio_only"] = true;
+        watchRequest["action"] = "audio_only";
     }
     watchRequest["viewer_id"] = getDeviceId();
     watchRequest["target_id"] = targetDeviceId;
@@ -366,8 +367,6 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     bool micEnabled = loadMicEnabledFromConfig();
     if (m_pendingTalkEnabled && m_pendingTalkTargetId == targetDeviceId) {
         micEnabled = true;
-        m_pendingTalkTargetId.clear();
-        m_pendingTalkEnabled = false;
     }
     m_videoWindow->setSpeakerChecked(spkEnabled);
     m_videoWindow->setMicCheckedSilently(micEnabled);
@@ -2101,7 +2100,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
         }
         
-        const bool audioOnly = obj.value("audio_only").toBool(false);
+        const QString action = obj.value("action").toString();
+        const bool audioOnly = obj.value("audio_only").toBool(false) || action == "audio_only";
         bool manualApproval = loadManualApprovalEnabledFromConfig();
         bool isConnected = m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState;
 
@@ -2481,6 +2481,10 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             startVideoReceiving(targetId);
             if (talkWasPending && m_transparentImageList) {
                 m_transparentImageList->setTalkConnected(targetId, true);
+            }
+            if (talkWasPending) {
+                m_pendingTalkTargetId.clear();
+                m_pendingTalkEnabled = false;
             }
         } else {
             // 非当前用户的观看请求，忽略
@@ -3104,7 +3108,7 @@ bool MainWindow::loadMicEnabledFromConfig() const
         }
         configFile.close();
     }
-    return false;
+    return true;
 }
 
 void MainWindow::saveSpeakerEnabledToConfig(bool enabled)

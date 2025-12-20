@@ -44,7 +44,7 @@ void StreamClient::sendFrame(const QPixmap &pixmap, bool force)
     }
 
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    const qint64 resendSameFrameIntervalMs = 3000;
+    const qint64 resendSameFrameIntervalMs = 20000;
     if (!force && !m_lastSentBytes.isEmpty() && bytes == m_lastSentBytes && (nowMs - m_lastSentAtMs) < resendSameFrameIntervalMs) {
         return;
     }

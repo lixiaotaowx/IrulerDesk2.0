@@ -131,7 +131,7 @@ bool getMicEnabledFromConfig()
             configFile.close();
         }
     }
-    return false;
+    return true;
 }
 
 // 从配置文件读取设备ID
@@ -679,6 +679,7 @@ int main(int argc, char *argv[])
     static QAudioSink *mixSink = nullptr;
     static QIODevice *mixIO = nullptr;
     static QTimer *mixTimer = nullptr;
+    static int mixSampleRate = 48000;
     
     static bool remoteListenEnabled = true;
 
@@ -1649,9 +1650,6 @@ int main(int argc, char *argv[])
     // 新增：处理音频开关请求（麦克风采集）
     // 变量已移至上方作为静态变量声明
     QObject::connect(sender, &WebSocketSender::audioToggleRequested, [&, startAudio, stopAudio](bool enabled) {
-        if (!sender->isStreaming()) {
-            return;
-        }
         serverAudioWanted = enabled;
         const bool finalEnabled = enabled && localMicEnabled;
         remoteAudioEnabled = finalEnabled;
@@ -1677,12 +1675,30 @@ int main(int argc, char *argv[])
     });
 
     // --- Audio Mixing Initialization ---
+    QAudioDevice outDev = QMediaDevices::defaultAudioOutput();
     QAudioFormat mixFmt;
-    mixFmt.setSampleRate(48000); // Fixed mixing rate
-    mixFmt.setChannelCount(1);
-    mixFmt.setSampleFormat(QAudioFormat::Int16);
+    {
+        const QList<int> opusRates = {48000, 24000, 16000, 12000, 8000};
+        for (int sr : opusRates) {
+            QAudioFormat f;
+            f.setSampleRate(sr);
+            f.setChannelCount(1);
+            f.setSampleFormat(QAudioFormat::Int16);
+            if (outDev.isFormatSupported(f)) {
+                mixFmt = f;
+                mixSampleRate = sr;
+                break;
+            }
+        }
+        if (mixFmt.sampleRate() <= 0) {
+            mixSampleRate = 48000;
+            mixFmt.setSampleRate(mixSampleRate);
+            mixFmt.setChannelCount(1);
+            mixFmt.setSampleFormat(QAudioFormat::Int16);
+        }
+    }
     
-    mixSink = new QAudioSink(QMediaDevices::defaultAudioOutput(), mixFmt, &app);
+    mixSink = new QAudioSink(outDev, mixFmt, &app);
     mixSink->setBufferSize(16000);
     mixIO = mixSink->start();
     
@@ -1731,7 +1747,7 @@ int main(int argc, char *argv[])
         if (peerDecoders.isEmpty()) return;
 
         // Prepare mix buffer
-        int frameSamples = 48000 * 20 / 1000; // 960 samples for 20ms
+        int frameSamples = mixSampleRate * 20 / 1000;
         int mixSize = frameSamples * sizeof(opus_int16);
         if (mixBuffer.size() != mixSize) {
             mixBuffer.resize(mixSize);
@@ -1808,9 +1824,6 @@ int main(int argc, char *argv[])
     mixTimer->start();
 
     QObject::connect(sender, &WebSocketSender::viewerMicStateReceived, [&](const QString &viewerId, bool enabled) {
-        if (!sender->isStreaming()) {
-            return;
-        }
         QMutexLocker locker(&mixMutex);
         QString vid = viewerId;
         if (vid.isEmpty()) return;
@@ -1839,7 +1852,7 @@ int main(int argc, char *argv[])
         
         if (!peerDecoders.contains(vid)) {
             int err;
-            OpusDecoder *dec = opus_decoder_create(48000, 1, &err);
+            OpusDecoder *dec = opus_decoder_create(mixSampleRate, 1, &err);
             if (err == OPUS_OK) {
                 peerDecoders[vid] = dec;
                 peerBuffering[vid] = true; // Initialize buffering

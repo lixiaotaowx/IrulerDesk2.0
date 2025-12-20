@@ -464,6 +464,9 @@ void WebSocketReceiver::onConnected()
     // 先在互斥保护下更新内部状态并抓取最近的viewer/target副本，然后释放锁
     QString viewerIdCopy;
     QString targetIdCopy;
+    bool talkActiveCopy = false;
+    bool hasAudioToggleCopy = false;
+    bool audioToggleEnabledCopy = false;
     {
         QMutexLocker locker(&m_mutex);
         m_connected = true;
@@ -486,6 +489,9 @@ void WebSocketReceiver::onConnected()
 
         viewerIdCopy = m_lastViewerId;
         targetIdCopy = m_lastTargetId;
+        talkActiveCopy = m_talkActive;
+        hasAudioToggleCopy = m_hasLastAudioToggle;
+        audioToggleEnabledCopy = m_lastAudioToggleEnabled;
     }
 
     emit connected();
@@ -498,6 +504,41 @@ void WebSocketReceiver::onConnected()
     if (m_autoResendWatchRequest && !viewerIdCopy.isEmpty() && !targetIdCopy.isEmpty()) {
         sendWatchRequest(viewerIdCopy, targetIdCopy);
         sendRequestKeyFrame();
+    }
+
+    if (!viewerIdCopy.isEmpty() && !targetIdCopy.isEmpty()) {
+        sendViewerMicState(talkActiveCopy);
+        QTimer::singleShot(1200, this, [this]() {
+            if (!m_connected) return;
+            bool talkActive = false;
+            {
+                QMutexLocker locker(&m_mutex);
+                talkActive = m_talkActive;
+            }
+            sendViewerMicState(talkActive);
+        });
+        QTimer::singleShot(3000, this, [this]() {
+            if (!m_connected) return;
+            bool talkActive = false;
+            {
+                QMutexLocker locker(&m_mutex);
+                talkActive = m_talkActive;
+            }
+            sendViewerMicState(talkActive);
+        });
+
+        if (hasAudioToggleCopy) {
+            sendAudioToggle(audioToggleEnabledCopy);
+            QTimer::singleShot(1200, this, [this]() {
+                if (!m_connected) return;
+                bool enabled = false;
+                {
+                    QMutexLocker locker(&m_mutex);
+                    enabled = m_lastAudioToggleEnabled;
+                }
+                sendAudioToggle(enabled);
+            });
+        }
     }
 }
 
@@ -639,6 +680,30 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             QString targetId = obj.value("target_id").toString();
             emit watchRequestAccepted(targetId);
             emit streamingStarted();
+            bool talkActive = false;
+            {
+                QMutexLocker locker(&m_mutex);
+                talkActive = m_talkActive;
+            }
+            sendViewerMicState(talkActive);
+            QTimer::singleShot(1200, this, [this]() {
+                if (!m_connected) return;
+                bool talkActive = false;
+                {
+                    QMutexLocker locker(&m_mutex);
+                    talkActive = m_talkActive;
+                }
+                sendViewerMicState(talkActive);
+            });
+            QTimer::singleShot(3000, this, [this]() {
+                if (!m_connected) return;
+                bool talkActive = false;
+                {
+                    QMutexLocker locker(&m_mutex);
+                    talkActive = m_talkActive;
+                }
+                sendViewerMicState(talkActive);
+            });
             return;
         } else if (type == "audio_pcm") {
             int sampleRate = obj.value("sample_rate").toInt(16000);
@@ -784,6 +849,30 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             return;
         } else if (type == "streaming_ok") {
             emit streamingStarted();
+            bool talkActive = false;
+            {
+                QMutexLocker locker(&m_mutex);
+                talkActive = m_talkActive;
+            }
+            sendViewerMicState(talkActive);
+            QTimer::singleShot(1200, this, [this]() {
+                if (!m_connected) return;
+                bool talkActive = false;
+                {
+                    QMutexLocker locker(&m_mutex);
+                    talkActive = m_talkActive;
+                }
+                sendViewerMicState(talkActive);
+            });
+            QTimer::singleShot(3000, this, [this]() {
+                if (!m_connected) return;
+                bool talkActive = false;
+                {
+                    QMutexLocker locker(&m_mutex);
+                    talkActive = m_talkActive;
+                }
+                sendViewerMicState(talkActive);
+            });
             return;
         } else if (type == "kick_viewer") {
             QString viewerId = obj.value("viewer_id").toString();
@@ -962,9 +1051,14 @@ void WebSocketReceiver::setSessionInfo(const QString &viewerId, const QString &t
     m_lastViewerId = viewerId;
     m_lastTargetId = targetId;
     const bool talkActive = m_talkActive;
+    const bool shouldSendWatch = m_connected && !viewerId.isEmpty() && !targetId.isEmpty();
     locker.unlock();
-    if (talkActive) {
-        sendViewerMicState(true);
+    sendViewerMicState(talkActive);
+    if (shouldSendWatch) {
+        sendWatchRequest(viewerId, targetId);
+    }
+    if (m_hasLastAudioToggle) {
+        sendAudioToggle(m_lastAudioToggleEnabled);
     }
 }
 
@@ -1307,23 +1401,24 @@ void WebSocketReceiver::sendSetQuality(const QString &quality)
 
 void WebSocketReceiver::sendAudioToggle(bool enabled)
 {
-    if (!m_connected || !m_webSocket) {
-        return;
-    }
-
     QString viewerId;
     QString targetId;
+    bool canSend = false;
     {
         QMutexLocker locker(&m_mutex);
+        m_hasLastAudioToggle = true;
+        m_lastAudioToggleEnabled = enabled;
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
+        canSend = m_connected && m_webSocket && !viewerId.isEmpty() && !targetId.isEmpty();
     }
+    if (!canSend) return;
 
     QJsonObject message;
     message["type"] = "audio_toggle";
     message["enabled"] = enabled;
-    if (!viewerId.isEmpty()) message["viewer_id"] = viewerId;
-    if (!targetId.isEmpty()) message["target_id"] = targetId;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
 
     QJsonDocument doc(message);

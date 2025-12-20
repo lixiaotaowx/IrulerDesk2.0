@@ -216,7 +216,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Timer for screenshot
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
-    m_timer->start(500); // 0.5 seconds
+    m_timer->start(2000); // 2 seconds
 
     m_talkSpinnerTimer = new QTimer(this);
     connect(m_talkSpinnerTimer, &QTimer::timeout, this, &NewUiWindow::onTalkSpinnerTimeout);
@@ -1190,7 +1190,7 @@ void NewUiWindow::setupUi()
             }
             f.close();
         }
-        return false;
+        return true;
     };
     const bool initialMicEnabled = loadMicEnabled();
     menuBtn->setCheckable(true);
@@ -2141,8 +2141,9 @@ void NewUiWindow::onTimerTimeout()
     // 4. Update the label directly (Video effect)
     QPixmap previewPix = pixmap;
     QPixmap sendPix = pixmap;
-    if (sendPix.width() > 250) {
-        sendPix = sendPix.scaledToWidth(250, Qt::SmoothTransformation);
+    // 服务器发送的图片质量较低，需要压缩
+    if (sendPix.width() > 200) {
+        sendPix = sendPix.scaledToWidth(200, Qt::SmoothTransformation);
     }
     {
         const int previewJpegQuality = 30;

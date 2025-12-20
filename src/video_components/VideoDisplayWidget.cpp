@@ -282,6 +282,7 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
             if (m_receiver->isConnected()) {
                 m_receiver->sendViewerExit();
             }
+            m_receiver->setTalkEnabled(false);
             // Stop audio first to prevent log spam
             m_receiver->stopAudio();
             m_receiver->disconnectFromServer();
@@ -292,6 +293,10 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
     
     // [Optimization] Emit signal immediately to update UI
     emit receivingStopped(m_lastViewerId, m_lastTargetId);
+
+    if (m_receiver) {
+        m_receiver->setTalkEnabled(false);
+    }
 
     if (m_receiver && m_receiver->isConnected()) {
         m_receiver->sendViewerExit();
@@ -728,6 +733,9 @@ void VideoDisplayWidget::setSpeakerEnabled(bool enabled)
 {
     if (m_audioPlayer) {
         m_audioPlayer->setSpeakerEnabled(enabled);
+    }
+    if (m_receiver) {
+        m_receiver->sendAudioToggle(enabled);
     }
 }
 
@@ -1404,7 +1412,7 @@ void VideoDisplayWidget::onPromptCountdownTick()
             m_promptDialog->hide();
         }
         // 倒计时结束：将自动关闭此窗口
-        stopReceiving();
+        stopReceiving(false);
         QWidget *top = this->window();
         // 统一改为隐藏顶层窗口，避免关闭整个主程序
         if (top) {
@@ -1491,7 +1499,6 @@ void VideoDisplayWidget::recreateReceiver()
                 }
             });
         }
-        sendAudioToggle(m_micSendEnabled);
     });
 
     connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
@@ -1531,7 +1538,6 @@ void VideoDisplayWidget::setTalkEnabled(bool enabled)
 void VideoDisplayWidget::setMicSendEnabled(bool enabled)
 {
     m_micSendEnabled = enabled;
-    sendAudioToggle(enabled);
 }
 
 void VideoDisplayWidget::pauseReceiving()
@@ -1542,6 +1548,7 @@ void VideoDisplayWidget::pauseReceiving()
 
     // 保留WebSocket连接，仅通知采集端停止推流，便于下次快速恢复
     if (m_receiver && m_isReceiving) {
+        m_receiver->setTalkEnabled(false);
         // [Fix] Ensure viewer_exit is sent so producer cleans up the user from list
         if (m_receiver->isConnected()) {
              m_receiver->sendViewerExit();

@@ -159,6 +159,8 @@ private:
     QString m_lastTargetId;
     bool m_autoResendWatchRequest = true;
     QString m_lastViewerName;
+    bool m_hasLastAudioToggle = false;
+    bool m_lastAudioToggleEnabled = true;
 
     // 音频：Opus 解码器状态
     OpusDecoder *m_opusDecoder = nullptr;

@@ -175,6 +175,7 @@ private:
     QTimer *m_watchdogTimer;
     qint64 m_lastHeartbeatTime;
     QLocalSocket *m_currentWatchdogSocket = nullptr; // 当前连接的捕获进程Socket
+    QByteArray m_watchdogRxBuffer;
     bool m_pendingApproval = false; // 是否有待发送的本地审批指令
     void onWatchdogNewConnection();
     void onWatchdogDataReady();

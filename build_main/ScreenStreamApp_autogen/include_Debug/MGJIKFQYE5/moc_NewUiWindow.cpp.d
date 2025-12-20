@@ -1,9 +1,11 @@
 G:/c/2025/lunzi/IrulerDeskpro/build_main/ScreenStreamApp_autogen/include_Debug/MGJIKFQYE5/moc_NewUiWindow.cpp: G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/NewUiWindow.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QByteArray \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QFlags \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonArray \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonDocument \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QJsonObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QList \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QMap \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QRect \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSharedDataPointer \
@@ -160,6 +162,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build_main/ScreenStreamApp_autogen/include_Debug/M
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qversiontagging.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qxptype_traits.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/qyieldcpu.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtGui/QIcon \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/QMouseEvent \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/QPixmap \
   C:/Qt/6.8.3/msvc2022_64/include/QtGui/QTransform \
@@ -226,9 +229,12 @@ G:/c/2025/lunzi/IrulerDeskpro/build_main/ScreenStreamApp_autogen/include_Debug/M
   C:/Qt/6.8.3/msvc2022_64/include/QtWebSockets/qwebsocket.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWebSockets/qwebsocketprotocol.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWebSockets/qwebsockets_global.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QFrame \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QLabel \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QListWidget \
+  C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QPushButton \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/QWidget \
+  C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qabstractbutton.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qabstractitemdelegate.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qabstractitemview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qabstractscrollarea.h \
@@ -238,6 +244,7 @@ G:/c/2025/lunzi/IrulerDeskpro/build_main/ScreenStreamApp_autogen/include_Debug/M
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qlabel.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qlistview.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qlistwidget.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qpushbutton.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qrubberband.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qsizepolicy.h \
   C:/Qt/6.8.3/msvc2022_64/include/QtWidgets/qslider.h \

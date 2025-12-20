@@ -35,6 +35,11 @@
 #include <QJsonObject>
 #include <QBuffer>
 #include <QImage>
+#include <QStackedWidget>
+#include <QUrl>
+#include <QWebEngineView>
+#include <QWebEnginePage>
+#include <QSignalBlocker>
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -56,6 +61,28 @@ protected:
 
         p.drawControl(QStyle::CE_PushButton, option);
     }
+};
+
+class StoryboardWebPage : public QWebEnginePage {
+public:
+    explicit StoryboardWebPage(QObject *parent, QWebEngineView *view)
+        : QWebEnginePage(parent), m_view(view)
+    {
+    }
+
+protected:
+    bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override
+    {
+        Q_UNUSED(type);
+        Q_UNUSED(isMainFrame);
+        if (url.scheme().compare(QStringLiteral("iruler"), Qt::CaseInsensitive) == 0) {
+            return false;
+        }
+        return QWebEnginePage::acceptNavigationRequest(url, type, isMainFrame);
+    }
+
+private:
+    QPointer<QWebEngineView> m_view;
 };
 
 class FancyToolTipWidget : public QWidget {
@@ -894,13 +921,46 @@ void NewUiWindow::setupUi()
     // Spacing between logo and buttons
     leftLayout->addSpacing(20);
 
+    auto playIconBling = [](QPushButton *btn) {
+        const QSize normal = btn->iconSize().isValid() ? btn->iconSize() : QSize(28, 28);
+        const QSize down(qRound(normal.width() * 0.7857142857), qRound(normal.height() * 0.7857142857));
+        const QSize up(qRound(normal.width() * 1.2142857143), qRound(normal.height() * 1.2142857143));
+
+        QSequentialAnimationGroup *group = new QSequentialAnimationGroup(btn);
+
+        QPropertyAnimation *anim1 = new QPropertyAnimation(btn, "iconSize");
+        anim1->setDuration(100);
+        anim1->setStartValue(normal);
+        anim1->setEndValue(down);
+        anim1->setEasingCurve(QEasingCurve::OutQuad);
+
+        QPropertyAnimation *anim2 = new QPropertyAnimation(btn, "iconSize");
+        anim2->setDuration(100);
+        anim2->setStartValue(down);
+        anim2->setEndValue(up);
+        anim2->setEasingCurve(QEasingCurve::OutQuad);
+
+        QPropertyAnimation *anim3 = new QPropertyAnimation(btn, "iconSize");
+        anim3->setDuration(100);
+        anim3->setStartValue(up);
+        anim3->setEndValue(normal);
+        anim3->setEasingCurve(QEasingCurve::OutElastic);
+
+        group->addAnimation(anim1);
+        group->addAnimation(anim2);
+        group->addAnimation(anim3);
+
+        connect(group, &QAbstractAnimation::finished, group, &QObject::deleteLater);
+        group->start();
+    };
+
     // Add vertical buttons to left panel
     for (int i = 0; i < 4; ++i) {
         QPushButton *btn = new QPushButton();
         btn->setFixedSize(40, 40);
         btn->setCursor(Qt::PointingHandCursor);
         if (i == 0) btn->setToolTip("主页");
-        else if (i == 1) btn->setToolTip("功能 1");
+        else if (i == 1) btn->setToolTip("故事板");
         else if (i == 2) btn->setToolTip("功能 2");
         else if (i == 3) btn->setToolTip("功能 3");
         btn->installEventFilter(this);
@@ -921,38 +981,28 @@ void NewUiWindow::setupUi()
             );
             
             // Add click animation (Bling effect: Scale down -> Scale up -> Restore)
-            connect(btn, &QPushButton::clicked, [btn]() {
-                QSequentialAnimationGroup *group = new QSequentialAnimationGroup(btn);
-                
-                // Step 1: Scale down slightly
-                QPropertyAnimation *anim1 = new QPropertyAnimation(btn, "iconSize");
-                anim1->setDuration(100);
-                anim1->setStartValue(QSize(28, 28));
-                anim1->setEndValue(QSize(22, 22));
-                anim1->setEasingCurve(QEasingCurve::OutQuad);
-                
-                // Step 2: Scale up larger than normal
-                QPropertyAnimation *anim2 = new QPropertyAnimation(btn, "iconSize");
-                anim2->setDuration(100);
-                anim2->setStartValue(QSize(22, 22));
-                anim2->setEndValue(QSize(34, 34));
-                anim2->setEasingCurve(QEasingCurve::OutQuad);
-                
-                // Step 3: Restore to normal
-                QPropertyAnimation *anim3 = new QPropertyAnimation(btn, "iconSize");
-                anim3->setDuration(100);
-                anim3->setStartValue(QSize(34, 34));
-                anim3->setEndValue(QSize(28, 28));
-                anim3->setEasingCurve(QEasingCurve::OutElastic); // Elastic for a bouncy finish
+            connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
+                playIconBling(btn);
+                showHomeContent();
+            });
+        }
+        else if (i == 1) {
+            btn->setObjectName("Function1Button");
+            btn->setIcon(QIcon(appDir + "/maps/logo/Storyboard.png"));
+            btn->setIconSize(QSize(28, 28));
+            btn->setStyleSheet(
+                "QPushButton#Function1Button {"
+                "   background-color: transparent;"
+                "   border: none;"
+                "   border-radius: 20px;"
+                "}"
+                "QPushButton#Function1Button:hover { background-color: transparent; }"
+                "QPushButton#Function1Button:pressed { background-color: transparent; }"
+            );
 
-                group->addAnimation(anim1);
-                group->addAnimation(anim2);
-                group->addAnimation(anim3);
-                
-                // Clean up animation object after finish
-                connect(group, &QAbstractAnimation::finished, group, &QObject::deleteLater);
-                
-                group->start();
+            connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
+                playIconBling(btn);
+                showFunction1Browser();
             });
         }
         
@@ -966,7 +1016,10 @@ void NewUiWindow::setupUi()
     settingBtn->setFixedSize(40, 40);
     settingBtn->setCursor(Qt::PointingHandCursor);
     settingBtn->setToolTip("设置");
+    settingBtn->setIcon(QIcon(appDir + "/maps/logo/menu.png"));
+    settingBtn->setIconSize(QSize(28, 28));
     settingBtn->installEventFilter(this);
+    connect(settingBtn, &QPushButton::clicked, this, &NewUiWindow::systemSettingsRequested);
     leftLayout->addWidget(settingBtn);
 
     // --- Right Panel ---
@@ -1084,8 +1137,8 @@ void NewUiWindow::setupUi()
     QWidget *controlContainer = new QWidget(titleBar);
     // Size adjustment:
     // Buttons: 48x48 (Double size)
-    // Container width: 48*4 = 192. Height: 48.
-    controlContainer->setFixedSize(192, 48); 
+    // Container width: 48*5 = 240. Height: 48.
+    controlContainer->setFixedSize(240, 48); 
     // Important: Ensure the widget itself doesn't paint a background, only the stylesheet image
     controlContainer->setAttribute(Qt::WA_TranslucentBackground);
     controlContainer->setObjectName("TitleControlContainer");
@@ -1121,12 +1174,40 @@ void NewUiWindow::setupUi()
     // Menu Button
     ResponsiveButton *menuBtn = new ResponsiveButton();
     menuBtn->setFixedSize(48, 48); 
-    menuBtn->setIcon(QIcon(appDir + "/maps/logo/menu.png"));
-    menuBtn->setIconSize(QSize(32, 32)); 
+    const QIcon micIconOn(appDir + "/maps/logo/Mic_on.png");
+    const QIcon micIconOff(appDir + "/maps/logo/Mic_off.png");
+    auto loadMicEnabled = [&appDir]() -> bool {
+        QFile f(appDir + "/config/app_config.txt");
+        if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&f);
+            while (!in.atEnd()) {
+                const QString line = in.readLine();
+                if (line.startsWith("mic_enabled=")) {
+                    const QString v = line.mid(QString("mic_enabled=").length()).trimmed();
+                    f.close();
+                    return v.compare("true", Qt::CaseInsensitive) == 0;
+                }
+            }
+            f.close();
+        }
+        return false;
+    };
+    const bool initialMicEnabled = loadMicEnabled();
+    menuBtn->setCheckable(true);
+    menuBtn->setChecked(initialMicEnabled);
+    menuBtn->setIcon(initialMicEnabled ? micIconOn : micIconOff);
+    menuBtn->setIconSize(QSize(16, 16)); 
     menuBtn->setCursor(Qt::PointingHandCursor);
-    menuBtn->setToolTip("系统设置");
+    menuBtn->setToolTip(initialMicEnabled ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
     menuBtn->installEventFilter(this);
-    connect(menuBtn, &QPushButton::clicked, this, &NewUiWindow::systemSettingsRequested);
+    m_titleMicBtn = menuBtn;
+    m_titleMicIconOn = micIconOn;
+    m_titleMicIconOff = micIconOff;
+    connect(menuBtn, &QPushButton::toggled, this, [this, menuBtn, micIconOn, micIconOff](bool enabled) {
+        menuBtn->setIcon(enabled ? micIconOn : micIconOff);
+        menuBtn->setToolTip(enabled ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
+        emit micToggleRequested(enabled);
+    });
 
     // Minimize Button
     ResponsiveButton *minBtn = new ResponsiveButton();
@@ -1137,6 +1218,15 @@ void NewUiWindow::setupUi()
     minBtn->setToolTip("最小化");
     minBtn->installEventFilter(this);
     connect(minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
+
+    ResponsiveButton *maxBtn = new ResponsiveButton();
+    maxBtn->setFixedSize(48, 48);
+    maxBtn->setIconSize(QSize(32, 32));
+    maxBtn->setCursor(Qt::PointingHandCursor);
+    maxBtn->installEventFilter(this);
+    connect(maxBtn, &QPushButton::clicked, this, &NewUiWindow::toggleFunction1Maximize);
+    m_titleMaximizeBtn = maxBtn;
+    updateTitleMaximizeButton();
 
     // Close Button
     ResponsiveButton *closeBtn = new ResponsiveButton();
@@ -1151,10 +1241,14 @@ void NewUiWindow::setupUi()
     controlLayout->addWidget(exitBtn);
     controlLayout->addWidget(menuBtn);
     controlLayout->addWidget(minBtn);
+    controlLayout->addWidget(maxBtn);
     controlLayout->addWidget(closeBtn);
 
     titleLayout->addWidget(controlContainer);
     titleLayout->addSpacing(20);
+
+    m_rightContentStack = new QStackedWidget(rightPanel);
+    m_rightContentStack->setObjectName("RightContentStack");
 
     // Content Area (Image Matrix)
     // Wrap QListWidget in a container to handle rounded corners + scrollbar issue
@@ -1476,8 +1570,34 @@ void NewUiWindow::setupUi()
     }
 
     listContainerLayout->addWidget(m_listWidget);
+    m_homeContentPage = listContainer;
+    m_rightContentStack->addWidget(m_homeContentPage);
+
+    QFrame *browserContainer = new QFrame(rightPanel);
+    browserContainer->setObjectName("Function1BrowserContainer");
+    browserContainer->setStyleSheet(
+        "#Function1BrowserContainer {"
+        "   background-color: #404040;"
+        "   border-radius: 20px;"
+        "}"
+    );
+    QVBoxLayout *browserLayout = new QVBoxLayout(browserContainer);
+    browserLayout->setContentsMargins(0, 0, 0, 0);
+    browserLayout->setSpacing(0);
+
+    m_function1WebView = new QWebEngineView(browserContainer);
+    auto *storyboardPage = new StoryboardWebPage(this, m_function1WebView);
+    m_function1WebView->setPage(storyboardPage);
+
+    m_function1WebView->load(QUrl("http://8.130.8.86:3000/"));
+    browserLayout->addWidget(m_function1WebView);
+
+    m_function1BrowserPage = browserContainer;
+    m_rightContentStack->addWidget(m_function1BrowserPage);
+    m_rightContentStack->setCurrentWidget(m_homeContentPage);
+
     rightLayout->addWidget(titleBar);
-    rightLayout->addWidget(listContainer);
+    rightLayout->addWidget(m_rightContentStack);
 
     // Connect selection change to update styles
     connect(m_listWidget, &QListWidget::itemSelectionChanged, [this]() {
@@ -1616,6 +1736,63 @@ void NewUiWindow::setupUi()
     mainLayout->addWidget(leftPanel);
     mainLayout->addWidget(rightPanel);
     mainLayout->addWidget(m_farRightPanel);
+}
+
+void NewUiWindow::showFunction1Browser()
+{
+    if (!m_rightContentStack || !m_function1BrowserPage) {
+        return;
+    }
+    m_rightContentStack->setCurrentWidget(m_function1BrowserPage);
+}
+
+void NewUiWindow::showHomeContent()
+{
+    if (!m_rightContentStack || !m_homeContentPage) {
+        return;
+    }
+    m_rightContentStack->setCurrentWidget(m_homeContentPage);
+}
+
+void NewUiWindow::toggleFunction1Maximize()
+{
+    activateWindow();
+    raise();
+
+    Qt::WindowStates state = windowState();
+    const bool currentlyMaximized = (state & Qt::WindowMaximized);
+    if (currentlyMaximized) {
+        setWindowState(state & ~Qt::WindowMaximized);
+        showNormal();
+    } else {
+        setWindowState(state | Qt::WindowMaximized);
+        showMaximized();
+    }
+    updateTitleMaximizeButton();
+}
+
+void NewUiWindow::updateTitleMaximizeButton()
+{
+    if (!m_titleMaximizeBtn) {
+        return;
+    }
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const bool currentlyMaximized = (windowState() & Qt::WindowMaximized);
+    if (currentlyMaximized) {
+        m_titleMaximizeBtn->setIcon(QIcon(appDir + "/maps/logo/Restore.png"));
+        m_titleMaximizeBtn->setToolTip(QStringLiteral("还原"));
+    } else {
+        m_titleMaximizeBtn->setIcon(QIcon(appDir + "/maps/logo/maximize.png"));
+        m_titleMaximizeBtn->setToolTip(QStringLiteral("最大化"));
+    }
+}
+
+void NewUiWindow::changeEvent(QEvent *event)
+{
+    QWidget::changeEvent(event);
+    if (event && event->type() == QEvent::WindowStateChange) {
+        updateTitleMaximizeButton();
+    }
 }
 
 void NewUiWindow::mousePressEvent(QMouseEvent *event)
@@ -1787,25 +1964,16 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     
     QPushButton *mic = new QPushButton();
     mic->setFixedSize(24, 24);
-    mic->setCursor(Qt::PointingHandCursor);
-    // [UI Only] Default mic state to ON as requested
-    mic->setIcon(QIcon(appDir + "/maps/logo/Mic_on.png"));
+    mic->setCursor(Qt::ArrowCursor);
+    const bool initialMic = m_viewerMicStates.value(id, false);
+    mic->setIcon(QIcon(appDir + "/maps/logo/" + QString(initialMic ? "Mic_on.png" : "Mic_off.png")));
     mic->setIconSize(QSize(18, 18));
     mic->setFlat(true);
     mic->setStyleSheet("border: none; background: transparent;");
     mic->setToolTip("麦克风");
     mic->installEventFilter(this);
-    
-    // Simple toggle logic for this mic (UI Only)
-    mic->setProperty("isOn", true);
-    connect(mic, &QPushButton::clicked, [mic, appDir]() {
-        bool isOn = mic->property("isOn").toBool();
-        isOn = !isOn;
-        mic->setProperty("isOn", isOn);
-        QString iconName = isOn ? "Mic_on.png" : "Mic_off.png";
-        mic->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
-    });
-    
+    mic->setProperty("isOn", initialMic);
+
     l->addWidget(txt);
     l->addStretch();
     l->addWidget(removeBtn);
@@ -1813,6 +1981,35 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     
     m_viewerList->setItemWidget(item, w);
     m_viewerItems.insert(id, item);
+    m_viewerMicButtons.insert(id, mic);
+    if (id == m_myStreamId) {
+        removeBtn->setEnabled(false);
+        mic->setEnabled(false);
+    }
+}
+
+void NewUiWindow::setViewerMicState(const QString &viewerId, bool enabled)
+{
+    m_viewerMicStates[viewerId] = enabled;
+    QPushButton *btn = m_viewerMicButtons.value(viewerId, nullptr);
+    if (!btn) return;
+    const QString appDir = QCoreApplication::applicationDirPath();
+    btn->setProperty("isOn", enabled);
+    btn->setIcon(QIcon(appDir + "/maps/logo/" + QString(enabled ? "Mic_on.png" : "Mic_off.png")));
+}
+
+void NewUiWindow::setGlobalMicCheckedSilently(bool enabled)
+{
+    if (!m_titleMicBtn) return;
+    if (!m_titleMicBtn->isCheckable()) return;
+    if (m_titleMicBtn->isChecked() == enabled) return;
+
+    QSignalBlocker blocker(m_titleMicBtn);
+    m_titleMicBtn->setChecked(enabled);
+    if (!m_titleMicIconOn.isNull() && !m_titleMicIconOff.isNull()) {
+        m_titleMicBtn->setIcon(enabled ? m_titleMicIconOn : m_titleMicIconOff);
+    }
+    m_titleMicBtn->setToolTip(enabled ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
 }
 
 void NewUiWindow::updateViewerNameIfExists(const QString &id, const QString &name)
@@ -1862,6 +2059,8 @@ void NewUiWindow::removeViewer(const QString &id)
             delete item;
         }
     }
+    m_viewerMicButtons.remove(id);
+    m_viewerMicStates.remove(id);
     
     // 2. [Safety] Iterate to clean up any duplicates or map desyncs
     // Loop backwards to safely remove items
@@ -1896,6 +2095,8 @@ void NewUiWindow::clearViewers()
     
     m_viewerList->clear();
     m_viewerItems.clear();
+    m_viewerMicButtons.clear();
+    m_viewerMicStates.clear();
 }
 
 int NewUiWindow::getViewerCount() const

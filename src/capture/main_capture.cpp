@@ -108,6 +108,31 @@ QString getUserNameFromConfig()
     return "";
 }
 
+bool getMicEnabledFromConfig()
+{
+    QStringList configPaths;
+    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
+    configPaths << QDir::currentPath() + "/config/app_config.txt";
+    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+
+    for (const QString& path : configPaths) {
+        QFile configFile(path);
+        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&configFile);
+            while (!in.atEnd()) {
+                const QString line = in.readLine().trimmed();
+                if (line.startsWith("mic_enabled=")) {
+                    const QString v = line.mid(QString("mic_enabled=").length()).trimmed();
+                    configFile.close();
+                    return v.compare("true", Qt::CaseInsensitive) == 0;
+                }
+            }
+            configFile.close();
+        }
+    }
+    return false;
+}
+
 // 从配置文件读取设备ID
 QString getDeviceIdFromConfig()
 {
@@ -290,15 +315,38 @@ public:
         m_timer->start(1000);
     }
 
+    void notifyViewerExited(const QString &viewerId)
+    {
+        if (viewerId.isEmpty()) {
+            return;
+        }
+        if (m_socket->state() == QLocalSocket::ConnectedState) {
+            m_socket->write(QByteArray("EVT_VIEWER_EXIT:") + viewerId.toUtf8() + "\n");
+            m_socket->flush();
+        }
+    }
+
+    void notifyViewerMicState(const QString &viewerId, bool enabled)
+    {
+        if (viewerId.isEmpty()) {
+            return;
+        }
+        if (m_socket->state() == QLocalSocket::ConnectedState) {
+            m_socket->write(QByteArray("EVT_VIEWER_MIC:") + viewerId.toUtf8() + (enabled ? ":1\n" : ":0\n"));
+            m_socket->flush();
+        }
+    }
+
 signals:
     void approvalReceived();
     void rejectionReceived();
     void switchScreenRequested(int index);
+    void audioToggleRequested(bool enabled);
 
 private slots:
     void sendHeartbeat() {
         if (m_socket->state() == QLocalSocket::ConnectedState) {
-            m_socket->write("1"); // 发送任意数据
+            m_socket->write("1\n");
             m_socket->flush();
         } else if (m_socket->state() == QLocalSocket::UnconnectedState) {
             // 如果连接断开，尝试重连
@@ -321,6 +369,17 @@ private slots:
             if (ok) {
                 qDebug() << "[CaptureProcess] Received local switch screen command from MainWindow:" << idx;
                 emit switchScreenRequested(idx);
+            }
+        } else if (str.contains("CMD_AUDIO_TOGGLE:")) {
+            const QString prefix = QStringLiteral("CMD_AUDIO_TOGGLE:");
+            const int p = str.lastIndexOf(prefix);
+            if (p >= 0) {
+                const QString tail = str.mid(p + prefix.size()).trimmed();
+                bool ok = false;
+                const int v = tail.toInt(&ok);
+                if (ok) {
+                    emit audioToggleRequested(v != 0);
+                }
             }
         }
     }
@@ -597,6 +656,8 @@ int main(int argc, char *argv[])
     static const int audioChannels = 1;
     static const int audioBitsPerSample = 16;
     static bool remoteAudioEnabled = false; // 默认关闭音频发送
+    static bool localMicEnabled = getMicEnabledFromConfig();
+    static bool serverAudioWanted = false;
     static int audioFrameSendCount = 0; // 发送帧计数
     
     // 远程音频播放相关变量
@@ -606,6 +667,7 @@ int main(int argc, char *argv[])
     static QMap<QString, int> peerSilenceCounts;
     static QMap<QString, qint64> peerLastActiveTimes;
     static QMap<QString, bool> peerBuffering; // New: Buffering state for jitter control
+    static QMap<QString, bool> peerMicOn;
     static QMutex mixMutex;
     static QByteArray mixBuffer;
     
@@ -1457,6 +1519,10 @@ int main(int argc, char *argv[])
         for (auto *ov : s_overlays) {
             if (ov) ov->onViewerExited(viewerId);
         }
+
+        if (watchdog) {
+            watchdog->notifyViewerExited(viewerId);
+        }
         
         // [Security] User disconnected, stop streaming immediately to prevent zombie streaming
         // This assumes 1-on-1 session or that we want to stop when ANY viewer exits (conservative)
@@ -1537,6 +1603,21 @@ int main(int argc, char *argv[])
         });
     }
 
+    // 本地麦克风开关（由主进程通过 Watchdog 下发）
+    if (watchdog) {
+        QObject::connect(watchdog, &WatchdogClient::audioToggleRequested, [&, startAudio, stopAudio](bool enabled) {
+            localMicEnabled = enabled;
+            const bool finalEnabled = serverAudioWanted && localMicEnabled;
+            remoteAudioEnabled = finalEnabled;
+            if (finalEnabled) {
+                if (!sender->isStreaming()) return;
+                startAudio();
+            } else {
+                stopAudio();
+            }
+        });
+    }
+
     // 新增：处理质量变更请求
     QObject::connect(sender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
         applyQualitySetting(quality);
@@ -1545,8 +1626,10 @@ int main(int argc, char *argv[])
     // 新增：处理音频开关请求（麦克风采集）
     // 变量已移至上方作为静态变量声明
     QObject::connect(sender, &WebSocketSender::audioToggleRequested, [&, startAudio, stopAudio](bool enabled) {
-        remoteAudioEnabled = enabled;
-        if (enabled) {
+        serverAudioWanted = enabled;
+        const bool finalEnabled = enabled && localMicEnabled;
+        remoteAudioEnabled = finalEnabled;
+        if (finalEnabled) {
             if (!sender->isStreaming()) return;
             startAudio();
         } else {
@@ -1578,8 +1661,6 @@ int main(int argc, char *argv[])
     mixTimer->setInterval(20); // 20ms mixing cycle
     
     QObject::connect(mixTimer, &QTimer::timeout, [&]() {
-        if (!remoteListenEnabled) return;
-        
         QMutexLocker locker(&mixMutex);
         
         // Cleanup zombies (>30s inactive)
@@ -1588,17 +1669,35 @@ int main(int argc, char *argv[])
         while (it != peerDecoders.end()) {
             QString vid = it.key();
             if (now - peerLastActiveTimes.value(vid, 0) > 30000) {
+                if (peerMicOn.value(vid, false) && watchdog) {
+                    watchdog->notifyViewerMicState(vid, false);
+                }
                 if (it.value()) opus_decoder_destroy(it.value());
                 peerQueues.remove(vid);
                 peerSilenceCounts.remove(vid);
                 peerLastActiveTimes.remove(vid);
                 peerBuffering.remove(vid);
+                peerMicOn.remove(vid);
                 it = peerDecoders.erase(it);
                 qDebug() << "[AudioMixer] Removed zombie peer:" << vid;
             } else {
                 ++it;
             }
         }
+
+        const auto micKeys = peerMicOn.keys();
+        for (const QString &vid : micKeys) {
+            if (!peerMicOn.value(vid, false)) continue;
+            qint64 last = peerLastActiveTimes.value(vid, 0);
+            if (last <= 0 || (now - last) > 800) {
+                peerMicOn[vid] = false;
+                if (watchdog) {
+                    watchdog->notifyViewerMicState(vid, false);
+                }
+            }
+        }
+
+        if (!remoteListenEnabled) return;
         
         if (peerDecoders.isEmpty()) return;
 
@@ -1680,8 +1779,6 @@ int main(int argc, char *argv[])
     mixTimer->start();
 
     QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QString &viewerId, const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
-        if (!remoteListenEnabled) return;
-        
         QMutexLocker locker(&mixMutex);
         QString vid = viewerId;
         if (vid.isEmpty()) vid = "unknown";
@@ -1708,17 +1805,30 @@ int main(int argc, char *argv[])
         }
         peerQueues[vid].enqueue(opus);
         peerLastActiveTimes[vid] = QDateTime::currentMSecsSinceEpoch();
+        if (!peerMicOn.value(vid, false)) {
+            peerMicOn[vid] = true;
+            if (watchdog) {
+                watchdog->notifyViewerMicState(vid, true);
+            }
+        }
     });
 
     QObject::connect(sender, &WebSocketSender::viewerListenMuteRequested, [&](bool mute) {
         remoteListenEnabled = !mute;
         if (mute) {
              QMutexLocker locker(&mixMutex);
+             const auto keys = peerMicOn.keys();
+             for (const QString &vid : keys) {
+                 if (peerMicOn.value(vid, false) && watchdog) {
+                     watchdog->notifyViewerMicState(vid, false);
+                 }
+             }
              for(auto dec : peerDecoders) opus_decoder_destroy(dec);
              peerDecoders.clear();
              peerQueues.clear();
              peerSilenceCounts.clear();
              peerLastActiveTimes.clear();
+             peerMicOn.clear();
         }
     });
     

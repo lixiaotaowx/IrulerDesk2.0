@@ -629,6 +629,7 @@ void MainWindow::setupUI()
             vd->setMicSendEnabled(micEnabled);
         }
     }
+    connect(m_videoWindow, &VideoWindow::micToggled, this, &MainWindow::onMicToggleRequested);
     
     // 创建新UI窗口
     m_transparentImageList = new NewUiWindow();
@@ -643,6 +644,8 @@ void MainWindow::setupUI()
     // Connect system settings signal
     connect(m_transparentImageList, &NewUiWindow::systemSettingsRequested,
             this, &MainWindow::onSystemSettingsRequested);
+    connect(m_transparentImageList, &NewUiWindow::micToggleRequested,
+            this, &MainWindow::onMicToggleRequested);
     connect(m_transparentImageList, &NewUiWindow::clearMarksRequested,
             this, &MainWindow::onClearMarksRequested);
     connect(m_transparentImageList, &NewUiWindow::toggleStreamingIslandRequested,
@@ -1096,12 +1099,59 @@ void MainWindow::onWatchdogDataReady()
     QLocalSocket *socket = qobject_cast<QLocalSocket*>(sender());
     if (!socket) return;
     
-    // 读取所有数据并丢弃（只需要知道有数据来即可）
-    // 协议简单约定：子进程每秒发一个字节
-    socket->readAll();
+    m_watchdogRxBuffer.append(socket->readAll());
     
     // 更新最后心跳时间
     m_lastHeartbeatTime = QDateTime::currentMSecsSinceEpoch();
+
+    static const QByteArray kViewerExitPrefix("EVT_VIEWER_EXIT:");
+    static const QByteArray kViewerMicPrefix("EVT_VIEWER_MIC:");
+    int idx = -1;
+    while ((idx = m_watchdogRxBuffer.indexOf('\n')) >= 0) {
+        QByteArray line = m_watchdogRxBuffer.left(idx).trimmed();
+        m_watchdogRxBuffer.remove(0, idx + 1);
+
+        if (line.isEmpty()) {
+            continue;
+        }
+        bool allOnes = true;
+        for (char c : line) {
+            if (c != '1') {
+                allOnes = false;
+                break;
+            }
+        }
+        if (allOnes) {
+            continue;
+        }
+
+        if (line.startsWith(kViewerExitPrefix)) {
+            const QByteArray viewerBytes = line.mid(kViewerExitPrefix.size()).trimmed();
+            const QString viewerId = QString::fromUtf8(viewerBytes);
+            if (!viewerId.isEmpty() && m_transparentImageList) {
+                m_transparentImageList->removeViewer(viewerId);
+                if (m_isStreaming && m_transparentImageList->getViewerCount() <= 0) {
+                    stopStreaming();
+                }
+            }
+        } else if (line.startsWith(kViewerMicPrefix)) {
+            const QByteArray payload = line.mid(kViewerMicPrefix.size()).trimmed();
+            const int sep = payload.lastIndexOf(':');
+            if (sep > 0) {
+                const QByteArray viewerBytes = payload.left(sep).trimmed();
+                const QByteArray stateBytes = payload.mid(sep + 1).trimmed();
+                const QString viewerId = QString::fromUtf8(viewerBytes);
+                const bool enabled = (stateBytes == "1");
+                if (!viewerId.isEmpty() && m_transparentImageList) {
+                    m_transparentImageList->setViewerMicState(viewerId, enabled);
+                }
+            }
+        }
+    }
+
+    if (m_watchdogRxBuffer.size() > 4096) {
+        m_watchdogRxBuffer.clear();
+    }
 }
 
 void MainWindow::onWatchdogTimeout()
@@ -2292,9 +2342,24 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
             msgBox.exec();
         }
-    } else if (type == "viewer_exit" || type == "stop_streaming") {
+    } else if (type == "viewer_exit" || type == "viewer_exited" || type == "viewer_left" || type == "stop_streaming") {
         // 处理观众退出或停止观看的通知
-        QString viewerId = obj["viewer_id"].toString();
+        QString viewerId = obj.value("viewer_id").toString();
+        if (viewerId.isEmpty() && obj.contains("device_id")) viewerId = obj.value("device_id").toString();
+        if (viewerId.isEmpty() && obj.contains("id")) viewerId = obj.value("id").toString();
+        if (viewerId.isEmpty() && obj.contains("user_id")) viewerId = obj.value("user_id").toString();
+        if (viewerId.isEmpty() && obj.contains("viewer")) viewerId = obj.value("viewer").toString();
+
+        QString targetId = obj.value("target_id").toString();
+        if (targetId.isEmpty() && obj.contains("producer_id")) targetId = obj.value("producer_id").toString();
+        if (targetId.isEmpty() && obj.contains("host_id")) targetId = obj.value("host_id").toString();
+
+        if (!targetId.isEmpty() && targetId != getDeviceId()) {
+            return;
+        }
+        if (viewerId.isEmpty()) {
+            return;
+        }
         
         // [Fix] Remove ONLY the specific viewer
         bool hasViewers = false;
@@ -2688,12 +2753,20 @@ void MainWindow::onMicToggleRequested(bool enabled)
 {
     saveMicEnabledToConfig(enabled);
     if (m_videoWindow) {
-        m_videoWindow->setMicChecked(enabled);
+        m_videoWindow->setMicCheckedSilently(enabled);
         auto *vd = m_videoWindow->getVideoDisplayWidget();
         if (vd) {
             vd->setTalkEnabled(enabled);
             vd->setMicSendEnabled(enabled);
         }
+    }
+    if (m_transparentImageList) {
+        m_transparentImageList->setGlobalMicCheckedSilently(enabled);
+    }
+    if (m_isStreaming && m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+        const QString cmd = QString("CMD_AUDIO_TOGGLE:%1").arg(enabled ? 1 : 0);
+        m_currentWatchdogSocket->write(cmd.toUtf8());
+        m_currentWatchdogSocket->flush();
     }
 }
 

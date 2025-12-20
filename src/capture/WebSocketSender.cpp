@@ -457,6 +457,9 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     } else if (type == "viewer_audio_opus") {
         QString vid = obj.value("sender_id").toString();
         if (vid.isEmpty()) vid = obj.value("viewer_id").toString();
+        if (vid.isEmpty()) vid = obj.value("device_id").toString();
+        if (vid.isEmpty()) vid = obj.value("user_id").toString();
+        if (vid.isEmpty()) vid = obj.value("id").toString();
         int sr = obj.value("sample_rate").toInt(16000);
         int ch = obj.value("channels").toInt(1);
         int frameSamples = obj.value("frame_samples").toInt(320);

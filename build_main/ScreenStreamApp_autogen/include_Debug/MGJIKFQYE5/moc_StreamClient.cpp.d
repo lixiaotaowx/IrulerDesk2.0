@@ -1,4 +1,5 @@
 G:/c/2025/lunzi/IrulerDeskpro/build_main/ScreenStreamApp_autogen/include_Debug/MGJIKFQYE5/moc_StreamClient.cpp: G:/c/2025/lunzi/IrulerDeskpro/src/NewUi/StreamClient.h \
+  C:/Qt/6.8.3/msvc2022_64/include/QtCore/QByteArray \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QFlags \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.8.3/msvc2022_64/include/QtCore/QSharedDataPointer \

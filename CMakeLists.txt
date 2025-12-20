@@ -19,7 +19,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # 查找 Qt 组件
-find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia REQUIRED)
+find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia WebEngineWidgets REQUIRED)
 
 # Opus audio codec
 set(Opus_DIR "G:/rust_projects/vcpkg/installed/x64-windows-static-md/share/opus")
@@ -155,6 +155,7 @@ target_link_libraries(ScreenStreamApp PRIVATE
     Qt6::Network
     Qt6::Svg
     Qt6::Multimedia
+    Qt6::WebEngineWidgets
     Opus::opus
     unofficial::libvpx::libvpx
     yuv

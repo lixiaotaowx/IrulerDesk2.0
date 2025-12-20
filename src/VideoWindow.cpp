@@ -895,6 +895,7 @@ void VideoWindow::onMicToggled(bool checked)
     bool rep = false; for (int i = 0; i < lines.size(); ++i) { if (lines[i].startsWith("mic_enabled=")) { lines[i] = QString("mic_enabled=%1").arg(checked ? "true" : "false"); rep = true; break; } }
     if (!rep) lines << QString("mic_enabled=%1").arg(checked ? "true" : "false");
     if (f.open(QIODevice::WriteOnly | QIODevice::Text)) { QTextStream out(&f); for (const QString &ln : lines) out << ln << "\n"; f.close(); }
+    emit micToggled(checked);
 }
 
 void VideoWindow::onSpeakerToggled(bool checked)
@@ -913,6 +914,7 @@ void VideoWindow::onSpeakerToggled(bool checked)
     bool rep = false; for (int i = 0; i < lines.size(); ++i) { if (lines[i].startsWith("speaker_enabled=")) { lines[i] = QString("speaker_enabled=%1").arg(checked ? "true" : "false"); rep = true; break; } }
     if (!rep) lines << QString("speaker_enabled=%1").arg(checked ? "true" : "false");
     if (f.open(QIODevice::WriteOnly | QIODevice::Text)) { QTextStream out(&f); for (const QString &ln : lines) out << ln << "\n"; f.close(); }
+    emit speakerToggled(checked);
 }
 
 void VideoWindow::onColorClicked()

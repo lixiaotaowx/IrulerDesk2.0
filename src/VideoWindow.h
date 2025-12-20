@@ -44,6 +44,8 @@ protected:
 signals:
     void avatarUpdateReceived(const QString &userId, int iconId);
     void receivingStopped(const QString &viewerId, const QString &targetId);
+    void micToggled(bool checked);
+    void speakerToggled(bool checked);
 
 private slots:
     void onMinimizeClicked();

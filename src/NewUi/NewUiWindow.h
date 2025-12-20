@@ -28,6 +28,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void onTimerTimeout();
@@ -35,11 +36,14 @@ private slots:
     void onStreamLog(const QString &msg);
     void onUserListUpdated(const QJsonArray &users);
     void onLoginConnected();
+    void toggleFunction1Maximize();
 
 public:
     void setMyStreamId(const QString &id, const QString &name = QString());
     void setTalkPending(const QString &userId, bool pending);
     void setTalkConnected(const QString &userId, bool connected);
+    void setViewerMicState(const QString &viewerId, bool enabled);
+    void setGlobalMicCheckedSilently(bool enabled);
 
     // Viewer List Management
     void addViewer(const QString &id, const QString &name);
@@ -61,6 +65,7 @@ public:
 signals:
     void startWatchingRequested(const QString &targetId);
     void systemSettingsRequested();
+    void micToggleRequested(bool enabled);
     void clearMarksRequested();
     void toggleStreamingIslandRequested();
     void kickViewerRequested(const QString &viewerId);
@@ -71,6 +76,8 @@ signals:
 private:
     void setupUi();
     void showFunction1Browser();
+    void showHomeContent();
+    void updateTitleMaximizeButton();
     void updateListWidget(const QJsonArray &users);
     QIcon buildSpinnerIcon(int size, int angleDeg) const;
     QPixmap buildTestAvatarPixmap(int size) const;
@@ -96,10 +103,16 @@ private:
     QWidget *m_farRightPanel = nullptr; // Far right panel (My Room)
     QListWidget *m_viewerList = nullptr; // Viewer list widget
     QMap<QString, QListWidgetItem*> m_viewerItems; // Viewer ID -> List Item
+    QMap<QString, QPushButton*> m_viewerMicButtons;
+    QMap<QString, bool> m_viewerMicStates;
     QLabel *m_localNameLabel = nullptr; // Local name label (Index 0)
     QFrame *m_localCard = nullptr; // Local card frame (Index 0)
     QLabel *m_toolbarAvatarLabel = nullptr;
     QLabel *m_localAvatarLabel = nullptr;
+    QPushButton *m_titleMaximizeBtn = nullptr;
+    QPushButton *m_titleMicBtn = nullptr;
+    QIcon m_titleMicIconOn;
+    QIcon m_titleMicIconOff;
     QStackedWidget *m_rightContentStack = nullptr;
     QWidget *m_homeContentPage = nullptr;
     QWidget *m_function1BrowserPage = nullptr;

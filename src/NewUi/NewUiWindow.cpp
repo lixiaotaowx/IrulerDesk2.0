@@ -203,7 +203,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 
     m_avatarPublishTimer = new QTimer(this);
     connect(m_avatarPublishTimer, &QTimer::timeout, this, &NewUiWindow::publishLocalAvatarOnce);
-    m_avatarPublishTimer->start(3000);
+    m_avatarPublishTimer->start(60 * 60 * 1000);
     
     // 2. Connect Login Client (User List & Discovery)
     // DISABLED: Main Window controls the user list now.
@@ -457,6 +457,17 @@ void NewUiWindow::publishLocalAvatarOnce()
         return;
     }
     m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap, true);
+}
+
+void NewUiWindow::publishLocalAvatarHint()
+{
+    if (!m_avatarPublisher || !m_avatarPublisher->isConnected()) {
+        return;
+    }
+    if (m_localAvatarPublishPixmap.isNull()) {
+        return;
+    }
+    m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap, false);
 }
 
 void NewUiWindow::refreshLocalAvatarFromCache()
@@ -1100,10 +1111,10 @@ void NewUiWindow::setupUi()
 
     ResponsiveButton *exitBtn = new ResponsiveButton();
     exitBtn->setFixedSize(48, 48);
-    exitBtn->setIcon(QIcon(appDir + "/maps/logo/dele.png"));
-    exitBtn->setIconSize(QSize(32, 32));
+    exitBtn->setText(QStringLiteral("测试退出"));
+    exitBtn->setStyleSheet("QPushButton { color: #e0e0e0; font-size: 12px; }");
     exitBtn->setCursor(Qt::PointingHandCursor);
-    exitBtn->setToolTip("退出软件");
+    exitBtn->setToolTip(QStringLiteral("测试退出"));
     exitBtn->installEventFilter(this);
     connect(exitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
 
@@ -2153,6 +2164,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     m_remoteStreams.insert(userId, client);
 
     ensureAvatarSubscription(userId);
+    publishLocalAvatarHint();
 }
 
 void NewUiWindow::removeUser(const QString &userId)

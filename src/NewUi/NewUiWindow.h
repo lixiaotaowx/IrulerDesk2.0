@@ -12,6 +12,9 @@
 #include "StreamClient.h"
 #include "LoginClient.h"
 
+class QStackedWidget;
+class QWebEngineView;
+
 class NewUiWindow : public QWidget
 {
     Q_OBJECT
@@ -67,6 +70,7 @@ signals:
 
 private:
     void setupUi();
+    void showFunction1Browser();
     void updateListWidget(const QJsonArray &users);
     QIcon buildSpinnerIcon(int size, int angleDeg) const;
     QPixmap buildTestAvatarPixmap(int size) const;
@@ -79,6 +83,7 @@ private:
     void ensureAvatarSubscription(const QString &userId);
     void refreshLocalAvatarFromCache();
     void publishLocalAvatarOnce();
+    void publishLocalAvatarHint();
     
     // Dragging support
     bool m_dragging = false;
@@ -95,6 +100,10 @@ private:
     QFrame *m_localCard = nullptr; // Local card frame (Index 0)
     QLabel *m_toolbarAvatarLabel = nullptr;
     QLabel *m_localAvatarLabel = nullptr;
+    QStackedWidget *m_rightContentStack = nullptr;
+    QWidget *m_homeContentPage = nullptr;
+    QWidget *m_function1BrowserPage = nullptr;
+    QWebEngineView *m_function1WebView = nullptr;
     StreamClient *m_streamClient = nullptr;
     LoginClient *m_loginClient = nullptr;
     StreamClient *m_avatarPublisher = nullptr;

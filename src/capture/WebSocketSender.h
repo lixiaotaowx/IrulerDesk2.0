@@ -28,7 +28,7 @@ public:
     
     // 推流控制
     void startStreaming();
-    void stopStreaming();
+    void stopStreaming(bool softStop = false);
     void forceKeyFrame();
     bool isStreaming() const { return m_isStreaming; }
 
@@ -75,7 +75,7 @@ signals:
     void error(const QString &errorMessage);
     void requestKeyFrame(); // 请求编码器生成关键帧
     void streamingStarted(); // 开始推流信号
-    void streamingStopped(); // 停止推流信号
+    void streamingStopped(bool softStop); // 停止推流信号
     
     // 远程批注事件（观看端发来），包含颜色ID
     void annotationEventReceived(const QString &phase, int x, int y, const QString &viewerId, int colorId);
@@ -94,6 +94,7 @@ signals:
     void viewerCursorReceived(const QString &viewerId, int x, int y, const QString &viewerName);
     void viewerNameUpdateReceived(const QString &viewerId, const QString &viewerName);
     void viewerListenMuteRequested(bool mute);
+    void viewerJoined(const QString &viewerId);
     void viewerExited(const QString &viewerId);
     void watchRequestReceived(const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId);
 

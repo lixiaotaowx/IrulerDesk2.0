@@ -1145,7 +1145,12 @@ void MainWindow::onWatchdogDataReady()
             if (!viewerId.isEmpty() && m_transparentImageList) {
                 m_transparentImageList->removeViewer(viewerId);
                 if (m_isStreaming && m_transparentImageList->getViewerCount() <= 0) {
-                    stopStreaming();
+                    if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                        m_currentWatchdogSocket->write("CMD_SOFT_STOP");
+                        m_currentWatchdogSocket->flush();
+                    } else {
+                        stopStreaming();
+                    }
                 }
             }
         } else if (line.startsWith(kViewerMicPrefix)) {
@@ -2409,6 +2414,14 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
         if (m_transparentImageList) {
             m_transparentImageList->removeViewer(viewerId);
+            if (m_isStreaming && m_transparentImageList->getViewerCount() <= 0) {
+                if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                    m_currentWatchdogSocket->write("CMD_SOFT_STOP");
+                    m_currentWatchdogSocket->flush();
+                } else {
+                    stopStreaming();
+                }
+            }
         }
     } else if (type == "kick_viewer") {
         QString viewerId = obj["viewer_id"].toString();

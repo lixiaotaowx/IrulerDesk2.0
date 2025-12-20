@@ -273,7 +273,7 @@ void WebSocketSender::onDisconnected()
         // 断开连接时必须停止推流，确保状态重置
         if (m_isStreaming) {
             m_isStreaming = false;
-            emit streamingStopped();
+            emit streamingStopped(false);
         }
         
         emit disconnected();
@@ -345,7 +345,7 @@ void WebSocketSender::startStreaming()
     }
 }
 
-void WebSocketSender::stopStreaming()
+void WebSocketSender::stopStreaming(bool softStop)
 {
     QMutexLocker locker(&m_mutex);
     if (m_isStreaming) {
@@ -353,7 +353,7 @@ void WebSocketSender::stopStreaming()
         m_frameQueue.clear();
         m_keyQueue.clear();
         
-        emit streamingStopped();
+        emit streamingStopped(softStop);
     }
 }
 
@@ -397,8 +397,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             m_pendingIconId = iconId;
             m_waitingForApproval = true;
             sendApprovalRequired(viewerId, targetId);
+            if (!viewerId.isEmpty()) {
+                emit viewerJoined(viewerId);
+            }
             emit watchRequestReceived(viewerId, m_viewerName, targetId, iconId);
         } else {
+            if (!viewerId.isEmpty()) {
+                emit viewerJoined(viewerId);
+            }
             if (m_isStreaming) {
                 stopStreaming();
             }
@@ -410,13 +416,29 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         if (isManualApprovalEnabled()) {
             return;
         }
+        QString vid = obj.value("viewer_id").toString();
+        if (vid.isEmpty()) vid = obj.value("sender_id").toString();
+        if (vid.isEmpty()) vid = obj.value("device_id").toString();
+        if (vid.isEmpty()) vid = obj.value("user_id").toString();
+        if (vid.isEmpty()) vid = obj.value("id").toString();
+        if (!vid.isEmpty()) {
+            emit viewerJoined(vid);
+        }
         startStreaming();
         emit requestKeyFrame();
     } else if (type == "request_keyframe") {
         emit requestKeyFrame();
     } else if (type == "stop_streaming") {
-        
-        stopStreaming();
+        QString vid = obj.value("viewer_id").toString();
+        if (vid.isEmpty()) vid = obj.value("sender_id").toString();
+        if (vid.isEmpty()) vid = obj.value("device_id").toString();
+        if (vid.isEmpty()) vid = obj.value("user_id").toString();
+        if (vid.isEmpty()) vid = obj.value("id").toString();
+        if (!vid.isEmpty()) {
+            emit viewerExited(vid);
+        } else {
+            stopStreaming();
+        }
     } else if (type == "annotation_event") {
         QString phase = obj.value("phase").toString();
         int x = obj.value("x").toInt();
@@ -697,6 +719,9 @@ void WebSocketSender::approveWatchRequest()
 void WebSocketSender::rejectWatchRequest()
 {
     if (!m_waitingForApproval) return;
+    if (!m_pendingViewerId.isEmpty()) {
+        emit viewerExited(m_pendingViewerId);
+    }
     sendWatchRejected(m_pendingViewerId, m_pendingTargetId);
     m_waitingForApproval = false;
 }

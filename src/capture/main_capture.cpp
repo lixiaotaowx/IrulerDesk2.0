@@ -10,6 +10,7 @@
 #include <QMap>
 #include <QQueue>
 #include <QMutex>
+#include <QSet>
 #include <QFile>
 #include <QTextStream>
 #include <QStandardPaths>
@@ -342,6 +343,7 @@ signals:
     void rejectionReceived();
     void switchScreenRequested(int index);
     void audioToggleRequested(bool enabled);
+    void softStopRequested();
 
 private slots:
     void sendHeartbeat() {
@@ -363,6 +365,8 @@ private slots:
         } else if (str.contains("CMD_REJECT")) {
             qDebug() << "[CaptureProcess] Received local rejection command from MainWindow.";
             emit rejectionReceived();
+        } else if (str.contains("CMD_SOFT_STOP")) {
+            emit softStopRequested();
         } else if (str.startsWith("CMD_SWITCH_SCREEN:")) {
             bool ok;
             int idx = str.mid(18).toInt(&ok);
@@ -1291,6 +1295,9 @@ int main(int argc, char *argv[])
 
     QObject::connect(sender, &WebSocketSender::annotationEventReceived,
                      [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
+        if (!sender->isStreaming() && phase != QStringLiteral("clear")) {
+            return;
+        }
         // [Debug] Log annotation events to diagnose "cannot draw" issues
         if (phase != "move") { 
              qDebug() << "[CaptureProcess] Annotation received:" << phase << "from" << viewerId << "at" << x << "," << y;
@@ -1320,6 +1327,9 @@ int main(int argc, char *argv[])
     });
     QObject::connect(sender, &WebSocketSender::textAnnotationReceived,
                      [&](const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_overlays.size()) {
             QSize logicalSize = s_overlays[idx]->size();
@@ -1333,6 +1343,9 @@ int main(int argc, char *argv[])
     });
     QObject::connect(sender, &WebSocketSender::likeRequested,
                      [&](const QString &viewerId) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_overlays.size()) {
             s_overlays[idx]->onLikeRequested(viewerId);
@@ -1357,6 +1370,7 @@ int main(int argc, char *argv[])
     }
 
     // 连接推流控制信号
+    static QSet<QString> activeViewerIds;
     QObject::connect(sender, &WebSocketSender::streamingStarted, [&, startAudio, applyQualitySetting]() {
         qDebug() << "[CaptureProcess] Streaming started signal received. isCapturing:" << isCapturing;
         if (!isCapturing) {
@@ -1384,31 +1398,33 @@ int main(int argc, char *argv[])
         }
     });
     
-    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, audioTimer, audioSource, &audioInput]() {
+    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, audioTimer, audioSource, &audioInput](bool softStop) {
+        activeViewerIds.clear();
         if (isCapturing) {
             isCapturing = false;
             captureTimer->stop();
-            staticMouseCapture->stopCapture(); // 停止鼠标捕获
-            // qDebug() << "[CaptureProcess] 停止屏幕捕获和鼠标捕获";
-            audioTimer->stop();
-            if (audioSource) {
-                audioSource->stop();
-                audioInput = nullptr;
-            }
-            if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
-            if (mp3Decoder) { mp3Decoder->stop(); }
-            
-            // 重置捕获和编码器状态，防止下次连接时出现残留问题（如黑屏）
-            if (staticCapture) {
-                staticCapture->cleanup();
-                staticCapture->initialize();
-            }
-            if (staticEncoder) {
-                // 编码器也重置一下比较安全
-                staticEncoder->cleanup();
-                QSize capSize = staticCapture->getScreenSize();
-                staticEncoder->initialize(capSize.width(), capSize.height(), staticEncoder->getFrameRate());
-            }
+            staticMouseCapture->stopCapture();
+        }
+        audioTimer->stop();
+        if (audioSource) {
+            audioSource->stop();
+            audioInput = nullptr;
+        }
+        if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
+        if (mp3Decoder) { mp3Decoder->stop(); }
+
+        if (softStop) {
+            return;
+        }
+
+        if (staticCapture) {
+            staticCapture->cleanup();
+            staticCapture->initialize();
+        }
+        if (staticEncoder && staticCapture) {
+            staticEncoder->cleanup();
+            QSize capSize = staticCapture->getScreenSize();
+            staticEncoder->initialize(capSize.width(), capSize.height(), staticEncoder->getFrameRate());
         }
     });
 
@@ -1427,24 +1443,13 @@ int main(int argc, char *argv[])
         }
     });
 
-    // 监听观众数量变化，动态调整帧率 (1人:20fps, 2人:15fps, 3人+:10fps)
-    static int currentViewerCount = 0;
-    // 需要WebSocketSender暴露观众进出信号
-    // 由于WebSocketSender目前没有直接暴露count，我们通过事件来估算或修改sender
-    // 这里我们先假设通过viewerCursor/audio等事件能感知活跃用户，或者直接修改WebSocketSender增加viewerCount信号
-    
-    // 简单实现：每次有新观众请求关键帧或进入时，我们暂时无法获得确切总人数
-    // 但为了响应您的需求，我们可以做一个保守的动态策略：
-    // 默认启动时设为 20 FPS (50ms)
-    // 后面根据网络拥堵情况调整可能更准确，但按人数调整最直观。
-    
-    // 既然目前无法直接获取准确人数，我们先实现 "默认15fps + 关键帧限流" 这一最稳妥方案。
-    // 动态调整需要服务端配合下发人数通知。
-    
     // 将系统全局鼠标坐标转换为当前捕获屏幕的局部坐标后发送到观看端
     QObject::connect(sender, &WebSocketSender::viewerNameChanged, [&](const QString &){ });
     QObject::connect(sender, &WebSocketSender::viewerCursorReceived,
                      [&](const QString &viewerId, int x, int y, const QString &viewerName) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_cursorOverlays.size()) {
             // 直接使用 Overlay Widget 的逻辑尺寸进行映射
@@ -1467,6 +1472,9 @@ int main(int argc, char *argv[])
     });
     QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived,
                      [&](const QString &viewerId, const QString &viewerName) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         int idx = currentScreenIndex;
         if (idx >= 0 && idx < s_cursorOverlays.size()) {
             s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
@@ -1512,6 +1520,12 @@ int main(int argc, char *argv[])
         }
     });
 
+    QObject::connect(sender, &WebSocketSender::viewerJoined, [&](const QString &viewerId) {
+        if (!viewerId.isEmpty()) {
+            activeViewerIds.insert(viewerId);
+        }
+    });
+
     QObject::connect(sender, &WebSocketSender::viewerExited,
                      [&](const QString &viewerId) {
         for (auto *cv : s_cursorOverlays) {
@@ -1524,35 +1538,37 @@ int main(int argc, char *argv[])
         if (watchdog) {
             watchdog->notifyViewerExited(viewerId);
         }
-        
-        // [Security] User disconnected, stop streaming immediately to prevent zombie streaming
-        // This assumes 1-on-1 session or that we want to stop when ANY viewer exits (conservative)
-        // Ideally we should check if viewerCount == 0, but since we don't have count sync,
-        // stopping here is the safest bet to prevent "secret recording".
-        // The next viewer will trigger start_streaming again.
-        qDebug() << "[CaptureProcess] Viewer exited:" << viewerId << "-> Stopping stream for privacy/performance.";
-        
-        // Trigger stop logic
-        if (isCapturing) {
-            isCapturing = false;
-            captureTimer->stop();
-            staticMouseCapture->stopCapture();
-            audioTimer->stop();
-            if (audioSource) {
-                audioSource->stop();
-                audioInput = nullptr;
+
+        if (!viewerId.isEmpty()) {
+            activeViewerIds.remove(viewerId);
+        }
+        if (sender && sender->isStreaming() && activeViewerIds.isEmpty()) {
+            sender->stopStreaming(true);
+        }
+
+        {
+            QMutexLocker locker(&mixMutex);
+            if (peerMicOn.value(viewerId, false) && watchdog) {
+                watchdog->notifyViewerMicState(viewerId, false);
             }
-            // Reset encoders to free resources
-            if (staticCapture) staticCapture->cleanup();
-            if (staticEncoder) staticEncoder->cleanup();
-            
-            // Notify server we stopped (optional, but good practice)
-            // sender->sendStreamingStopped(); 
+            peerMicOn.remove(viewerId);
+            peerMicExplicit.remove(viewerId);
+            peerQueues.remove(viewerId);
+            peerSilenceCounts.remove(viewerId);
+            peerLastActiveTimes.remove(viewerId);
+            peerBuffering.remove(viewerId);
+            OpusDecoder *dec = peerDecoders.take(viewerId);
+            if (dec) {
+                opus_decoder_destroy(dec);
+            }
         }
     });
 
     QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
                      [sender](const QPoint &globalPos) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         const auto screens = QApplication::screens();
         if (screens.isEmpty()) {
             return;
@@ -1589,6 +1605,9 @@ int main(int argc, char *argv[])
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕
     QObject::connect(sender, &WebSocketSender::switchScreenRequested, 
                      [&](const QString &direction, int targetIndex) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         int finalIndex = -1;
         if (direction == "index") {
             finalIndex = targetIndex;
@@ -1621,12 +1640,18 @@ int main(int argc, char *argv[])
 
     // 新增：处理质量变更请求
     QObject::connect(sender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         applyQualitySetting(quality);
     });
 
     // 新增：处理音频开关请求（麦克风采集）
     // 变量已移至上方作为静态变量声明
     QObject::connect(sender, &WebSocketSender::audioToggleRequested, [&, startAudio, stopAudio](bool enabled) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         serverAudioWanted = enabled;
         const bool finalEnabled = enabled && localMicEnabled;
         remoteAudioEnabled = finalEnabled;
@@ -1639,6 +1664,9 @@ int main(int argc, char *argv[])
     });
 
     QObject::connect(sender, &WebSocketSender::audioGainRequested, [&, audioSource](int percent) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         int p = percent;
         if (p < 0) p = 0;
         if (p > 100) p = 100;
@@ -1780,6 +1808,9 @@ int main(int argc, char *argv[])
     mixTimer->start();
 
     QObject::connect(sender, &WebSocketSender::viewerMicStateReceived, [&](const QString &viewerId, bool enabled) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         QMutexLocker locker(&mixMutex);
         QString vid = viewerId;
         if (vid.isEmpty()) return;
@@ -1795,6 +1826,9 @@ int main(int argc, char *argv[])
     });
 
     QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QString &viewerId, const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         QMutexLocker locker(&mixMutex);
         QString vid = viewerId;
         if (vid.isEmpty()) vid = "unknown";
@@ -1834,6 +1868,9 @@ int main(int argc, char *argv[])
     });
 
     QObject::connect(sender, &WebSocketSender::viewerListenMuteRequested, [&](bool mute) {
+        if (!sender->isStreaming()) {
+            return;
+        }
         remoteListenEnabled = !mute;
         if (mute) {
              QMutexLocker locker(&mixMutex);
@@ -1928,6 +1965,12 @@ int main(int argc, char *argv[])
             if (sender) {
                 sender->rejectWatchRequest();
                 qDebug() << "[CaptureProcess] Local rejection executed: Request reset.";
+            }
+        });
+
+        QObject::connect(watchdog, &WatchdogClient::softStopRequested, [&]() {
+            if (sender) {
+                sender->stopStreaming(true);
             }
         });
     }

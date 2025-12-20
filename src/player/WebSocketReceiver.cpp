@@ -1115,9 +1115,11 @@ void WebSocketReceiver::sendRequestKeyFrame()
 void WebSocketReceiver::sendViewerExit()
 {
     QString viewerId;
+    QString targetId;
     {
         QMutexLocker locker(&m_mutex);
         viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
     }
     if (!m_connected || !m_webSocket) {
         return;
@@ -1128,6 +1130,9 @@ void WebSocketReceiver::sendViewerExit()
     QJsonObject message;
     message["type"] = "viewer_exit";
     message["viewer_id"] = viewerId;
+    if (!targetId.isEmpty()) {
+        message["target_id"] = targetId;
+    }
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     QJsonDocument doc(message);
     m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));

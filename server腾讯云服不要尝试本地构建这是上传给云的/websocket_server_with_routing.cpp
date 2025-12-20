@@ -583,6 +583,35 @@ private slots:
         if (error.error == QJsonParseError::NoError && doc.isObject()) {
             QJsonObject obj = doc.object();
             QString type = obj["type"].toString();
+
+            if (role == "subscriber") {
+                if (type == "watch_request") {
+                    const QString viewerId = obj.value("viewer_id").toString();
+                    if (!viewerId.isEmpty()) {
+                        m_subscriberViewerIds[sender] = viewerId;
+                    }
+                } else if (type == "viewer_exit" || type == "stop_streaming") {
+                    const QString viewerId = obj.value("viewer_id").toString();
+                    const QString targetId = obj.value("target_id").toString();
+                    if (!viewerId.isEmpty()) {
+                        for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                            if (it.value().first == roomId) {
+                                QWebSocket *targetLoginSocket = it.key();
+                                if (targetLoginSocket && targetLoginSocket->state() == QAbstractSocket::ConnectedState) {
+                                    QJsonObject msg = obj;
+                                    msg["type"] = "viewer_exit";
+                                    msg["viewer_id"] = viewerId;
+                                    msg["target_id"] = targetId.isEmpty() ? roomId : targetId;
+                                    msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                                    targetLoginSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    m_subscriberViewerIds.remove(sender);
+                }
+            }
             
             // 处理鼠标位置消息 - 只从推流端转发给订阅者
             if (type == "mouse_position" && role == "publisher") {
@@ -704,16 +733,38 @@ private slots:
         QPair<QString, QString> roleInfo = m_clientRoles[client];
         QString roomId = roleInfo.first;
         QString role = roleInfo.second;
-        
+
         qDebug() << QDateTime::currentDateTime().toString()
                  << "客户端断开连接:" << clientInfo << "房间:" << roomId << "角色:" << role;
-        
+
         // 从房间中移除客户端
         if (m_rooms.contains(roomId)) {
             Room *room = m_rooms[roomId];
             if (role == "publisher") {
                 room->removePublisher();
             } else {
+                const QString viewerId = m_subscriberViewerIds.value(client);
+                if (!viewerId.isEmpty()) {
+                    QJsonObject msg;
+                    msg["type"] = "viewer_exit";
+                    msg["viewer_id"] = viewerId;
+                    msg["target_id"] = roomId;
+                    msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                    const QString payload = QJsonDocument(msg).toJson(QJsonDocument::Compact);
+                    if (room->publisher && room->publisher->state() == QAbstractSocket::ConnectedState) {
+                        room->publisher->sendTextMessage(payload);
+                    }
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == roomId) {
+                            QWebSocket *targetLoginSocket = it.key();
+                            if (targetLoginSocket && targetLoginSocket->state() == QAbstractSocket::ConnectedState) {
+                                targetLoginSocket->sendTextMessage(payload);
+                            }
+                            break;
+                        }
+                    }
+                }
+                m_subscriberViewerIds.remove(client);
                 room->removeSubscriber(client);
             }
         }
@@ -764,6 +815,7 @@ private:
     QWebSocketServer *m_server;
     QMap<QString, Room*> m_rooms;                           // 房间管理
     QMap<QWebSocket*, QPair<QString, QString>> m_clientRoles; // 客户端角色 (roomId, role)
+    QMap<QWebSocket*, QString> m_subscriberViewerIds;
     QList<QWebSocket*> m_loginClients;                      // 登录系统客户端列表
     QMap<QWebSocket*, QPair<QString, QString>> m_loginUsers; // 登录用户信息 (socket -> (userId, userName))
     QMap<QString, int> m_userIcons;                         // 登录用户头像 (userId -> iconId)

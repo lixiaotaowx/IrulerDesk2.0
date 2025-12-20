@@ -291,7 +291,7 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         const QString cacheFile = avatarCacheFilePath(m_myStreamId);
         if (!QFileInfo::exists(cacheFile)) {
             const QString appDir = QCoreApplication::applicationDirPath();
-            const QString headPath = QDir(appDir).filePath("maps/logo/head.jpg");
+            const QString headPath = QDir(appDir).filePath("maps/logo/head.png");
             QPixmap src(headPath);
             if (src.isNull()) {
                 src = QPixmap(128, 128);
@@ -379,8 +379,8 @@ QPixmap NewUiWindow::buildTestAvatarPixmap(int size) const
 {
     const int s = qMax(8, size);
     const QString appDir = QCoreApplication::applicationDirPath();
-    const QString candidate1 = QDir(appDir).filePath("maps/logo/head.jpg");
-    const QString candidate2 = QDir::current().filePath("src/maps/logo/head.jpg");
+    const QString candidate1 = QDir(appDir).filePath("maps/logo/head.png");
+    const QString candidate2 = QDir::current().filePath("src/maps/logo/head.png");
     const QString avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
 
     QPixmap src(avatarPath);

@@ -961,6 +961,11 @@ void WebSocketReceiver::setSessionInfo(const QString &viewerId, const QString &t
     QMutexLocker locker(&m_mutex);
     m_lastViewerId = viewerId;
     m_lastTargetId = targetId;
+    const bool talkActive = m_talkActive;
+    locker.unlock();
+    if (talkActive) {
+        sendViewerMicState(true);
+    }
 }
 
 void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString &targetId)
@@ -1326,6 +1331,35 @@ void WebSocketReceiver::sendAudioToggle(bool enabled)
     m_webSocket->sendTextMessage(jsonString);
 }
 
+void WebSocketReceiver::sendViewerMicState(bool enabled)
+{
+    if (!m_connected || !m_webSocket) {
+        return;
+    }
+
+    QString viewerId;
+    QString targetId;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerId = m_lastViewerId;
+        targetId = m_lastTargetId;
+    }
+
+    if (viewerId.isEmpty() || targetId.isEmpty()) {
+        return;
+    }
+
+    QJsonObject message;
+    message["type"] = "viewer_mic_state";
+    message["enabled"] = enabled;
+    message["viewer_id"] = viewerId;
+    message["target_id"] = targetId;
+    message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+
+    QJsonDocument doc(message);
+    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+}
+
 void WebSocketReceiver::sendViewerListenMute(bool mute)
 {
     if (!m_connected || !m_webSocket) {
@@ -1386,6 +1420,7 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
 {
     if (enabled) {
         m_talkActive = true;
+        sendViewerMicState(true);
         if (!m_localAudioSource) {
             QAudioDevice inDev = QMediaDevices::defaultAudioInput();
             if (!m_followSystemInput && !m_localInputDeviceId.isEmpty()) {
@@ -1428,6 +1463,8 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
             m_localAudioTimer->setTimerType(Qt::PreciseTimer);
             m_localAudioTimer->setInterval(20);
             connect(m_localAudioTimer, &QTimer::timeout, this, [this]() {
+                if (!m_talkActive) return;
+                if (!m_connected || !m_webSocket) return;
                 if (!m_localOpusEnc || !m_localAudioSource) return;
                 if (!m_localAudioInput) return;
 
@@ -1435,6 +1472,7 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
                 // This mimics the Producer's logic (main_capture.cpp) to prevent buffer buildup
                 // and "pulsed" audio caused by timer drift.
                 while (true) {
+                    if (!m_talkActive) break;
                     QByteArray pcm;
                     if (!produceOpusFrame(pcm)) break;
 
@@ -1458,6 +1496,9 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
                         viewerIdCopy = m_lastViewerId;
                         targetIdCopy = m_lastTargetId;
                     }
+                    if (viewerIdCopy.isEmpty() || targetIdCopy.isEmpty()) {
+                        continue;
+                    }
                     
                     // If not connected to a peer, maybe we shouldn't send? 
                     // But we keep sending to server for routing.
@@ -1469,8 +1510,8 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
                     message["frame_samples"] = m_localOpusFrameSize;
                     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
                     message["data_base64"] = QString::fromUtf8(opusOut.toBase64());
-                    if (!viewerIdCopy.isEmpty()) message["viewer_id"] = viewerIdCopy;
-                    if (!targetIdCopy.isEmpty()) message["target_id"] = targetIdCopy;
+                    message["viewer_id"] = viewerIdCopy;
+                    message["target_id"] = targetIdCopy;
                     QJsonDocument doc(message);
                     m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
                 }
@@ -1487,9 +1528,12 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
             // Connect readyRead for lower latency capture (if driver supports it)
             if (m_localAudioInput) {
                 connect(m_localAudioInput, &QIODevice::readyRead, this, [this]() {
+                    if (!m_talkActive) return;
+                    if (!m_connected || !m_webSocket) return;
                     if (!m_localOpusEnc || !m_localAudioSource) return;
                     // Reuse the same logic as the timer
                     while (true) {
+                        if (!m_talkActive) break;
                         QByteArray pcm;
                         if (!produceOpusFrame(pcm)) break;
 
@@ -1513,6 +1557,9 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
                             viewerIdCopy = m_lastViewerId;
                             targetIdCopy = m_lastTargetId;
                         }
+                        if (viewerIdCopy.isEmpty() || targetIdCopy.isEmpty()) {
+                            continue;
+                        }
                         
                         QJsonObject message;
                         message["type"] = "viewer_audio_opus";
@@ -1521,8 +1568,8 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
                         message["frame_samples"] = m_localOpusFrameSize;
                         message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
                         message["data_base64"] = QString::fromUtf8(opusOut.toBase64());
-                        if (!viewerIdCopy.isEmpty()) message["viewer_id"] = viewerIdCopy;
-                        if (!targetIdCopy.isEmpty()) message["target_id"] = targetIdCopy;
+                        message["viewer_id"] = viewerIdCopy;
+                        message["target_id"] = targetIdCopy;
                         QJsonDocument doc(message);
                         m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
                     }
@@ -1532,9 +1579,11 @@ void WebSocketReceiver::setTalkEnabled(bool enabled)
         if (!m_localAudioTimer->isActive()) m_localAudioTimer->start();
     } else {
         m_talkActive = false;
+        sendViewerMicState(false);
         if (m_localAudioTimer && m_localAudioTimer->isActive()) m_localAudioTimer->stop();
         if (m_localAudioSource) m_localAudioSource->stop();
         m_localAudioInput = nullptr;
+        m_rawInputBuffer.clear();
         if (m_localOpusEnc) { opus_encoder_destroy(m_localOpusEnc); m_localOpusEnc = nullptr; }
     }
 }

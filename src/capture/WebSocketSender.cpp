@@ -454,6 +454,16 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         if (percent < 0) percent = 0;
         if (percent > 100) percent = 100;
         emit audioGainRequested(percent);
+    } else if (type == "viewer_mic_state") {
+        QString vid = obj.value("sender_id").toString();
+        if (vid.isEmpty()) vid = obj.value("viewer_id").toString();
+        if (vid.isEmpty()) vid = obj.value("device_id").toString();
+        if (vid.isEmpty()) vid = obj.value("user_id").toString();
+        if (vid.isEmpty()) vid = obj.value("id").toString();
+        bool enabled = obj.value("enabled").toBool(false);
+        if (!vid.isEmpty()) {
+            emit viewerMicStateReceived(vid, enabled);
+        }
     } else if (type == "viewer_audio_opus") {
         QString vid = obj.value("sender_id").toString();
         if (vid.isEmpty()) vid = obj.value("viewer_id").toString();

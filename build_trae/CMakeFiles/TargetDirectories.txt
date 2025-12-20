@@ -1,8 +1,0 @@
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/ScreenStreamApp.dir
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/CaptureProcess.dir
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/PlayerProcess.dir
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/ZipRelease.dir
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/PACKAGE.dir
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/INSTALL.dir
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/ALL_BUILD.dir
-G:/c/2025/lunzi/IrulerDeskpro/build_trae/CMakeFiles/ZERO_CHECK.dir

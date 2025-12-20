@@ -668,6 +668,7 @@ int main(int argc, char *argv[])
     static QMap<QString, qint64> peerLastActiveTimes;
     static QMap<QString, bool> peerBuffering; // New: Buffering state for jitter control
     static QMap<QString, bool> peerMicOn;
+    static QMap<QString, bool> peerMicExplicit;
     static QMutex mixMutex;
     static QByteArray mixBuffer;
     
@@ -1778,10 +1779,29 @@ int main(int argc, char *argv[])
     
     mixTimer->start();
 
+    QObject::connect(sender, &WebSocketSender::viewerMicStateReceived, [&](const QString &viewerId, bool enabled) {
+        QMutexLocker locker(&mixMutex);
+        QString vid = viewerId;
+        if (vid.isEmpty()) return;
+        peerMicExplicit[vid] = enabled;
+        if (!enabled) {
+            peerMicOn[vid] = false;
+            peerQueues.remove(vid);
+            peerBuffering[vid] = true;
+        }
+        if (watchdog) {
+            watchdog->notifyViewerMicState(vid, enabled);
+        }
+    });
+
     QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QString &viewerId, const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
         QMutexLocker locker(&mixMutex);
         QString vid = viewerId;
         if (vid.isEmpty()) vid = "unknown";
+
+        if (peerMicExplicit.contains(vid) && !peerMicExplicit.value(vid, true)) {
+            return;
+        }
         
         if (!peerDecoders.contains(vid)) {
             int err;

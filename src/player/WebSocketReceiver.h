@@ -68,6 +68,7 @@ public:
     
     // 停止音频处理（停止定时器，清空队列），用于在不完全断开连接的情况下静音
     void stopAudio();
+    void sendViewerMicState(bool enabled);
 public:
     // 断开连接
     void disconnectFromServer();

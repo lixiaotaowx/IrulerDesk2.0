@@ -520,6 +520,21 @@ private slots:
                                  << "观看者" << viewerId << "不在线或连接已断开，无法转发踢出消息";
                     }
                     return;
+                } else if (type == "viewer_mic_state") {
+                    QString viewerId = obj.value("viewer_id").toString();
+                    QString targetId = obj.value("target_id").toString();
+                    if (viewerId.isEmpty() || targetId.isEmpty()) {
+                        return;
+                    }
+                    QWebSocket *targetSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == targetId) { targetSocket = it.key(); break; }
+                    }
+                    if (targetSocket && targetSocket->state() == QAbstractSocket::ConnectedState) {
+                        QJsonDocument doc(obj);
+                        targetSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                    }
+                    return;
                 } else if (type == "heartbeat") {
                     QString uid = obj.value("id").toString();
                     if (uid.isEmpty()) {

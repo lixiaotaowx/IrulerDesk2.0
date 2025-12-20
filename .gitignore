@@ -18,4 +18,4 @@
 
 # MSVC project intermediates in build folders
 /build/bin/
-/build/x64/
+/build/

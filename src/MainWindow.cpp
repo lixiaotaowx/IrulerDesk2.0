@@ -690,6 +690,18 @@ void MainWindow::setupUI()
 
     connect(m_transparentImageList, &NewUiWindow::talkToggleRequested,
             this, [this](const QString &targetId, bool enabled) {
+        auto sendViewerMicState = [this](const QString &toTargetId, bool on) {
+            if (toTargetId.isEmpty()) return;
+            if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) return;
+            QJsonObject msg;
+            msg["type"] = "viewer_mic_state";
+            msg["viewer_id"] = getDeviceId();
+            msg["target_id"] = toTargetId;
+            msg["enabled"] = on;
+            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+        };
+
         auto applyTalk = [this](bool on) {
             if (!m_videoWindow) return;
             auto *vd = m_videoWindow->getVideoDisplayWidget();
@@ -700,6 +712,7 @@ void MainWindow::setupUI()
         };
 
         if (enabled) {
+            sendViewerMicState(targetId, true);
             m_pendingTalkTargetId = targetId;
             m_pendingTalkEnabled = true;
             bool hasSession = false;
@@ -723,6 +736,7 @@ void MainWindow::setupUI()
                 sendWatchRequestAudioOnly(targetId);
             }
         } else {
+            sendViewerMicState(targetId, false);
             if (m_transparentImageList) {
                 m_transparentImageList->setTalkConnected(targetId, false);
             }
@@ -2288,6 +2302,16 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (m_audioOnlyTargetId == targetId) {
             m_audioOnlyTargetId.clear();
         }
+
+        if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+            QJsonObject msg;
+            msg["type"] = "viewer_mic_state";
+            msg["viewer_id"] = getDeviceId();
+            msg["target_id"] = targetId;
+            msg["enabled"] = false;
+            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+        }
         
         QMessageBox::warning(this, QStringLiteral("请求失败"), 
             QStringLiteral("无法连接到目标用户 %1: %2").arg(targetId, message));
@@ -2335,12 +2359,35 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_audioOnlyTargetId.clear();
             }
 
+            if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                QJsonObject msg;
+                msg["type"] = "viewer_mic_state";
+                msg["viewer_id"] = getDeviceId();
+                msg["target_id"] = targetId;
+                msg["enabled"] = false;
+                msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+            }
+
             QMessageBox msgBox(this);
             msgBox.setIcon(QMessageBox::Information);
             msgBox.setWindowTitle(QStringLiteral("观看被拒绝"));
             msgBox.setText(QStringLiteral("对方拒绝了观看请求"));
             msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
             msgBox.exec();
+        }
+    } else if (type == "viewer_mic_state") {
+        QString viewerId = obj.value("viewer_id").toString();
+        QString targetId = obj.value("target_id").toString();
+        const bool enabled = obj.value("enabled").toBool(false);
+        if (!targetId.isEmpty() && targetId != getDeviceId()) {
+            return;
+        }
+        if (viewerId.isEmpty()) {
+            return;
+        }
+        if (m_transparentImageList) {
+            m_transparentImageList->setViewerMicState(viewerId, enabled);
         }
     } else if (type == "viewer_exit" || type == "viewer_exited" || type == "viewer_left" || type == "stop_streaming") {
         // 处理观众退出或停止观看的通知
@@ -2360,21 +2407,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (viewerId.isEmpty()) {
             return;
         }
-        
-        // [Fix] Remove ONLY the specific viewer
-        bool hasViewers = false;
         if (m_transparentImageList) {
             m_transparentImageList->removeViewer(viewerId);
-            if (m_transparentImageList->getViewerCount() > 0) {
-                hasViewers = true;
-            }
-        }
-
-        // Only stop streaming if NO viewers remain
-        if (m_isStreaming && !hasViewers) {
-            // qInfo() << "Received stop command (" << type << ") from viewer" << viewerId;
-            // 停止推流（这也将关闭灵动岛）
-            stopStreaming();
         }
     } else if (type == "kick_viewer") {
         QString viewerId = obj["viewer_id"].toString();
@@ -2762,6 +2796,20 @@ void MainWindow::onMicToggleRequested(bool enabled)
     }
     if (m_transparentImageList) {
         m_transparentImageList->setGlobalMicCheckedSilently(enabled);
+    }
+    {
+        QString targetId = m_currentTargetId;
+        if (targetId.isEmpty()) targetId = m_pendingTalkTargetId;
+        if (targetId.isEmpty()) targetId = m_audioOnlyTargetId;
+        if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+            QJsonObject msg;
+            msg["type"] = "viewer_mic_state";
+            msg["viewer_id"] = getDeviceId();
+            msg["target_id"] = targetId;
+            msg["enabled"] = enabled;
+            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+        }
     }
     if (m_isStreaming && m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
         const QString cmd = QString("CMD_AUDIO_TOGGLE:%1").arg(enabled ? 1 : 0);

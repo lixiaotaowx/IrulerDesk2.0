@@ -1970,7 +1970,6 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     mic->setIconSize(QSize(18, 18));
     mic->setFlat(true);
     mic->setStyleSheet("border: none; background: transparent;");
-    mic->setToolTip("麦克风");
     mic->installEventFilter(this);
     mic->setProperty("isOn", initialMic);
 
@@ -1982,10 +1981,6 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     m_viewerList->setItemWidget(item, w);
     m_viewerItems.insert(id, item);
     m_viewerMicButtons.insert(id, mic);
-    if (id == m_myStreamId) {
-        removeBtn->setEnabled(false);
-        mic->setEnabled(false);
-    }
 }
 
 void NewUiWindow::setViewerMicState(const QString &viewerId, bool enabled)

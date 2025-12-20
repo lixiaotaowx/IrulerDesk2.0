@@ -89,6 +89,7 @@ signals:
     void audioToggleRequested(bool enabled);
     void audioGainRequested(int percent);
     void viewerAudioOpusReceived(const QString &viewerId, const QByteArray &opusData, int sampleRate, int channels, int frameSamples, qint64 timestamp);
+    void viewerMicStateReceived(const QString &viewerId, bool enabled);
     void viewerNameChanged(const QString &name);
     void viewerCursorReceived(const QString &viewerId, int x, int y, const QString &viewerName);
     void viewerNameUpdateReceived(const QString &viewerId, const QString &viewerName);

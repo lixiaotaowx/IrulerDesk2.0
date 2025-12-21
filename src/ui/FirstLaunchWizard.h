@@ -6,11 +6,9 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QButtonGroup>
-#include <QRadioButton>
 #include <QScrollArea>
 #include <QList>
 #include <QScreen>
@@ -23,7 +21,6 @@ class FirstLaunchWizard : public QDialog {
 public:
     explicit FirstLaunchWizard(QWidget* parent = nullptr);
     QString userName() const;
-    int iconId() const;
     int screenIndex() const;
     bool exitRequested() const;
 protected:
@@ -33,22 +30,15 @@ private:
     void setupStyle();
     void buildPages();
     void buildUserPage();
-    void buildAvatarPage();
     void buildScreenPage();
-    void selectAvatar(int id);
     void selectScreen(int idx);
     void updateNav();
 
     QStackedWidget* m_stack = nullptr;
     QWidget* m_userPage = nullptr;
-    QWidget* m_avatarPage = nullptr;
     QWidget* m_screenPage = nullptr;
 
     QLineEdit* m_nameEdit = nullptr;
-    QGridLayout* m_avatarGrid = nullptr;
-    QList<QAbstractButton*> m_avatarButtons;
-    QButtonGroup* m_avatarGroup = nullptr;
-    int m_selectedIconId = -1;
 
     QHBoxLayout* m_screenRow = nullptr;
     QList<QAbstractButton*> m_screenButtons;

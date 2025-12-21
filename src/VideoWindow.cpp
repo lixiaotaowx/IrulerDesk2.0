@@ -42,7 +42,7 @@ VideoWindow::VideoWindow(QWidget *parent)
     setupUI();
     
     // 设置窗口属性
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setAttribute(Qt::WA_TranslucentBackground);
     
     // 设置16:9比例的视频内容区域尺寸（标题栏高度额外计算）

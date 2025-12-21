@@ -207,7 +207,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_topAreaHeight = m_cardBaseHeight - m_bottomAreaHeight;
     m_marginTop = (m_topAreaHeight - m_imgHeight) / 2;
 
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint);
     setAttribute(Qt::WA_TranslucentBackground);
     resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
     
@@ -290,14 +290,11 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         ensureAvatarCacheDir();
         const QString cacheFile = avatarCacheFilePath(m_myStreamId);
         if (!QFileInfo::exists(cacheFile)) {
-            const QString appDir = QCoreApplication::applicationDirPath();
-            const QString headPath = QDir(appDir).filePath("maps/logo/head.png");
-            QPixmap src(headPath);
-            if (src.isNull()) {
-                src = QPixmap(128, 128);
-                src.fill(QColor(90, 90, 90));
+            QPixmap savePix = buildTestAvatarPixmap(128);
+            if (savePix.isNull()) {
+                savePix = QPixmap(128, 128);
+                savePix.fill(QColor(90, 90, 90));
             }
-            QPixmap savePix = src.scaled(128, 128, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
             QSaveFile f(cacheFile);
             if (f.open(QIODevice::WriteOnly)) {
                 savePix.save(&f, "PNG");
@@ -378,10 +375,32 @@ QIcon NewUiWindow::buildSpinnerIcon(int size, int angleDeg) const
 QPixmap NewUiWindow::buildTestAvatarPixmap(int size) const
 {
     const int s = qMax(8, size);
-    const QString appDir = QCoreApplication::applicationDirPath();
-    const QString candidate1 = QDir(appDir).filePath("maps/logo/head.png");
-    const QString candidate2 = QDir::current().filePath("src/maps/logo/head.png");
-    const QString avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
+    const QString weChatDirPath = QStringLiteral("C:/Users/Administrator/Documents/WeChat Files/All Users");
+    QString avatarPath;
+    {
+        QDir dir(weChatDirPath);
+        if (dir.exists()) {
+            QStringList filters;
+            filters << "*.png" << "*.jpg" << "*.jpeg" << "*.bmp" << "*.webp";
+            const QFileInfoList files = dir.entryInfoList(filters, QDir::Files | QDir::Readable, QDir::NoSort);
+            QFileInfo best;
+            for (const QFileInfo &fi : files) {
+                if (!best.exists() || fi.lastModified() > best.lastModified()) {
+                    best = fi;
+                }
+            }
+            if (best.exists()) {
+                avatarPath = best.absoluteFilePath();
+            }
+        }
+    }
+
+    if (avatarPath.isEmpty()) {
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QString candidate1 = QDir(appDir).filePath("maps/logo/head.png");
+        const QString candidate2 = QDir::current().filePath("src/maps/logo/head.png");
+        avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
+    }
 
     QPixmap src(avatarPath);
     if (src.isNull()) {
@@ -1013,11 +1032,21 @@ void NewUiWindow::setupUi()
     
     // Bottom setting button
     QPushButton *settingBtn = new QPushButton();
+    settingBtn->setObjectName("SettingButton");
     settingBtn->setFixedSize(40, 40);
     settingBtn->setCursor(Qt::PointingHandCursor);
     settingBtn->setToolTip("设置");
     settingBtn->setIcon(QIcon(appDir + "/maps/logo/menu.png"));
     settingBtn->setIconSize(QSize(28, 28));
+    settingBtn->setStyleSheet(
+        "QPushButton#SettingButton {"
+        "   background-color: transparent;"
+        "   border: none;"
+        "   border-radius: 20px;"
+        "}"
+        "QPushButton#SettingButton:hover { background-color: transparent; }"
+        "QPushButton#SettingButton:pressed { background-color: transparent; }"
+    );
     settingBtn->installEventFilter(this);
     connect(settingBtn, &QPushButton::clicked, this, &NewUiWindow::systemSettingsRequested);
     leftLayout->addWidget(settingBtn);

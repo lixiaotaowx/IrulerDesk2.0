@@ -1,8 +1,6 @@
 #include "FirstLaunchWizard.h"
-#include <QCoreApplication>
 #include <QStyle>
 #include <QMessageBox>
-#include <QRandomGenerator>
 
 FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
     : QDialog(parent)
@@ -44,15 +42,10 @@ FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
     connect(m_finishBtn, &QPushButton::clicked, this, [this]() {
         QString n = m_nameEdit ? m_nameEdit->text().trimmed() : QString();
         if (n.isEmpty()) return;
-        if (m_selectedIconId <= 0) m_selectedIconId = 3;
         if (m_selectedScreenIndex < 0) m_selectedScreenIndex = 0;
         accept();
     });
     connect(m_skipBtn, &QPushButton::clicked, this, [this]() {
-        // 如果当前未选择有效头像（或者为了确保随机性），随机分配一个
-        if (m_selectedIconId < 3 || m_selectedIconId > 21) {
-            m_selectedIconId = QRandomGenerator::global()->bounded(3, 22);
-        }
         QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("可后期系统设置"));
         accept();
     });
@@ -60,7 +53,6 @@ FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
 }
 
 QString FirstLaunchWizard::userName() const { return m_nameEdit ? m_nameEdit->text().trimmed() : QString(); }
-int FirstLaunchWizard::iconId() const { return m_selectedIconId; }
 int FirstLaunchWizard::screenIndex() const { return m_selectedScreenIndex; }
 bool FirstLaunchWizard::exitRequested() const { return m_exitRequested; }
 
@@ -77,16 +69,12 @@ void FirstLaunchWizard::setupStyle()
         "QAbstractButton#screen { border: 2px solid #333; border-radius: 8px; background-color: #222; }"
         "QAbstractButton#screen:hover { border-color: #777; }"
         "QAbstractButton#screen:checked { border-color: #4caf50; background-color: #2a3b2f; }"
-        "QAbstractButton#avatar { border: 2px solid transparent; border-radius: 8px; background-color: #3a3a3a; }"
-        "QAbstractButton#avatar:hover { border-color: #4caf50; background-color: #4a4a4a; }"
-        "QAbstractButton#avatar:checked { border: 3px solid #4caf50; background-color: #4a4a4a; }"
     );
 }
 
 void FirstLaunchWizard::buildPages()
 {
     buildUserPage();
-    buildAvatarPage();
     buildScreenPage();
 }
 
@@ -103,54 +91,6 @@ void FirstLaunchWizard::buildUserPage()
     box->addWidget(m_nameEdit);
     box->addStretch();
     m_userPage = page;
-    m_stack->addWidget(page);
-}
-
-void FirstLaunchWizard::buildAvatarPage()
-{
-    QWidget* page = new QWidget(this);
-    QVBoxLayout* box = new QVBoxLayout(page);
-    box->setContentsMargins(12, 12, 12, 12);
-    box->setSpacing(12);
-    QLabel* t = new QLabel(QStringLiteral("选择头像"), page);
-    QFont tf = t->font(); tf.setPointSize(14); tf.setBold(true); t->setFont(tf);
-    box->addWidget(t);
-    QWidget* gridWidget = new QWidget(page);
-    m_avatarGrid = new QGridLayout(gridWidget);
-    m_avatarGrid->setSpacing(15);
-    m_avatarGrid->setContentsMargins(0, 0, 0, 0);
-    box->addWidget(gridWidget);
-    m_avatarGroup = new QButtonGroup(this);
-    m_avatarGroup->setExclusive(true);
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString mapsDir = QString("%1/maps/icon").arg(appDir);
-    int r = 0, c = 0;
-    for (int i = 3; i <= 21; ++i) {
-        QString imagePath = QString("%1/%2.png").arg(mapsDir, QString::number(i));
-        QPixmap pix(imagePath);
-        QPushButton* b = new QPushButton(gridWidget);
-        b->setObjectName("avatar");
-        b->setCheckable(true);
-        b->setFixedSize(80, 80);
-        if (!pix.isNull()) {
-            b->setIcon(QIcon(pix));
-            b->setIconSize(QSize(72, 72));
-        } else {
-            b->setText(QString::number(i));
-        }
-        b->setProperty("iconId", i);
-        m_avatarGrid->addWidget(b, r, c);
-        m_avatarGroup->addButton(b, i);
-        m_avatarButtons.append(b);
-        connect(b, &QPushButton::clicked, this, [this, i]() { selectAvatar(i); });
-        ++c; if (c >= 4) { c = 0; ++r; }
-    }
-    if (!m_avatarButtons.isEmpty()) {
-        // 随机选择一个默认头像，避免都使用同一个
-        int randomId = QRandomGenerator::global()->bounded(3, 22); // 3 to 21
-        selectAvatar(randomId);
-    }
-    m_avatarPage = page;
     m_stack->addWidget(page);
 }
 
@@ -196,15 +136,6 @@ void FirstLaunchWizard::buildScreenPage()
     box->addWidget(sa, 1);
     m_screenPage = page;
     m_stack->addWidget(page);
-}
-
-void FirstLaunchWizard::selectAvatar(int id)
-{
-    m_selectedIconId = id;
-    for (auto* b : m_avatarButtons) {
-        bool on = b->property("iconId").toInt() == id;
-        b->setChecked(on);
-    }
 }
 
 void FirstLaunchWizard::selectScreen(int idx)

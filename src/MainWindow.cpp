@@ -92,7 +92,6 @@ MainWindow::MainWindow(QWidget *parent)
             if (w.exec() == QDialog::Accepted) {
                 QString n = w.userName().trimmed();
                 if (!n.isEmpty()) { saveUserNameToConfig(n); m_userName = n; }
-                int iid = w.iconId(); if (iid > 0) saveIconIdToConfig(iid);
                 int si = w.screenIndex(); if (si >= 0) saveScreenIndexToConfig(si);
             }
         }
@@ -1713,8 +1712,6 @@ void MainWindow::initializeLoginSystem()
                 saveUserNameToConfig(n);
                 m_userName = n;
             }
-            int iid = w.iconId();
-            if (iid > 0) saveIconIdToConfig(iid);
             int si = w.screenIndex();
             if (si >= 0) saveScreenIndexToConfig(si);
         }

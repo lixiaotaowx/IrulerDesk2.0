@@ -634,6 +634,7 @@ void MainWindow::setupUI()
     
     // 设置当前用户信息
     m_transparentImageList->setMyStreamId(getDeviceId(), m_userName.isEmpty() ? "Me" : m_userName);
+    m_transparentImageList->setCaptureScreenIndex(loadScreenIndexFromConfig());
     
     // 连接观看请求信号
     connect(m_transparentImageList, &NewUiWindow::startWatchingRequested,
@@ -2851,6 +2852,10 @@ void MainWindow::onManualApprovalEnabledChanged(bool enabled)
 
 void MainWindow::onScreenSelected(int index)
 {
+    if (m_transparentImageList) {
+        m_transparentImageList->setCaptureScreenIndex(index);
+    }
+
     // [New] Direct control of CaptureProcess when streaming (align with consumer right-click behavior)
     if (m_isStreaming && m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
         QString cmd = QString("CMD_SWITCH_SCREEN:%1").arg(index);

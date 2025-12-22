@@ -24,6 +24,7 @@ signals:
     void errorOccurred(const QString &errorMsg);
     void logMessage(const QString &msg);
     void frameReceived(const QPixmap &frame);
+    void startStreamingRequested();
 
 private slots:
     void onConnected();

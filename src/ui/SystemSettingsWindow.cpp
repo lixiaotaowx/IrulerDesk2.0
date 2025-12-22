@@ -10,6 +10,7 @@
 #include <QScrollArea>
 #include <QCoreApplication>
 #include <QCheckBox>
+#include <QPainter>
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     : QDialog(parent), m_list(new QListWidget(this))
@@ -36,7 +37,7 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
         "QLineEdit { background-color: rgba(0, 0, 0, 18); color: #f0f0f0; border: 1px solid rgba(255, 255, 255, 14); border-radius: 12px; padding: 8px 10px; }"
         "QLineEdit:focus { border: 1px solid #ff6600; }"
         "QListWidget { background-color: rgba(0, 0, 0, 14); color: #e0e0e0; border: 1px solid rgba(255, 255, 255, 10); border-radius: 16px; padding: 6px; }"
-        "QListWidget::item { height: 36px; border-radius: 12px; padding-left: 10px; }"
+        "QListWidget::item { border-radius: 16px; padding: 8px; }"
         "QListWidget::item:hover { background-color: rgba(255, 255, 255, 25); }"
         "QListWidget::item:selected { background-color: rgba(255, 102, 0, 70); color: #ffffff; }"
     );
@@ -99,6 +100,20 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     screenBox->addWidget(tip);
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
     m_list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_list->setViewMode(QListView::IconMode);
+    m_list->setResizeMode(QListView::Adjust);
+    m_list->setMovement(QListView::Static);
+    m_list->setFlow(QListView::LeftToRight);
+    m_list->setWrapping(false);
+    m_list->setWordWrap(true);
+    m_list->setIconSize(QSize(200, 112));
+    m_list->setGridSize(QSize(220, 160));
+    m_list->setSpacing(10);
+    m_list->setTextElideMode(Qt::ElideNone);
+    m_list->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_list->setFixedHeight(170);
     screenBox->addWidget(m_list, 1);
     layout->addWidget(screenCard, 1);
 
@@ -168,15 +183,23 @@ void SystemSettingsWindow::populateScreens()
     m_list->clear();
     for (int i = 0; i < screens.size(); ++i) {
         QScreen* s = screens[i];
-        QString name = s->name();
-        QSize size = s->size();
-        QRect geom = s->geometry();
-        QString text = QString("屏幕 %1 - %2 (%3x%4 @%5,%6)")
-                           .arg(i)
-                           .arg(name)
-                           .arg(size.width()).arg(size.height())
-                           .arg(geom.x()).arg(geom.y());
-        auto* item = new QListWidgetItem(text, m_list);
+        QPixmap pix = s ? s->grabWindow(0) : QPixmap();
+        if (pix.isNull()) {
+            pix = QPixmap(200, 112);
+            pix.fill(QColor(20, 20, 20));
+            QPainter p(&pix);
+            p.setRenderHint(QPainter::Antialiasing, true);
+            p.setPen(QColor(230, 230, 230, 180));
+            p.drawText(pix.rect().adjusted(10, 10, -10, -10), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, s ? s->name() : QStringLiteral("Screen"));
+        }
+
+        QPixmap scaled = pix.scaled(200, 112, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QString text = QString("%1\n%2x%3")
+                           .arg(s ? s->name() : QStringLiteral("Screen"))
+                           .arg(s ? s->size().width() : 0)
+                           .arg(s ? s->size().height() : 0);
+        auto* item = new QListWidgetItem(QIcon(scaled), text);
+        item->setTextAlignment(Qt::AlignLeft | Qt::AlignTop);
         item->setData(Qt::UserRole, i);
         m_list->addItem(item);
     }

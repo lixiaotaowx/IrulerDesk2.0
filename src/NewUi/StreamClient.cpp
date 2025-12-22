@@ -1,6 +1,8 @@
 #include "StreamClient.h"
 #include <QBuffer>
 #include <QDateTime>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 StreamClient::StreamClient(QObject *parent)
     : QObject(parent)
@@ -86,7 +88,17 @@ void StreamClient::onDisconnected()
 
 void StreamClient::onTextMessageReceived(const QString &message)
 {
-    Q_UNUSED(message);
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return;
+    }
+
+    const QJsonObject obj = doc.object();
+    const QString type = obj.value("type").toString();
+    if (type == QStringLiteral("start_streaming")) {
+        emit startStreamingRequested();
+    }
 }
 
 void StreamClient::onBinaryMessageReceived(const QByteArray &message)

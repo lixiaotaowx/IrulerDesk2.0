@@ -40,6 +40,7 @@ private slots:
 
 public:
     void setMyStreamId(const QString &id, const QString &name = QString());
+    void setCaptureScreenIndex(int index);
     void setTalkPending(const QString &userId, bool pending);
     void setTalkConnected(const QString &userId, bool connected);
     void setViewerMicState(const QString &viewerId, bool enabled);
@@ -81,6 +82,7 @@ private:
     void updateListWidget(const QJsonArray &users);
     QIcon buildSpinnerIcon(int size, int angleDeg) const;
     QPixmap buildTestAvatarPixmap(int size) const;
+    QPixmap buildHeadAvatarPixmap(int size) const;
     void pickAndApplyLocalAvatar();
     QString avatarCacheDirPath() const;
     QString avatarCacheFilePath(const QString &userId) const;
@@ -149,4 +151,5 @@ private:
     int m_marginX;
     int m_topAreaHeight;
     int m_marginTop;
+    int m_captureScreenIndex = -1;
 };

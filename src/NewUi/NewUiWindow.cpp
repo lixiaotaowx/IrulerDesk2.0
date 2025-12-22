@@ -96,7 +96,7 @@ public:
         setWindowFlag(Qt::ToolTip, true);
 
         auto *layout = new QVBoxLayout(this);
-        layout->setContentsMargins(kShadowPad + 14, kShadowPad + 10, kShadowPad + 14, kShadowPad + 10);
+        layout->setContentsMargins(14, 10, 14, 10);
         layout->setSpacing(0);
 
         m_label = new QLabel(this);
@@ -136,31 +136,19 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        const QRectF bubbleRect = QRectF(rect()).adjusted(kShadowPad, kShadowPad, -kShadowPad, -kShadowPad);
+        const QRectF bubbleRect = QRectF(rect());
         const qreal radius = 12.0;
 
         QPainterPath bubblePath;
         bubblePath.addRoundedRect(bubbleRect, radius, radius);
 
-        for (int i = kShadowPad; i >= 1; --i) {
-            const qreal t = static_cast<qreal>(i) / static_cast<qreal>(kShadowPad);
-            const int a = qBound(0, static_cast<int>(110 * t * t), 255);
-            QPainterPath outer;
-            outer.addRoundedRect(bubbleRect.adjusted(-i, -i, i, i), radius + i, radius + i);
-            p.fillPath(outer.subtracted(bubblePath), QColor(0, 0, 0, a));
-        }
-
-        QLinearGradient g(bubbleRect.topLeft(), bubbleRect.bottomLeft());
-        g.setColorAt(0.0, QColor(70, 70, 70, 235));
-        g.setColorAt(1.0, QColor(35, 35, 35, 235));
-
-        p.fillPath(bubblePath, g);
-        p.setPen(QPen(QColor(255, 255, 255, 35), 1));
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(45, 45, 45, 235));
         p.drawPath(bubblePath);
     }
 
 private:
-    static constexpr int kShadowPad = 16;
+    static constexpr int kShadowPad = 0;
     QLabel *m_label = nullptr;
 };
 
@@ -227,6 +215,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 
     m_avatarPublisher = new StreamClient(this);
     connect(m_avatarPublisher, &StreamClient::connected, this, &NewUiWindow::publishLocalAvatarOnce);
+    connect(m_avatarPublisher, &StreamClient::startStreamingRequested, this, &NewUiWindow::publishLocalAvatarOnce);
 
     m_avatarPublishTimer = new QTimer(this);
     connect(m_avatarPublishTimer, &QTimer::timeout, this, &NewUiWindow::publishLocalAvatarOnce);
@@ -262,6 +251,14 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         QString displayName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
         QString fullText = displayName; // Only display name
         m_localNameLabel->setText(fullText);
+    }
+    if (m_videoLabel) {
+        m_videoLabel->setToolTip(QStringLiteral("自己"));
+        m_videoLabel->installEventFilter(this);
+        if (auto *pw = m_videoLabel->parentWidget()) {
+            pw->setToolTip(QStringLiteral("自己"));
+            pw->installEventFilter(this);
+        }
     }
 
     // [Interaction Fix] Update local card userId property for event filter
@@ -327,6 +324,14 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         m_loginClient->connectToServer(QUrl(loginUrl));
     }
     */
+}
+
+void NewUiWindow::setCaptureScreenIndex(int index)
+{
+    m_captureScreenIndex = index;
+    if (m_videoLabel) {
+        onTimerTimeout();
+    }
 }
 
 NewUiWindow::~NewUiWindow()
@@ -401,6 +406,21 @@ QPixmap NewUiWindow::buildTestAvatarPixmap(int size) const
         const QString candidate2 = QDir::current().filePath("src/maps/logo/head.png");
         avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
     }
+
+    QPixmap src(avatarPath);
+    if (src.isNull()) {
+        return QPixmap();
+    }
+    return makeCircularPixmap(src, s);
+}
+
+QPixmap NewUiWindow::buildHeadAvatarPixmap(int size) const
+{
+    const int s = qMax(8, size);
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString candidate1 = QDir(appDir).filePath("maps/logo/head.png");
+    const QString candidate2 = QDir::current().filePath("src/maps/logo/head.png");
+    const QString avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
 
     QPixmap src(avatarPath);
     if (src.isNull()) {
@@ -719,8 +739,20 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         if (id == m_myStreamId) continue;
 
         if (m_remoteStreams.contains(id)) {
-            // Already exists, maybe update name?
-            // For now, do nothing or update title label if we tracked it
+            QLabel *imgLabel = m_userLabels.value(id, nullptr);
+            if (imgLabel) {
+                imgLabel->setToolTip(name.isEmpty() ? id : name);
+            }
+            QListWidgetItem *existingItem = m_userItems.value(id, nullptr);
+            if (existingItem && m_listWidget) {
+                QWidget *existingWidget = m_listWidget->itemWidget(existingItem);
+                if (existingWidget) {
+                    QLabel *existingNameLabel = existingWidget->findChild<QLabel*>("UserNameLabel");
+                    if (existingNameLabel) {
+                        existingNameLabel->setText(name.isEmpty() ? id : name);
+                    }
+                }
+            }
             continue;
         }
 
@@ -768,10 +800,13 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
 
         // Image Label
         QLabel *imgLabel = new QLabel();
+        imgLabel->setObjectName("StreamImageLabel");
         imgLabel->setFixedSize(m_imgWidth, m_imgHeight); 
         imgLabel->setAlignment(Qt::AlignCenter);
         imgLabel->setText("Loading Stream...");
         imgLabel->setStyleSheet("color: #888; font-size: 10px;");
+        imgLabel->setToolTip(name.isEmpty() ? id : name);
+        imgLabel->installEventFilter(this);
 
         // Bottom Controls Layout
         QHBoxLayout *bottomLayout = new QHBoxLayout();
@@ -796,6 +831,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         
         // Text Label (Middle)
         QLabel *txtLabel = new QLabel(name.isEmpty() ? id : name);
+        txtLabel->setObjectName("UserNameLabel");
         txtLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
         txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
         txtLabel->setAlignment(Qt::AlignCenter);
@@ -1418,6 +1454,28 @@ void NewUiWindow::setupUi()
         }
     });
 
+    connect(m_listWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+        if (!m_farRightPanel || !m_farRightPanel->isVisible() || !item) {
+            return;
+        }
+
+        QString userId = item->data(Qt::UserRole).toString();
+        if (userId.isEmpty()) {
+            if (QWidget *iw = m_listWidget->itemWidget(item)) {
+                if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                    userId = card->property("userId").toString();
+                } else {
+                    userId = iw->property("userId").toString();
+                }
+            }
+        }
+
+        if (userId.isEmpty() || userId == m_myStreamId) {
+            return;
+        }
+        m_farRightPanel->setVisible(false);
+    });
+
     // Create Local User Item (Index 0)
     {
         QListWidgetItem *item = new QListWidgetItem(m_listWidget);
@@ -1907,6 +1965,16 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (event->type() == QEvent::MouseButtonRelease && watched != m_localCard && m_farRightPanel && m_farRightPanel->isVisible()) {
+        auto *me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton) {
+            const QString userId = watched->property("userId").toString();
+            if (!userId.isEmpty() && userId != m_myStreamId) {
+                m_farRightPanel->setVisible(false);
+            }
+        }
+    }
+
     // Handle single click on local card to toggle "My Room" panel
     if (watched == m_localCard && event->type() == QEvent::MouseButtonRelease) {
         auto *me = static_cast<QMouseEvent*>(event);
@@ -1926,6 +1994,9 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
         if (!userId.isEmpty()) {
             if (watched == m_localCard) {
                 return true; // Consume double click on self without action
+            }
+            if (m_farRightPanel) {
+                m_farRightPanel->setVisible(false);
             }
             emit startWatchingRequested(userId);
             return true; // Event handled
@@ -2137,7 +2208,14 @@ void NewUiWindow::onTimerTimeout()
     if (!m_videoLabel) return;
 
     // 1. Capture Screen
-    QScreen *screen = QGuiApplication::primaryScreen();
+    QScreen *screen = nullptr;
+    const auto screens = QGuiApplication::screens();
+    if (m_captureScreenIndex >= 0 && m_captureScreenIndex < screens.size()) {
+        screen = screens[m_captureScreenIndex];
+    }
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
     if (!screen) return;
     QPixmap originalPixmap = screen->grabWindow(0);
     
@@ -2216,6 +2294,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     if (m_userItems.contains(userId)) return; 
 
     QString appDir = QCoreApplication::applicationDirPath();
+    const QString displayName = userName.isEmpty() ? userId : userName;
 
     // Create List Item
     QListWidgetItem *item = new QListWidgetItem(m_listWidget);
@@ -2235,6 +2314,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     // [Interaction Fix] Install event filter to capture double clicks on the card
     card->setProperty("userId", userId);
     card->installEventFilter(this);
+    card->setToolTip(displayName);
 
     card->setStyleSheet(
         "#CardFrame {"
@@ -2266,6 +2346,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
     QWidget *imageContainer = new QWidget();
     imageContainer->setFixedSize(m_imgWidth, m_imgHeight);
+    imageContainer->setToolTip(displayName);
+    imageContainer->installEventFilter(this);
     imgLabel->setParent(imageContainer);
     imgLabel->move(0, 0);
 
@@ -2279,7 +2361,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
         "   border: none;"
         "}"
     );
-    QPixmap avatarPix = buildTestAvatarPixmap(30);
+    QPixmap avatarPix = buildHeadAvatarPixmap(30);
     if (!avatarPix.isNull()) {
         avatarLabel->setPixmap(avatarPix);
     }
@@ -2303,7 +2385,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     });
 
     // Name Label
-    QLabel *txtLabel = new QLabel(userName.isEmpty() ? userId : userName);
+    QLabel *txtLabel = new QLabel(displayName);
     txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
     txtLabel->setAlignment(Qt::AlignCenter);
 
@@ -2438,8 +2520,21 @@ void NewUiWindow::updateUserAvatar(const QString &userId, int iconId)
         return;
     }
 
+    ensureAvatarCacheDir();
+    QPixmap cached(avatarCacheFilePath(userId));
+    if (!cached.isNull()) {
+        setAvatarLabelPixmap(label, cached);
+        return;
+    }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (!label->pixmap(Qt::ReturnByValue).isNull()) {
+        return;
+    }
+#endif
+
     const int s = qMin(label->width(), label->height());
-    QPixmap avatarPix = buildTestAvatarPixmap(s);
+    QPixmap avatarPix = buildHeadAvatarPixmap(s);
     if (!avatarPix.isNull()) {
         label->setPixmap(avatarPix);
     }

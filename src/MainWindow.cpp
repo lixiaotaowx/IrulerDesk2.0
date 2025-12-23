@@ -22,6 +22,9 @@
 #include <QNetworkInterface>
 #include <QHostInfo>
 #include <QCryptographicHash>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QCursor>
 #include <cstdlib>
 #include <ctime>
 
@@ -1811,16 +1814,34 @@ void MainWindow::sendHeartbeat()
 void MainWindow::updateUserList(const QJsonArray& users)
 {
     // 1. 更新服务器在线用户蓄水池，并构建新用户ID集合
+    const QSet<QString> previousUserIds = m_serverOnlineUsers;
     m_serverOnlineUsers.clear();
     QSet<QString> newUserIds;
+    QHash<QString, QString> newUserNameById;
     for (int i = 0; i < users.size(); ++i) {
         QJsonObject userObj = users[i].toObject();
         if (!userObj.isEmpty()) {
             QString uid = userObj["id"].toString();
+            if (!uid.isEmpty()) {
+                newUserNameById.insert(uid, userObj["name"].toString());
+            }
             m_serverOnlineUsers.insert(uid);
             newUserIds.insert(uid);
         }
     }
+
+    const bool toastEnabled = loadOnlineNotificationEnabledFromConfig();
+    const bool shouldToastThisRound = toastEnabled && m_userListInitialized;
+    if (shouldToastThisRound) {
+        QSet<QString> delta = newUserIds;
+        delta.subtract(previousUserIds);
+        for (const QString &uid : delta) {
+            if (uid.isEmpty() || uid == m_userId) continue;
+            const QString name = newUserNameById.value(uid);
+            showUserOnlineToast(QStringLiteral("%1已上线").arg(name.isEmpty() ? uid : name));
+        }
+    }
+    m_userListInitialized = true;
 
     // 2. 立即清理已离线的用户（不在新列表中的用户）
     // 这样可以消除下线通知的延迟，同时保留蓄水池作为清理僵尸用户的兜底机制
@@ -1925,6 +1946,71 @@ void MainWindow::updateUserList(const QJsonArray& users)
     }
 }
 
+void MainWindow::showUserOnlineToast(const QString& userName)
+{
+    QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
+    toast->setAttribute(Qt::WA_TranslucentBackground);
+    toast->setAttribute(Qt::WA_ShowWithoutActivating);
+    toast->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+
+    QWidget *body = new QWidget(toast);
+    body->setStyleSheet("background-color: rgba(59, 59, 59, 235); border: 1px solid rgba(255, 255, 255, 35); border-radius: 10px;");
+    QHBoxLayout *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(14, 10, 14, 10);
+    bodyLayout->setSpacing(0);
+
+    QLabel *label = new QLabel(userName, body);
+    label->setStyleSheet("color: #f4f4f4; font-size: 13px; background: transparent;");
+    bodyLayout->addWidget(label);
+
+    QVBoxLayout *root = new QVBoxLayout(toast);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->addWidget(body);
+
+    toast->adjustSize();
+    body->adjustSize();
+
+    m_onlineToasts.append(toast);
+
+    connect(toast, &QObject::destroyed, this, [this, toast]() {
+        m_onlineToasts.removeAll(toast);
+        repositionOnlineToasts();
+    });
+
+    repositionOnlineToasts();
+    toast->show();
+    toast->raise();
+
+    QTimer::singleShot(5000, toast, &QWidget::deleteLater);
+}
+
+void MainWindow::repositionOnlineToasts()
+{
+    QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (!screen) {
+        return;
+    }
+
+    const QRect avail = screen->availableGeometry();
+    const int rightMargin = 20;
+    const int bottomMargin = 20;
+    const int gap = 10;
+
+    int y = avail.bottom() - bottomMargin + 1;
+    for (int i = m_onlineToasts.size() - 1; i >= 0; --i) {
+        QWidget *toast = m_onlineToasts[i];
+        if (!toast) continue;
+        toast->adjustSize();
+        const int x = avail.right() - rightMargin - toast->width() + 1;
+        y -= toast->height();
+        toast->move(x, y);
+        y -= gap;
+    }
+}
+
 void MainWindow::onUserCleanupTimerTimeout()
 {
     // 遍历列表，移除不在蓄水池中的用户
@@ -1977,7 +2063,15 @@ void MainWindow::onLoginWebSocketDisconnected()
     // 断开连接时，清空在线用户蓄水池和桌面头像
     // 因为相对我而言，所有人都“掉线”了
     m_serverOnlineUsers.clear();
+    m_userListInitialized = false;
     m_transparentImageList->clearUserList();
+    const QList<QWidget*> toasts = m_onlineToasts;
+    for (QWidget *toast : toasts) {
+        if (toast) {
+            toast->deleteLater();
+        }
+    }
+    m_onlineToasts.clear();
 
     // 5秒后尝试重新连接 (如果定时器已在运行，start会重置它，避免重复)
     m_reconnectTimer->start(5000);
@@ -2391,6 +2485,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
         if (m_transparentImageList) {
             m_transparentImageList->setViewerMicState(viewerId, enabled);
+            m_transparentImageList->setTalkRemoteActive(viewerId, enabled);
         }
     } else if (type == "viewer_exit" || type == "viewer_exited" || type == "viewer_left" || type == "stop_streaming") {
         // 处理观众退出或停止观看的通知
@@ -2723,6 +2818,8 @@ void MainWindow::onSystemSettingsRequested()
                 this, &MainWindow::onUserNameChanged);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::manualApprovalEnabledChanged,
                 this, &MainWindow::onManualApprovalEnabledChanged);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::onlineNotificationEnabledChanged,
+                this, &MainWindow::onOnlineNotificationEnabledChanged);
     }
     const bool wasVisible = m_systemSettingsWindow->isVisible();
     const Qt::WindowFlags flags = m_systemSettingsWindow->windowFlags();
@@ -2848,6 +2945,11 @@ void MainWindow::onSpeakerToggleRequested(bool enabled)
 void MainWindow::onManualApprovalEnabledChanged(bool enabled)
 {
     saveManualApprovalEnabledToConfig(enabled);
+}
+
+void MainWindow::onOnlineNotificationEnabledChanged(bool enabled)
+{
+    saveOnlineNotificationEnabledToConfig(enabled);
 }
 
 void MainWindow::onScreenSelected(int index)
@@ -3217,6 +3319,53 @@ void MainWindow::saveManualApprovalEnabledToConfig(bool enabled)
         }
     }
     if (!replaced) configLines << QString("manual_approval_enabled=%1").arg(enabled ? "true" : "false");
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+bool MainWindow::loadOnlineNotificationEnabledFromConfig() const
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            const QString line = in.readLine();
+            if (line.startsWith("online_notification_enabled=")) {
+                const QString v = line.mid(QString("online_notification_enabled=").length()).trimmed();
+                configFile.close();
+                return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+            }
+        }
+        configFile.close();
+    }
+    return true;
+}
+
+void MainWindow::saveOnlineNotificationEnabledToConfig(bool enabled)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("online_notification_enabled=")) {
+            configLines[i] = QString("online_notification_enabled=%1").arg(enabled ? "true" : "false");
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) configLines << QString("online_notification_enabled=%1").arg(enabled ? "true" : "false");
+
     if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&configFile);
         for (const QString &line : configLines) out << line << "\n";

@@ -43,6 +43,7 @@ public:
     void setCaptureScreenIndex(int index);
     void setTalkPending(const QString &userId, bool pending);
     void setTalkConnected(const QString &userId, bool connected);
+    void setTalkRemoteActive(const QString &userId, bool active);
     void setViewerMicState(const QString &viewerId, bool enabled);
     void setGlobalMicCheckedSilently(bool enabled);
 
@@ -80,6 +81,7 @@ private:
     void showHomeContent();
     void updateTitleMaximizeButton();
     void updateListWidget(const QJsonArray &users);
+    void updateTalkOverlay(const QString &userId);
     QIcon buildSpinnerIcon(int size, int angleDeg) const;
     QPixmap buildTestAvatarPixmap(int size) const;
     QPixmap buildHeadAvatarPixmap(int size) const;
@@ -135,6 +137,7 @@ private:
     QMap<QString, QLabel*> m_userLabels;          // userId -> Image Label (for updating frame)
     QMap<QString, QLabel*> m_userAvatarLabels;    // userId -> Avatar Label (top-left overlay)
     QMap<QString, QPushButton*> m_talkButtons;    // userId -> Talk Button (end/get)
+    QMap<QString, QLabel*> m_talkOverlays;        // userId -> "通话中" overlay label
     QTimer *m_talkSpinnerTimer = nullptr;
     QMap<QString, int> m_talkSpinnerAngles;
 

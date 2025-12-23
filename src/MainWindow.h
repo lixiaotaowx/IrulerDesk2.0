@@ -22,6 +22,8 @@
 #include <QRegularExpression>
 #include <QLocalSocket>
 #include <QLocalServer>
+#include <QList>
+#include <QSet>
 
 // 前向声明
 class VideoWindow;
@@ -95,6 +97,7 @@ public slots:
     void onAudioOutputSelectionChanged(bool followSystem, const QString &deviceId);
     void onMicInputSelectionChanged(bool followSystem, const QString &deviceId);
     void onManualApprovalEnabledChanged(bool enabled);
+    void onOnlineNotificationEnabledChanged(bool enabled);
 private:
     void saveLocalQualityToConfig(const QString& quality);
     int loadOrGenerateRandomId();
@@ -126,6 +129,8 @@ private:
     void saveMicEnabledToConfig(bool enabled);
     bool loadManualApprovalEnabledFromConfig() const;
     void saveManualApprovalEnabledToConfig(bool enabled);
+    bool loadOnlineNotificationEnabledFromConfig() const;
+    void saveOnlineNotificationEnabledToConfig(bool enabled);
     
     // 登录系统相关方法
     void initializeLoginSystem();
@@ -136,6 +141,8 @@ private:
     void sendWatchRequest(const QString& targetDeviceId);
     void startVideoReceiving(const QString& targetDeviceId);
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
+    void showUserOnlineToast(const QString& userName);
+    void repositionOnlineToasts();
 
     // 显示更新日志
     void checkAndShowUpdateLog();
@@ -202,6 +209,8 @@ private:
     bool m_isLoggedIn;
     // 在线用户蓄水池
     QSet<QString> m_serverOnlineUsers;
+    bool m_userListInitialized = false;
+    QList<QWidget*> m_onlineToasts;
     QTimer *m_userCleanupTimer;
     QTimer *m_reconnectTimer; // 统一的重连定时器
     

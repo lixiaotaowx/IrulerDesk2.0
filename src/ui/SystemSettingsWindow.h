@@ -24,6 +24,7 @@ signals:
     void localQualitySelected(const QString& quality);
     void userNameChanged(const QString& name);
     void manualApprovalEnabledChanged(bool enabled);
+    void onlineNotificationEnabledChanged(bool enabled);
 
 public slots:
     void notifySwitchSucceeded();
@@ -33,6 +34,7 @@ private:
     void setupQualityControls();
     void setupUserNameControls();
     QFrame* setupManualApprovalControls();
+    QFrame* setupNotificationControls();
     QListWidget* m_list;
     QProgressDialog* m_progress = nullptr;
     // 质量选择控件
@@ -46,6 +48,7 @@ private:
     QLineEdit* m_userNameEdit = nullptr;
     QPushButton* m_userNameConfirmBtn = nullptr;
     class QCheckBox* m_manualApprovalCheck = nullptr;
+    class QCheckBox* m_onlineNotificationCheck = nullptr;
 };
 
 #endif // SYSTEMSETTINGSWINDOW_H

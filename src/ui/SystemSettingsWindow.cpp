@@ -133,6 +133,9 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     QFrame* manualCard = setupManualApprovalControls();
     layout->addWidget(manualCard);
 
+    QFrame* notifyCard = setupNotificationControls();
+    layout->addWidget(notifyCard);
+
     populateScreens();
 
     connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem* item){
@@ -318,6 +321,49 @@ QFrame* SystemSettingsWindow::setupManualApprovalControls()
 
     connect(m_manualApprovalCheck, &QCheckBox::toggled, this, [this](bool checked){
         emit manualApprovalEnabledChanged(checked);
+    });
+
+    return card;
+}
+
+QFrame* SystemSettingsWindow::setupNotificationControls()
+{
+    QFrame* card = new QFrame(this); card->setObjectName("card");
+    QVBoxLayout* box = new QVBoxLayout(card); box->setContentsMargins(12, 12, 12, 12); box->setSpacing(10);
+
+    QLabel* title = new QLabel(QStringLiteral("通知"), card);
+    title->setStyleSheet("QLabel { font-size: 13px; font-weight: 600; }");
+    box->addWidget(title);
+
+    QHBoxLayout* row = new QHBoxLayout();
+    QLabel* lbl = new QLabel(QStringLiteral("用户上线提醒"), card);
+    m_onlineNotificationCheck = new QCheckBox(card);
+    m_onlineNotificationCheck->setText(QString());
+    row->addWidget(lbl);
+    row->addWidget(m_onlineNotificationCheck);
+    row->addStretch();
+    box->addLayout(row);
+
+    m_onlineNotificationCheck->setChecked(true);
+
+    const QString configPath = QApplication::applicationDirPath() + "/config/app_config.txt";
+    QFile f(configPath);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            const QString line = in.readLine();
+            if (line.startsWith("online_notification_enabled=")) {
+                const QString v = line.mid(QString("online_notification_enabled=").length()).trimmed();
+                const bool enabled = v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+                m_onlineNotificationCheck->setChecked(enabled);
+                break;
+            }
+        }
+        f.close();
+    }
+
+    connect(m_onlineNotificationCheck, &QCheckBox::toggled, this, [this](bool checked){
+        emit onlineNotificationEnabledChanged(checked);
     });
 
     return card;

@@ -620,6 +620,7 @@ void NewUiWindow::setTalkPending(const QString &userId, bool pending)
             m_talkSpinnerTimer->start(60);
         }
         onTalkSpinnerTimeout();
+        updateTalkOverlay(userId);
         return;
     }
 
@@ -632,6 +633,7 @@ void NewUiWindow::setTalkPending(const QString &userId, bool pending)
     const bool isOn = btn->property("isOn").toBool();
     const QString iconName = isOn ? "get.png" : "end.png";
     btn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+    updateTalkOverlay(userId);
 }
 
 void NewUiWindow::setTalkConnected(const QString &userId, bool connected)
@@ -643,6 +645,78 @@ void NewUiWindow::setTalkConnected(const QString &userId, bool connected)
 
     btn->setProperty("isOn", connected);
     setTalkPending(userId, false);
+    updateTalkOverlay(userId);
+}
+
+void NewUiWindow::setTalkRemoteActive(const QString &userId, bool active)
+{
+    QPushButton *btn = m_talkButtons.value(userId, nullptr);
+    if (!btn) {
+        return;
+    }
+
+    btn->setProperty("remoteActive", active);
+    btn->setProperty("isOn", active);
+    setTalkPending(userId, false);
+    updateTalkOverlay(userId);
+}
+
+void NewUiWindow::updateTalkOverlay(const QString &userId)
+{
+    QLabel *overlay = m_talkOverlays.value(userId, nullptr);
+    if (!overlay) {
+        return;
+    }
+    QPushButton *btn = m_talkButtons.value(userId, nullptr);
+    if (!btn) {
+        overlay->setVisible(false);
+        return;
+    }
+    const bool pending = btn->property("isPending").toBool();
+    const bool on = btn->property("isOn").toBool();
+    const bool visible = (pending || on);
+    overlay->setVisible(visible);
+
+    if (m_listWidget) {
+        QListWidgetItem *item = m_userItems.value(userId, nullptr);
+        QWidget *w = item ? m_listWidget->itemWidget(item) : nullptr;
+        QFrame *card = w ? w->findChild<QFrame*>("CardFrame") : nullptr;
+        if (card) {
+            const bool selected = item && item->isSelected();
+            const bool talking = visible;
+            if (selected) {
+                card->setStyleSheet(
+                    "#CardFrame {"
+                    "   background-color: rgba(255, 102, 0, 40);"
+                    "   border: 1px solid #FF6600;"
+                    "   border-radius: 15px;"
+                    "}"
+                );
+            } else if (talking) {
+                card->setStyleSheet(
+                    "#CardFrame {"
+                    "   background-color: rgba(0, 200, 83, 55);"
+                    "   border: 1px solid #00C853;"
+                    "   border-radius: 15px;"
+                    "}"
+                    "#CardFrame:hover {"
+                    "   background-color: rgba(0, 200, 83, 70);"
+                    "}"
+                );
+            } else {
+                card->setStyleSheet(
+                    "#CardFrame {"
+                    "   background-color: #3b3b3b;"
+                    "   border-radius: 15px;"
+                    "   border: none;"
+                    "}"
+                    "#CardFrame:hover {"
+                    "   background-color: #444;"
+                    "}"
+                );
+            }
+        }
+    }
 }
 
 void NewUiWindow::onTalkSpinnerTimeout()
@@ -715,6 +789,9 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
 
         // Remove label reference
         m_userLabels.remove(id);
+        m_talkButtons.remove(id);
+        m_talkOverlays.remove(id);
+        m_talkSpinnerAngles.remove(id);
 
         // Remove list item
         QListWidgetItem *item = m_userItems.take(id);
@@ -808,6 +885,15 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         imgLabel->setToolTip(name.isEmpty() ? id : name);
         imgLabel->installEventFilter(this);
 
+        QLabel *talkOverlay = new QLabel(imgLabel);
+        talkOverlay->setText(QStringLiteral("通话中"));
+        talkOverlay->setAlignment(Qt::AlignCenter);
+        talkOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+        talkOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
+        talkOverlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-size: 34px; font-weight: bold; background-color: rgba(0, 200, 83, 90); border-radius: 8px;");
+        talkOverlay->setVisible(false);
+        m_talkOverlays.insert(id, talkOverlay);
+
         // Bottom Controls Layout
         QHBoxLayout *bottomLayout = new QHBoxLayout();
         // Zero side margins because parent cardLayout already provides MARGIN_X
@@ -841,6 +927,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         micBtn->setFixedSize(14, 14);
         micBtn->setCursor(Qt::PointingHandCursor);
         micBtn->setProperty("isOn", false);
+        micBtn->setProperty("remoteActive", false);
         micBtn->setFlat(true);
         micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
         micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
@@ -854,6 +941,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
             if (id == m_myStreamId) {
                 QString iconName = isOn ? "get.png" : "end.png";
                 micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+                updateTalkOverlay(id);
                 return;
             }
             if (isOn) {
@@ -1694,6 +1782,17 @@ void NewUiWindow::setupUi()
             if (w) {
                 QFrame *card = w->findChild<QFrame*>("CardFrame");
                 if (card) {
+                    QString userId = card->property("userId").toString();
+                    if (userId.isEmpty()) {
+                        userId = item->data(Qt::UserRole).toString();
+                    }
+                    bool talking = false;
+                    if (!userId.isEmpty()) {
+                        QPushButton *btn = m_talkButtons.value(userId, nullptr);
+                        if (btn) {
+                            talking = btn->property("isOn").toBool() || btn->property("isPending").toBool();
+                        }
+                    }
                     if (item->isSelected()) {
                         // Tech Orange Selection Style
                         card->setStyleSheet(
@@ -1701,6 +1800,17 @@ void NewUiWindow::setupUi()
                             "   background-color: rgba(255, 102, 0, 40);" // Semi-transparent orange tint
                             "   border: 1px solid #FF6600;" // Tech Orange border, 1px
                             "   border-radius: 15px;"
+                            "}"
+                        );
+                    } else if (talking) {
+                        card->setStyleSheet(
+                            "#CardFrame {"
+                            "   background-color: rgba(0, 200, 83, 55);"
+                            "   border: 1px solid #00C853;"
+                            "   border-radius: 15px;"
+                            "}"
+                            "#CardFrame:hover {"
+                            "   background-color: rgba(0, 200, 83, 70);"
                             "}"
                         );
                     } else {
@@ -2351,6 +2461,15 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     imgLabel->setParent(imageContainer);
     imgLabel->move(0, 0);
 
+    QLabel *talkOverlay = new QLabel(imageContainer);
+    talkOverlay->setText(QStringLiteral("通话中"));
+    talkOverlay->setAlignment(Qt::AlignCenter);
+    talkOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    talkOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
+    talkOverlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-size: 34px; font-weight: bold; background-color: rgba(0, 200, 83, 90); border-radius: 8px;");
+    talkOverlay->setVisible(false);
+    m_talkOverlays.insert(userId, talkOverlay);
+
     QLabel *avatarLabel = new QLabel(imageContainer);
     avatarLabel->setFixedSize(30, 30);
     avatarLabel->move(6, 6);
@@ -2394,6 +2513,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     micBtn->setFixedSize(14, 14);
     micBtn->setCursor(Qt::PointingHandCursor);
     micBtn->setProperty("isOn", false);
+    micBtn->setProperty("remoteActive", false);
     micBtn->setFlat(true);
     micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
     micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
@@ -2407,6 +2527,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
         if (userId == m_myStreamId) {
             QString iconName = isOn ? "get.png" : "end.png";
             micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+            updateTalkOverlay(userId);
             return;
         }
         if (isOn) {
@@ -2478,6 +2599,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 void NewUiWindow::removeUser(const QString &userId)
 {
     m_talkButtons.remove(userId);
+    m_talkOverlays.remove(userId);
+    m_talkSpinnerAngles.remove(userId);
 
     if (m_remoteStreams.contains(userId)) {
         StreamClient *client = m_remoteStreams.take(userId);

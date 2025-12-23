@@ -34,6 +34,8 @@ public:
     
     // 发送观看请求
     void sendWatchRequest(const QString &viewerId, const QString &targetId);
+
+    void setAudioOnly(bool audioOnly);
     
     // 设置会话信息（不发送网络请求，仅用于本地状态记录，如viewerId/targetId）
     // 用于在信令通道已经完成鉴权和同意流程后，初始化接收端状态
@@ -157,6 +159,7 @@ private:
     // 最近一次观看请求信息，用于重连后自动重发
     QString m_lastViewerId;
     QString m_lastTargetId;
+    bool m_lastWatchAudioOnly = false;
     bool m_autoResendWatchRequest = true;
     QString m_lastViewerName;
     bool m_hasLastAudioToggle = false;

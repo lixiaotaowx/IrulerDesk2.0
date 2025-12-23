@@ -1101,6 +1101,12 @@ void WebSocketReceiver::setSessionInfo(const QString &viewerId, const QString &t
     }
 }
 
+void WebSocketReceiver::setAudioOnly(bool audioOnly)
+{
+    QMutexLocker locker(&m_mutex);
+    m_lastWatchAudioOnly = audioOnly;
+}
+
 void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString &targetId)
 {
     // 记录最近一次观看请求信息，用于重连后自动重发
@@ -1117,6 +1123,13 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     // 构造观看请求消息
     QJsonObject message;
     message["type"] = "watch_request";
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_lastWatchAudioOnly) {
+            message["audio_only"] = true;
+            message["action"] = "audio_only";
+        }
+    }
     message["viewer_id"] = viewerId;
     message["target_id"] = targetId;
     QString viewerName;
@@ -1222,10 +1235,15 @@ void WebSocketReceiver::sendViewerCursor(int x, int y)
     }
     QString viewerId;
     QString targetId;
+    bool audioOnly = false;
     {
         QMutexLocker locker(&m_mutex);
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
+        audioOnly = m_lastWatchAudioOnly;
+    }
+    if (audioOnly) {
+        return;
     }
     if (viewerId.isEmpty() || targetId.isEmpty()) {
         return;

@@ -31,6 +31,7 @@ public:
     void stopStreaming(bool softStop = false);
     void forceKeyFrame();
     bool isStreaming() const { return m_isStreaming; }
+    bool isAudioOnlyStreaming() const { return m_audioOnlyStreaming; }
 
     // 状态查询
     bool isConnected() const { return m_connected; }
@@ -116,6 +117,7 @@ private:
     void sendWatchRejected(const QString &viewerId, const QString &targetId);
 public:
     void approveWatchRequest();
+    void localApproveWatchRequest();
     void rejectWatchRequest();
     
     // 性能统计更新方法
@@ -164,6 +166,8 @@ public:
     QString m_pendingTargetId;
     QString m_pendingViewerName;
     int m_pendingIconId = -1;
+    bool m_pendingAudioOnly = false;
+    bool m_audioOnlyStreaming = false;
 };
 
 #endif // WEBSOCKETSENDER_H

@@ -53,11 +53,15 @@ public:
     void stopReceiving(bool recreate = true);
     void pauseReceiving();
     bool isReceiving() const { return m_isReceiving; }
+    bool isAudioOnlySession() const { return m_audioOnlySession; }
+    QString sessionViewerId() const { return m_lastViewerId; }
+    QString sessionTargetId() const { return m_lastTargetId; }
     
     // 发送观看请求
     void sendWatchRequest(const QString &viewerId, const QString &targetId);
     // 设置会话信息（不发送网络请求）
     void setSessionInfo(const QString &viewerId, const QString &targetId);
+    void setAudioOnlySession(bool audioOnly);
     void setViewerName(const QString &name);
     
     // 获取统计信息
@@ -189,6 +193,7 @@ private:
     bool m_autoResize;
     QString m_serverUrl;
     VideoStats m_stats;
+    bool m_audioOnlySession = false;
     bool m_micSendEnabled = false;
     int m_micGainPercent = 100;
     

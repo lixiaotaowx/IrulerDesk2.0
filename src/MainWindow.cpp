@@ -379,6 +379,7 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
 
     // 传入用户名
     videoWidget->setViewerName(m_userName);
+    videoWidget->setAudioOnlySession(m_audioOnlyTargetId == targetDeviceId);
     // 使用VideoDisplayWidget开始接收视频流
     
     videoWidget->startReceiving(serverUrl);
@@ -724,6 +725,18 @@ void MainWindow::setupUI()
             m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
         };
 
+        auto sendWatchRequestCanceled = [this](const QString &toTargetId) {
+            if (toTargetId.isEmpty()) return;
+            if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) return;
+            QJsonObject cancelMsg;
+            cancelMsg["type"] = "watch_request_canceled";
+            cancelMsg["viewer_id"] = getDeviceId();
+            cancelMsg["target_id"] = toTargetId;
+            cancelMsg["viewer_name"] = m_userName;
+            cancelMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(cancelMsg).toJson(QJsonDocument::Compact));
+        };
+
         auto applyTalk = [this](bool on) {
             if (!m_videoWindow) return;
             auto *vd = m_videoWindow->getVideoDisplayWidget();
@@ -759,6 +772,7 @@ void MainWindow::setupUI()
             }
         } else {
             sendViewerMicState(targetId, false);
+            sendWatchRequestCanceled(targetId);
             if (m_transparentImageList) {
                 m_transparentImageList->setTalkConnected(targetId, false);
             }
@@ -766,16 +780,21 @@ void MainWindow::setupUI()
                 m_pendingTalkTargetId.clear();
                 m_pendingTalkEnabled = false;
             }
-            if (m_currentTargetId == targetId) {
-                applyTalk(false);
-                if (m_audioOnlyTargetId == targetId) {
-                    if (m_videoWindow) {
-                        if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
-                            vd->stopReceiving(false);
-                        }
+            applyTalk(false);
+
+            if (m_videoWindow) {
+                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+                    const bool shouldStopAudioOnly =
+                        vd->isReceiving() &&
+                        vd->isAudioOnlySession() &&
+                        (vd->sessionTargetId().isEmpty() || vd->sessionTargetId() == targetId || m_audioOnlyTargetId == targetId);
+                    if (shouldStopAudioOnly) {
+                        vd->stopReceiving(false);
                     }
-                    m_audioOnlyTargetId.clear();
                 }
+            }
+            if (m_audioOnlyTargetId == targetId) {
+                m_audioOnlyTargetId.clear();
             }
         }
     });
@@ -853,6 +872,8 @@ void MainWindow::stopStreaming()
     if (!m_isStreaming) {
         return;
     }
+
+    m_isStreaming = false;
     
     // [Fix] Do NOT force clear viewers here.
     // Let individual viewer_exit events handle removal.
@@ -868,8 +889,6 @@ void MainWindow::stopStreaming()
     );
     
     stopProcesses();
-    
-    m_isStreaming = false;
 
     // [User Request] 取消灵动岛与推流的自动关联
     // if (m_islandWidget) {

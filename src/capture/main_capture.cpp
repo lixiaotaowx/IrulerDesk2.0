@@ -994,7 +994,7 @@ int main(int argc, char *argv[])
             auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
-            if (!isCapturing) {
+            if (!staticSender->isStreaming()) {
                 continue; // 未开始推流时不发送音频
             }
 
@@ -1372,22 +1372,29 @@ int main(int argc, char *argv[])
 
     // 连接推流控制信号
     static QSet<QString> activeViewerIds;
+    static bool pendingLocalApproval = false;
     QObject::connect(sender, &WebSocketSender::streamingStarted, [&, startAudio, applyQualitySetting]() {
-        qDebug() << "[CaptureProcess] Streaming started signal received. isCapturing:" << isCapturing;
+        const bool audioOnly = sender->isAudioOnlyStreaming();
+        qDebug() << "[CaptureProcess] Streaming started signal received. isCapturing:" << isCapturing << " audioOnly:" << audioOnly;
+        if (audioOnly && isCapturing) {
+            isCapturing = false;
+            captureTimer->stop();
+            staticMouseCapture->stopCapture();
+        }
         if (!isCapturing) {
-            // [Fix] 重新应用画质设置，确保编码器分辨率与 targetEncodeSize 一致
-            // 避免 streamingStopped 重置为全分辨率后导致的鼠标映射错误
-            applyQualitySetting(currentQuality);
-            qDebug() << "[CaptureProcess] Quality applied on start. TargetEncodeSize:" << targetEncodeSize;
+            if (!audioOnly) {
+                applyQualitySetting(currentQuality);
+                qDebug() << "[CaptureProcess] Quality applied on start. TargetEncodeSize:" << targetEncodeSize;
 
-            isCapturing = true;
-            // 降低帧率以应对多人观看：从33ms(30fps)调整为66ms(15fps)
-            // 这是一个非常稳妥的折中值，既能保证流畅度，又能将流量和CPU减半
-            captureTimer->start(66); 
-            staticMouseCapture->startCapture(); // 开始鼠标捕获
-            if (currentScreenIndex >= 0 && currentScreenIndex < s_overlays.size()) {
-                s_overlays[currentScreenIndex]->raise();
-                s_cursorOverlays[currentScreenIndex]->raise();
+                isCapturing = true;
+                captureTimer->start(66);
+                staticMouseCapture->startCapture();
+                if (currentScreenIndex >= 0 && currentScreenIndex < s_overlays.size()) {
+                    s_overlays[currentScreenIndex]->raise();
+                    s_cursorOverlays[currentScreenIndex]->raise();
+                }
+            } else {
+                qDebug() << "[CaptureProcess] Audio-only streaming started; video capture skipped.";
             }
         }
         
@@ -1514,6 +1521,10 @@ int main(int argc, char *argv[])
             // CaptureProcess 等待收到 watch_request_accepted 消息后再开始推流
             qDebug() << "[CaptureProcess] Manual approval mode. Waiting for watch_request_accepted signal.";
             // 移除自动开始推流，等待明确的同意指令
+            if (pendingLocalApproval) {
+                pendingLocalApproval = false;
+                sender->localApproveWatchRequest();
+            }
         } else {
             // 自动模式：直接通过
             qDebug() << "[CaptureProcess] Auto-approving watch request (Auto mode)";
@@ -1568,6 +1579,9 @@ int main(int argc, char *argv[])
     QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
                      [sender](const QPoint &globalPos) {
         if (!sender->isStreaming()) {
+            return;
+        }
+        if (sender->isAudioOnlyStreaming()) {
             return;
         }
         const auto screens = QApplication::screens();
@@ -1962,14 +1976,9 @@ int main(int argc, char *argv[])
     if (watchdog) {
         QObject::connect(watchdog, &WatchdogClient::approvalReceived, [&]() {
             qDebug() << "[CaptureProcess] Processing local approval...";
-            // 本地收到同意指令，效果等同于收到服务器的 watch_request_accepted
+            pendingLocalApproval = true;
             if (sender) {
-                 if (sender->isStreaming()) {
-                     sender->stopStreaming();
-                 }
-                 sender->startStreaming();
-                 sender->forceKeyFrame();
-                 qDebug() << "[CaptureProcess] Local approval executed: Streaming started.";
+                sender->localApproveWatchRequest();
             }
         });
         

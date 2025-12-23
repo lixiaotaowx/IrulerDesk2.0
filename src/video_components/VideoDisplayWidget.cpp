@@ -54,6 +54,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 创建解码器和接收器
     m_decoder = std::make_unique<DxvaVP9Decoder>();
     m_receiver = std::make_unique<WebSocketReceiver>();
+    m_receiver->setAudioOnly(m_audioOnlySession);
     if (!m_decoderInitialized) {
         m_decoderInitialized = m_decoder->initialize();
     }
@@ -377,6 +378,14 @@ void VideoDisplayWidget::setSessionInfo(const QString &viewerId, const QString &
             m_receiver->setViewerName(m_viewerName);
         }
         m_receiver->setSessionInfo(viewerId, targetId);
+    }
+}
+
+void VideoDisplayWidget::setAudioOnlySession(bool audioOnly)
+{
+    m_audioOnlySession = audioOnly;
+    if (m_receiver) {
+        m_receiver->setAudioOnly(audioOnly);
     }
 }
 
@@ -1109,7 +1118,9 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             {
                 QPoint src = mapLabelToSource(localPos);
                 if (src.x() >= 0 && m_receiver) {
-                    m_receiver->sendViewerCursor(src.x(), src.y());
+                    if (!m_audioOnlySession) {
+                        m_receiver->sendViewerCursor(src.x(), src.y());
+                    }
                 }
             }
             break;
@@ -1428,6 +1439,7 @@ void VideoDisplayWidget::recreateReceiver()
     m_receiver.reset();
     // 创建新实例并重新连接信号
     m_receiver = std::make_unique<WebSocketReceiver>();
+    m_receiver->setAudioOnly(m_audioOnlySession);
     // [Fix] 重建接收器时恢复Session信息，确保批注功能正常工作
     if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
         m_receiver->setSessionInfo(m_lastViewerId, m_lastTargetId);

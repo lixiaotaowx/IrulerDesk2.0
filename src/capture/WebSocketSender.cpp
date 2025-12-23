@@ -97,6 +97,10 @@ void WebSocketSender::disconnectFromServer()
 void WebSocketSender::sendFrame(const QByteArray &frameData)
 {
     QMutexLocker locker(&m_mutex);
+
+    if (m_audioOnlyStreaming) {
+        return;
+    }
     
     if (m_connected && m_webSocket && m_isStreaming) {
         qint64 bytesSent = m_webSocket->sendBinaryMessage(frameData);
@@ -127,6 +131,9 @@ void WebSocketSender::sendFrame(const QByteArray &frameData)
 void WebSocketSender::enqueueFrame(const QByteArray &frameData, bool keyFrame)
 {
     QMutexLocker locker(&m_mutex);
+    if (m_audioOnlyStreaming) {
+        return;
+    }
     if (!m_connected || !m_webSocket || !m_isStreaming) {
         return;
     }
@@ -350,6 +357,7 @@ void WebSocketSender::stopStreaming(bool softStop)
     QMutexLocker locker(&m_mutex);
     if (m_isStreaming) {
         m_isStreaming = false;
+        m_audioOnlyStreaming = false;
         m_frameQueue.clear();
         m_keyQueue.clear();
         
@@ -386,6 +394,8 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         }
         QString targetId = obj["target_id"].toString();
         int iconId = obj.value("viewer_icon_id").toInt(-1);
+        const QString action = obj.value("action").toString();
+        const bool audioOnly = obj.value("audio_only").toBool(false) || action == "audio_only";
 
         if (isManualApprovalEnabled()) {
             if (m_waitingForApproval) {
@@ -395,6 +405,7 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             m_pendingTargetId = targetId;
             m_pendingViewerName = viewerName;
             m_pendingIconId = iconId;
+            m_pendingAudioOnly = audioOnly;
             m_waitingForApproval = true;
             sendApprovalRequired(viewerId, targetId);
             if (!viewerId.isEmpty()) {
@@ -408,8 +419,11 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             if (m_isStreaming) {
                 stopStreaming();
             }
+            m_audioOnlyStreaming = audioOnly;
             startStreaming();
-            emit requestKeyFrame();
+            if (!audioOnly) {
+                emit requestKeyFrame();
+            }
             sendWatchAccepted(viewerId, targetId);
         }
     } else if (type == "start_streaming" || type == "start_streaming_request") {
@@ -424,8 +438,19 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         if (!vid.isEmpty()) {
             emit viewerJoined(vid);
         }
+        const bool audioOnlySpecified = obj.contains("audio_only") || obj.contains("action");
+        if (audioOnlySpecified) {
+            const QString action = obj.value("action").toString();
+            const bool audioOnly = obj.value("audio_only").toBool(false) || action == "audio_only";
+            {
+                QMutexLocker locker(&m_mutex);
+                m_audioOnlyStreaming = audioOnly;
+            }
+        }
         startStreaming();
-        emit requestKeyFrame();
+        if (!isAudioOnlyStreaming()) {
+            emit requestKeyFrame();
+        }
     } else if (type == "request_keyframe") {
         emit requestKeyFrame();
     } else if (type == "stop_streaming") {
@@ -623,6 +648,12 @@ void WebSocketSender::onSendTimer()
         m_sendTimer->stop();
         return;
     }
+    if (m_audioOnlyStreaming) {
+        m_frameQueue.clear();
+        m_keyQueue.clear();
+        m_sendTimer->stop();
+        return;
+    }
     int burst = (m_frameQueue.size() >= 4) ? 3 : 2;
     while (burst-- > 0 && !m_frameQueue.isEmpty()) {
         QByteArray data = m_frameQueue.dequeue();
@@ -702,8 +733,11 @@ void WebSocketSender::approveWatchRequest()
     if (m_isStreaming) {
         stopStreaming();
     }
+    m_audioOnlyStreaming = m_pendingAudioOnly;
     startStreaming();
-    emit requestKeyFrame();
+    if (!m_audioOnlyStreaming) {
+        emit requestKeyFrame();
+    }
     sendWatchAccepted(m_pendingViewerId, m_pendingTargetId);
     {
         QJsonObject ok;
@@ -714,6 +748,22 @@ void WebSocketSender::approveWatchRequest()
         sendTextMessage(okDoc.toJson(QJsonDocument::Compact));
     }
     m_waitingForApproval = false;
+    m_pendingAudioOnly = false;
+}
+
+void WebSocketSender::localApproveWatchRequest()
+{
+    if (!m_waitingForApproval) return;
+    if (m_isStreaming) {
+        stopStreaming();
+    }
+    m_audioOnlyStreaming = m_pendingAudioOnly;
+    startStreaming();
+    if (!m_audioOnlyStreaming) {
+        emit requestKeyFrame();
+    }
+    m_waitingForApproval = false;
+    m_pendingAudioOnly = false;
 }
 
 void WebSocketSender::rejectWatchRequest()
@@ -724,4 +774,5 @@ void WebSocketSender::rejectWatchRequest()
     }
     sendWatchRejected(m_pendingViewerId, m_pendingTargetId);
     m_waitingForApproval = false;
+    m_pendingAudioOnly = false;
 }

@@ -8,6 +8,15 @@
 #include <QSslError>
 #include <QNetworkProxy>
 #include <QDebug>
+#include <QCoreApplication>
+#include <QStandardPaths>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
+#include <QHostInfo>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QStringConverter>
+#endif
 #include <cmath>
 #include <iostream>
 #include <QtMultimedia/QAudioSource>
@@ -27,6 +36,36 @@ static int pickBestOpusSampleRate(const QAudioDevice &inDev) {
     // Fallback to device preferred if none of the Opus-supported rates are reported as supported
     // We will resample in produceOpusFrame, but try to stay close to preferred
     return inDev.preferredFormat().sampleRate();
+}
+
+static QString loadUserNameFromConfigForReceiver()
+{
+    QStringList configPaths;
+    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
+    configPaths << QDir::currentPath() + "/config/app_config.txt";
+    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+
+    for (const QString& path : configPaths) {
+        QFile configFile(path);
+        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&configFile);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            in.setEncoding(QStringConverter::Utf8);
+#else
+            in.setCodec("UTF-8");
+#endif
+            while (!in.atEnd()) {
+                QString line = in.readLine().trimmed();
+                if (line.startsWith("user_name=")) {
+                    QString name = line.mid(QString("user_name=").length()).trimmed();
+                    configFile.close();
+                    if (!name.isEmpty()) return name;
+                }
+            }
+            configFile.close();
+        }
+    }
+    return QString();
 }
 
 WebSocketReceiver::WebSocketReceiver(QObject *parent)
@@ -1080,9 +1119,27 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     message["type"] = "watch_request";
     message["viewer_id"] = viewerId;
     message["target_id"] = targetId;
-    if (!m_lastViewerName.isEmpty()) {
-        message["viewer_name"] = m_lastViewerName;
+    QString viewerName;
+    {
+        QMutexLocker locker(&m_mutex);
+        viewerName = m_lastViewerName;
     }
+    if (viewerName.isEmpty()) {
+        viewerName = loadUserNameFromConfigForReceiver();
+    }
+    if (viewerName.isEmpty()) {
+        viewerName = QHostInfo::localHostName();
+    }
+    if (viewerName.isEmpty()) {
+        viewerName = QStringLiteral("访客");
+    }
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_lastViewerName.isEmpty()) {
+            m_lastViewerName = viewerName;
+        }
+    }
+    message["viewer_name"] = viewerName;
     
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);

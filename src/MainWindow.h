@@ -141,7 +141,7 @@ private:
     void sendWatchRequest(const QString& targetDeviceId);
     void startVideoReceiving(const QString& targetDeviceId);
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
-    void showUserOnlineToast(const QString& userName);
+    void showUserOnlineToast(const QString& userId, const QString& userName, int iconId);
     void repositionOnlineToasts();
 
     // 显示更新日志

@@ -25,6 +25,10 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QCursor>
+#include <QFileInfo>
+#include <QPainter>
+#include <QPainterPath>
+#include <QSet>
 #include <cstdlib>
 #include <ctime>
 
@@ -760,6 +764,17 @@ void MainWindow::setupUI()
         }
     });
 
+    connect(m_videoWindow, &VideoWindow::closeClicked, this, [this]() {
+        if (!m_transparentImageList) return;
+        QSet<QString> ids;
+        if (!m_pendingTalkTargetId.isEmpty()) ids.insert(m_pendingTalkTargetId);
+        if (!m_audioOnlyTargetId.isEmpty()) ids.insert(m_audioOnlyTargetId);
+        if (!m_currentTargetId.isEmpty()) ids.insert(m_currentTargetId);
+        for (const QString &id : ids) {
+            m_transparentImageList->talkToggleRequested(id, false);
+        }
+    });
+
     // Initialize Streaming Island
     m_islandWidget = new StreamingIslandWidget(nullptr); 
     connect(m_islandWidget, &StreamingIslandWidget::stopStreamingRequested, this, &MainWindow::stopStreaming);
@@ -987,9 +1002,7 @@ void MainWindow::onCaptureProcessFinished(int exitCode, QProcess::ExitStatus exi
                 m_statusLabel->setText("严重错误：服务无法启动");
                 m_statusLabel->setStyleSheet("QLabel { color: #f44336; font-weight: bold; padding: 5px; }");
                 
-                if (m_trayIcon) {
-                    m_trayIcon->showMessage("服务启动失败", errorMsg, QSystemTrayIcon::Critical, 5000);
-                }
+                Q_UNUSED(m_trayIcon);
                 
                 QMessageBox::critical(this, "严重错误", errorMsg + "\n请检查设备驱动或重新安装程序。");
                 
@@ -1003,9 +1016,7 @@ void MainWindow::onCaptureProcessFinished(int exitCode, QProcess::ExitStatus exi
             m_statusLabel->setText(msg);
             m_statusLabel->setStyleSheet("QLabel { color: #ff9800; font-weight: bold; padding: 5px; }");
             
-            if (m_trayIcon) {
-                m_trayIcon->showMessage("服务异常", "捕获进程异常退出，正在尝试自动恢复...", QSystemTrayIcon::Warning, 2000);
-            }
+            Q_UNUSED(m_trayIcon);
             
             // 重新启动进程（复用 startProcesses 逻辑）
             // 注意：需要先清理旧进程句柄（虽然 finished 信号触发意味着进程已死，但对象还在）
@@ -1818,12 +1829,23 @@ void MainWindow::updateUserList(const QJsonArray& users)
     m_serverOnlineUsers.clear();
     QSet<QString> newUserIds;
     QHash<QString, QString> newUserNameById;
+    QHash<QString, int> newUserIconById;
     for (int i = 0; i < users.size(); ++i) {
         QJsonObject userObj = users[i].toObject();
         if (!userObj.isEmpty()) {
             QString uid = userObj["id"].toString();
             if (!uid.isEmpty()) {
                 newUserNameById.insert(uid, userObj["name"].toString());
+
+                int iconId = -1;
+                if (userObj.contains("icon_id")) {
+                    QJsonValue v = userObj.value("icon_id");
+                    iconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
+                } else if (userObj.contains("viewer_icon_id")) {
+                    QJsonValue v = userObj.value("viewer_icon_id");
+                    iconId = v.isString() ? v.toString().toInt() : v.toInt(-1);
+                }
+                newUserIconById.insert(uid, iconId);
             }
             m_serverOnlineUsers.insert(uid);
             newUserIds.insert(uid);
@@ -1838,7 +1860,7 @@ void MainWindow::updateUserList(const QJsonArray& users)
         for (const QString &uid : delta) {
             if (uid.isEmpty() || uid == m_userId) continue;
             const QString name = newUserNameById.value(uid);
-            showUserOnlineToast(QStringLiteral("%1已上线").arg(name.isEmpty() ? uid : name));
+            showUserOnlineToast(uid, name, newUserIconById.value(uid, -1));
         }
     }
     m_userListInitialized = true;
@@ -1946,7 +1968,65 @@ void MainWindow::updateUserList(const QJsonArray& users)
     }
 }
 
-void MainWindow::showUserOnlineToast(const QString& userName)
+static QPixmap buildCircularPixmapForToast(const QPixmap &src, int size)
+{
+    const int s = qMax(8, size);
+    if (src.isNull()) {
+        return QPixmap();
+    }
+
+    QPixmap out(s, s);
+    out.fill(Qt::transparent);
+
+    QPainter p(&out);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    QPainterPath path;
+    path.addEllipse(QRectF(0, 0, s, s));
+    p.setClipPath(path);
+
+    const QPixmap scaled = src.scaled(s, s, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    const int x = qMax(0, (scaled.width() - s) / 2);
+    const int y = qMax(0, (scaled.height() - s) / 2);
+    p.drawPixmap(-x, -y, scaled);
+
+    return out;
+}
+
+static QPixmap loadAvatarPixmapForToast(const QString &userId, int iconId, int size)
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+
+    if (!userId.isEmpty()) {
+        const QString cachedPath = QDir(appDir).filePath(QStringLiteral("avatars/%1.png").arg(userId));
+        QPixmap cached(cachedPath);
+        if (!cached.isNull()) {
+            return buildCircularPixmapForToast(cached, size);
+        }
+    }
+
+    if (iconId >= 0) {
+        const QString iconPath = QDir(appDir).filePath(QStringLiteral("maps/icon/%1.png").arg(iconId));
+        QPixmap icon(iconPath);
+        if (!icon.isNull()) {
+            return buildCircularPixmapForToast(icon, size);
+        }
+    }
+
+    const QString candidate1 = QDir(appDir).filePath(QStringLiteral("maps/logo/head.png"));
+    const QString candidate2 = QDir::current().filePath(QStringLiteral("src/maps/logo/head.png"));
+    const QString avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
+    QPixmap head(avatarPath);
+    if (!head.isNull()) {
+        return buildCircularPixmapForToast(head, size);
+    }
+
+    QPixmap fallback(size, size);
+    fallback.fill(QColor(220, 220, 220));
+    return buildCircularPixmapForToast(fallback, size);
+}
+
+void MainWindow::showUserOnlineToast(const QString& userId, const QString& userName, int iconId)
 {
     QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
     toast->setAttribute(Qt::WA_TranslucentBackground);
@@ -1954,13 +2034,22 @@ void MainWindow::showUserOnlineToast(const QString& userName)
     toast->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
     QWidget *body = new QWidget(toast);
-    body->setStyleSheet("background-color: rgba(59, 59, 59, 235); border: 1px solid rgba(255, 255, 255, 35); border-radius: 10px;");
+    body->setStyleSheet("background-color: rgba(255, 255, 255, 245); border: 2px solid rgba(0, 0, 0, 40); border-radius: 18px;");
+    body->setMinimumSize(420, 96);
     QHBoxLayout *bodyLayout = new QHBoxLayout(body);
-    bodyLayout->setContentsMargins(14, 10, 14, 10);
-    bodyLayout->setSpacing(0);
+    bodyLayout->setContentsMargins(20, 18, 20, 18);
+    bodyLayout->setSpacing(14);
 
-    QLabel *label = new QLabel(userName, body);
-    label->setStyleSheet("color: #f4f4f4; font-size: 13px; background: transparent;");
+    const int avatarSize = 56;
+    QLabel *avatar = new QLabel(body);
+    avatar->setFixedSize(avatarSize, avatarSize);
+    avatar->setPixmap(loadAvatarPixmapForToast(userId, iconId, avatarSize));
+    avatar->setAlignment(Qt::AlignCenter);
+    bodyLayout->addWidget(avatar);
+
+    const QString display = userName.isEmpty() ? userId : userName;
+    QLabel *label = new QLabel(QStringLiteral("%1已上线 😊").arg(display), body);
+    label->setStyleSheet("color: #111111; font-size: 24px; font-weight: 800; background: transparent;");
     bodyLayout->addWidget(label);
 
     QVBoxLayout *root = new QVBoxLayout(toast);
@@ -2158,7 +2247,24 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 QMessageBox msgBox(this);
                 msgBox.setIcon(QMessageBox::Information);
                 msgBox.setWindowTitle(QStringLiteral("未接提醒"));
-                msgBox.setText(QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+                QString viewerName = obj.value("viewer_name").toString();
+                if (viewerName.isEmpty() && m_listWidget) {
+                    for (int i = 0; i < m_listWidget->count(); ++i) {
+                        QListWidgetItem* item = m_listWidget->item(i);
+                        if (item && item->data(Qt::UserRole).toString() == viewerId) {
+                            QString text = item->text();
+                            int idx = text.lastIndexOf(" (");
+                            if (idx != -1) {
+                                viewerName = text.left(idx);
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (viewerName.isEmpty()) {
+                    viewerName = QStringLiteral("访客");
+                }
+                msgBox.setText(QStringLiteral("用户 %1 已取消观看请求，建议马上微信联系").arg(viewerName));
                 msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
                 msgBox.exec();
             } else {
@@ -2175,7 +2281,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
         m_alertSound->play();
 
-        QString viewerName = obj.contains("viewer_name") ? obj["viewer_name"].toString() : viewerId;
+        QString viewerName = obj.value("viewer_name").toString();
         
         // [Fix] 优先使用本地用户列表中的名字（如果存在），确保显示最新名字
         if (m_listWidget) {
@@ -2190,6 +2296,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                     break;
                 }
             }
+        }
+        if (viewerName.isEmpty()) {
+            viewerName = QStringLiteral("访客");
         }
         
         const QString action = obj.value("action").toString();
@@ -2372,7 +2481,24 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             QMessageBox msgBox(this);
             msgBox.setIcon(QMessageBox::Information);
             msgBox.setWindowTitle(QStringLiteral("未接提醒"));
-            msgBox.setText(QStringLiteral("用户 %1 已取消观看请求").arg(viewerId));
+            QString viewerName = obj.value("viewer_name").toString();
+            if (viewerName.isEmpty() && m_listWidget) {
+                for (int i = 0; i < m_listWidget->count(); ++i) {
+                    QListWidgetItem* item = m_listWidget->item(i);
+                    if (item && item->data(Qt::UserRole).toString() == viewerId) {
+                        QString text = item->text();
+                        int idx = text.lastIndexOf(" (");
+                        if (idx != -1) {
+                            viewerName = text.left(idx);
+                        }
+                        break;
+                    }
+                }
+            }
+            if (viewerName.isEmpty()) {
+                viewerName = QStringLiteral("访客");
+            }
+            msgBox.setText(QStringLiteral("用户 %1 已取消观看请求，建议马上微信联系").arg(viewerName));
             msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
             msgBox.exec();
         } else {

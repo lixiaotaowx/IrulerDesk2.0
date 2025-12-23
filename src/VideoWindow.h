@@ -46,6 +46,7 @@ signals:
     void receivingStopped(const QString &viewerId, const QString &targetId);
     void micToggled(bool checked);
     void speakerToggled(bool checked);
+    void closeClicked();
 
 private slots:
     void onMinimizeClicked();

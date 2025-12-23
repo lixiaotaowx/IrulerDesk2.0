@@ -875,6 +875,7 @@ void VideoWindow::onCloseClicked()
     if (m_videoDisplayWidget) {
         m_videoDisplayWidget->stopReceiving(false);
     }
+    emit closeClicked();
     hide();
 }
 

@@ -378,12 +378,12 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     QString type = obj["type"].toString();
     
     if (type == "watch_request") {
+        QString viewerId = obj["viewer_id"].toString();
         QString viewerName = obj.value("viewer_name").toString();
-        if (!viewerName.isEmpty()) {
+        if (!viewerName.isEmpty() && m_viewerName != viewerName) {
             m_viewerName = viewerName;
             emit viewerNameChanged(m_viewerName);
         }
-        QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
         int iconId = obj.value("viewer_icon_id").toInt(-1);
 
@@ -393,14 +393,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             }
             m_pendingViewerId = viewerId;
             m_pendingTargetId = targetId;
-            m_pendingViewerName = m_viewerName;
+            m_pendingViewerName = viewerName;
             m_pendingIconId = iconId;
             m_waitingForApproval = true;
             sendApprovalRequired(viewerId, targetId);
             if (!viewerId.isEmpty()) {
                 emit viewerJoined(viewerId);
             }
-            emit watchRequestReceived(viewerId, m_viewerName, targetId, iconId);
+            emit watchRequestReceived(viewerId, viewerName, targetId, iconId);
         } else {
             if (!viewerId.isEmpty()) {
                 emit viewerJoined(viewerId);

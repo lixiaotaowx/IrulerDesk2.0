@@ -77,14 +77,11 @@ int main(int argc, char *argv[])
     // 进一步通过样式表确保所有样式一致
     app.setStyleSheet(
         "QToolTip {\n"
-        "    color: #f4f4f4;\n"
-        "    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,\n"
-        "        stop:0 rgba(70, 70, 70, 235),\n"
-        "        stop:1 rgba(35, 35, 35, 235)\n"
-        "    );\n"
-        "    border: 1px solid rgba(255, 255, 255, 35);\n"
-        "    border-radius: 12px;\n"
-        "    padding: 7px 11px;\n"
+        "    color: #e0e0e0;\n"
+        "    background-color: #3b3b3b;\n"
+        "    border: none;\n"
+        "    border-radius: 8px;\n"
+        "    padding: 6px 12px;\n"
         "    font-size: 12px;\n"
         "}"
     );

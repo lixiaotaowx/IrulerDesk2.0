@@ -1353,6 +1353,7 @@ void NewUiWindow::setupUi()
     exitBtn->setToolTip(QStringLiteral("测试退出"));
     exitBtn->installEventFilter(this);
     connect(exitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
+    exitBtn->setVisible(false);
 
     // Menu Button
     ResponsiveButton *menuBtn = new ResponsiveButton();
@@ -2049,6 +2050,7 @@ void NewUiWindow::toggleFunction1Maximize()
         showMaximized();
     }
     updateTitleMaximizeButton();
+    setResizeGripsVisible(!(windowState() & Qt::WindowMaximized));
 }
 
 void NewUiWindow::updateTitleMaximizeButton()
@@ -2072,6 +2074,7 @@ void NewUiWindow::changeEvent(QEvent *event)
     QWidget::changeEvent(event);
     if (event && event->type() == QEvent::WindowStateChange) {
         updateTitleMaximizeButton();
+        setResizeGripsVisible(!(windowState() & Qt::WindowMaximized));
     }
 }
 
@@ -2204,8 +2207,78 @@ void NewUiWindow::mouseDoubleClickEvent(QMouseEvent *event)
     QWidget::mouseDoubleClickEvent(event);
 }
 
+void NewUiWindow::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateResizeGrips();
+}
+
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == m_resizeGripLeft || watched == m_resizeGripRight || watched == m_resizeGripTop || watched == m_resizeGripBottom ||
+        watched == m_resizeGripTopLeft || watched == m_resizeGripTopRight || watched == m_resizeGripBottomLeft || watched == m_resizeGripBottomRight) {
+        if (windowState() & Qt::WindowMaximized) {
+            return true;
+        }
+        auto edgesForGrip = [this](QObject *o) -> Qt::Edges {
+            if (o == m_resizeGripLeft) return Qt::LeftEdge;
+            if (o == m_resizeGripRight) return Qt::RightEdge;
+            if (o == m_resizeGripTop) return Qt::TopEdge;
+            if (o == m_resizeGripBottom) return Qt::BottomEdge;
+            if (o == m_resizeGripTopLeft) return Qt::LeftEdge | Qt::TopEdge;
+            if (o == m_resizeGripTopRight) return Qt::RightEdge | Qt::TopEdge;
+            if (o == m_resizeGripBottomLeft) return Qt::LeftEdge | Qt::BottomEdge;
+            if (o == m_resizeGripBottomRight) return Qt::RightEdge | Qt::BottomEdge;
+            return Qt::Edges();
+        };
+
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                m_resizeDragging = true;
+                m_resizeEdges = edgesForGrip(watched);
+                m_resizePressGlobal = me->globalPosition().toPoint();
+                m_resizeStartGeometry = frameGeometry();
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            if (m_resizeDragging) {
+                auto *me = static_cast<QMouseEvent*>(event);
+                const QPoint gp = me->globalPosition().toPoint();
+                const int dx = gp.x() - m_resizePressGlobal.x();
+                const int dy = gp.y() - m_resizePressGlobal.y();
+                QRect r = m_resizeStartGeometry;
+
+                const int minW = qMax(500, minimumWidth());
+                const int minH = qMax(480, minimumHeight());
+
+                if (m_resizeEdges.testFlag(Qt::LeftEdge)) r.setLeft(r.left() + dx);
+                if (m_resizeEdges.testFlag(Qt::RightEdge)) r.setRight(r.right() + dx);
+                if (m_resizeEdges.testFlag(Qt::TopEdge)) r.setTop(r.top() + dy);
+                if (m_resizeEdges.testFlag(Qt::BottomEdge)) r.setBottom(r.bottom() + dy);
+
+                if (r.width() < minW) {
+                    if (m_resizeEdges.testFlag(Qt::LeftEdge)) r.setLeft(r.right() - minW + 1);
+                    else r.setRight(r.left() + minW - 1);
+                }
+                if (r.height() < minH) {
+                    if (m_resizeEdges.testFlag(Qt::TopEdge)) r.setTop(r.bottom() - minH + 1);
+                    else r.setBottom(r.top() + minH - 1);
+                }
+                setGeometry(r);
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                m_resizeDragging = false;
+                m_resizeEdges = Qt::Edges();
+                return true;
+            }
+        }
+        return true;
+    }
+
     if (m_titleBar && (watched == m_titleBar || watched->objectName() == QStringLiteral("ToolsContainer") || watched->objectName() == QStringLiteral("TitleControlContainer"))) {
         if (qobject_cast<QAbstractButton*>(watched)) {
             return QWidget::eventFilter(watched, event);
@@ -3116,7 +3189,9 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     StreamClient *client = new StreamClient(this);
     QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(userId);
     
-    connect(client, &StreamClient::frameReceived, this, [this, userId](const QPixmap &frame) {
+    client->setProperty("firstFrameReceived", false);
+    connect(client, &StreamClient::frameReceived, this, [this, userId, client](const QPixmap &frame) {
+        client->setProperty("firstFrameReceived", true);
         if (m_userLabels.contains(userId)) {
              QLabel *label = m_userLabels[userId];
              
@@ -3143,6 +3218,21 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
         QJsonObject start;
         start["type"] = "start_streaming";
         client->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+    });
+    connect(client, &StreamClient::connected, this, [this, client]() {
+        QPointer<StreamClient> c = client;
+        QTimer::singleShot(250, this, [c]() {
+            if (!c || c->property("firstFrameReceived").toBool()) return;
+            QJsonObject start;
+            start["type"] = "start_streaming";
+            c->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+        });
+        QTimer::singleShot(1200, this, [c]() {
+            if (!c || c->property("firstFrameReceived").toBool()) return;
+            QJsonObject start;
+            start["type"] = "start_streaming";
+            c->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+        });
     });
 
     client->connectToServer(QUrl(subscribeUrl));
@@ -3190,6 +3280,43 @@ void NewUiWindow::removeUser(const QString &userId)
         if (row >= 0) {
             delete m_listWidget->takeItem(row);
         }
+    }
+}
+
+void NewUiWindow::updateResizeGrips()
+{
+    const int t = 10;
+    const QRect r = rect();
+    if (!m_resizeGripLeft) return;
+
+    m_resizeGripLeft->setGeometry(0, t, t, r.height() - 2 * t);
+    m_resizeGripRight->setGeometry(r.width() - t, t, t, r.height() - 2 * t);
+    m_resizeGripTop->setGeometry(t, 0, r.width() - 2 * t, t);
+    m_resizeGripBottom->setGeometry(t, r.height() - t, r.width() - 2 * t, t);
+
+    m_resizeGripTopLeft->setGeometry(0, 0, t, t);
+    m_resizeGripTopRight->setGeometry(r.width() - t, 0, t, t);
+    m_resizeGripBottomLeft->setGeometry(0, r.height() - t, t, t);
+    m_resizeGripBottomRight->setGeometry(r.width() - t, r.height() - t, t, t);
+
+    m_resizeGripLeft->raise();
+    m_resizeGripRight->raise();
+    m_resizeGripTop->raise();
+    m_resizeGripBottom->raise();
+    m_resizeGripTopLeft->raise();
+    m_resizeGripTopRight->raise();
+    m_resizeGripBottomLeft->raise();
+    m_resizeGripBottomRight->raise();
+}
+
+void NewUiWindow::setResizeGripsVisible(bool visible)
+{
+    const QList<QWidget*> grips = {
+        m_resizeGripLeft, m_resizeGripRight, m_resizeGripTop, m_resizeGripBottom,
+        m_resizeGripTopLeft, m_resizeGripTopRight, m_resizeGripBottomLeft, m_resizeGripBottomRight
+    };
+    for (QWidget *g : grips) {
+        if (g) g->setVisible(visible);
     }
 }
 

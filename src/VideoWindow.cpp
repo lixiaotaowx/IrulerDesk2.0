@@ -662,7 +662,13 @@ void VideoWindow::setupCustomTitleBar()
 
 void VideoWindow::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && m_titleBar->geometry().contains(event->pos()) && !m_isMaximized) {
+    const QPoint localPos = event->pos();
+    const int border = 8;
+    const bool inResizeBorder =
+        localPos.x() <= border || localPos.x() >= width() - border ||
+        localPos.y() <= border || localPos.y() >= height() - border;
+
+    if (event->button() == Qt::LeftButton && m_titleBar->geometry().contains(localPos) && !m_isMaximized && !inResizeBorder) {
         m_dragging = true;
         m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
         event->accept();
@@ -714,8 +720,32 @@ bool VideoWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
     if (!msg) {
         return QWidget::nativeEvent(eventType, message, result);
     }
-    // 不再拦截原生右键事件，交由Qt事件系统与VideoDisplayWidget处理
-    Q_UNUSED(msg);
+
+    if (msg->message == WM_NCHITTEST) {
+        if (m_isMaximized || isFullScreen()) {
+            return QWidget::nativeEvent(eventType, message, result);
+        }
+
+        const POINTS pts = MAKEPOINTS(msg->lParam);
+        const QPoint globalPos(pts.x, pts.y);
+        const QPoint localPos = mapFromGlobal(globalPos);
+
+        const int border = 8;
+        const bool left = localPos.x() >= 0 && localPos.x() <= border;
+        const bool right = localPos.x() >= width() - border && localPos.x() <= width();
+        const bool top = localPos.y() >= 0 && localPos.y() <= border;
+        const bool bottom = localPos.y() >= height() - border && localPos.y() <= height();
+
+        if (top && left) { *result = HTTOPLEFT; return true; }
+        if (top && right) { *result = HTTOPRIGHT; return true; }
+        if (bottom && left) { *result = HTBOTTOMLEFT; return true; }
+        if (bottom && right) { *result = HTBOTTOMRIGHT; return true; }
+        if (left) { *result = HTLEFT; return true; }
+        if (right) { *result = HTRIGHT; return true; }
+        if (top) { *result = HTTOP; return true; }
+        if (bottom) { *result = HTBOTTOM; return true; }
+    }
+
     return QWidget::nativeEvent(eventType, message, result);
 }
 

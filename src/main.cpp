@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
     ConsoleLogger::installQtMessageHandler();
 
     QApplication app(argc, argv);
+    app.setQuitOnLastWindowClosed(false);
     
     {
         QLocalSocket probe;
@@ -143,10 +144,11 @@ int main(int argc, char *argv[])
     QTimer *splashTimer = new QTimer(&app);
     QObject::connect(splashTimer, &QTimer::timeout, [&splash, canvas, barX, barY, barWidth, barHeight, progress = 0]() mutable {
         if (progress < 95) {
-            if (progress < 20) progress += 2;
-            else if (progress < 60) progress += 1;
-            else if (progress < 80 && (QRandomGenerator::global()->bounded(2) == 0)) progress += 1;
-            else if (QRandomGenerator::global()->bounded(10) == 0) progress += 1;
+            if (progress < 50) progress += 4;
+            else if (progress < 80) progress += 2;
+            else if (progress < 92) progress += 1;
+            else if (QRandomGenerator::global()->bounded(3) == 0) progress += 1;
+            if (progress > 95) progress = 95;
         }
 
         QPixmap temp = canvas;

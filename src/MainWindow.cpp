@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QPainter>
 #include <QPainterPath>
+#include <QCloseEvent>
 #include <QSet>
 #include <cstdlib>
 #include <ctime>
@@ -115,17 +116,21 @@ MainWindow::MainWindow(QWidget *parent)
         QAction *showAction = m_trayMenu->addAction(QStringLiteral("显示主窗口"));
         QAction *exitAction = m_trayMenu->addAction(QStringLiteral("退出"));
         connect(showAction, &QAction::triggered, this, [this]() {
-            if (m_transparentImageList) { m_transparentImageList->show(); m_transparentImageList->raise(); }
+            showMainList();
         });
         connect(exitAction, &QAction::triggered, this, &MainWindow::onExitRequested);
         m_trayIcon->setContextMenu(m_trayMenu);
         connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason r) {
-            if (r == QSystemTrayIcon::DoubleClick) {
-                if (m_transparentImageList) { m_transparentImageList->show(); m_transparentImageList->raise(); }
+            if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick) {
+                showMainList();
             }
         });
         m_trayIcon->show();
     }
+
+    QTimer::singleShot(0, this, [this]() {
+        if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
+    });
 
     // 初始化登录系统
     initializeLoginSystem();
@@ -244,6 +249,17 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
     return QMainWindow::nativeEvent(eventType, message, result);
 }
 #endif
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (m_exitRequested) {
+        QMainWindow::closeEvent(event);
+        return;
+    }
+    onHideRequested();
+    hide();
+    event->ignore();
+}
 
 NewUiWindow* MainWindow::transparentImageList() const
 {
@@ -1826,6 +1842,17 @@ void MainWindow::updateUserList(const QJsonArray& users)
 {
     // 1. 更新服务器在线用户蓄水池，并构建新用户ID集合
     const QSet<QString> previousUserIds = m_serverOnlineUsers;
+    QHash<QString, QString> previousUserNameById;
+    for (int i = 0; i < m_listWidget->count(); ++i) {
+        QListWidgetItem *item = m_listWidget->item(i);
+        if (!item) continue;
+        const QString uid = item->data(Qt::UserRole).toString();
+        if (uid.isEmpty()) continue;
+        QString name = item->text();
+        int idx = name.lastIndexOf(" (");
+        if (idx != -1) name = name.left(idx);
+        previousUserNameById.insert(uid, name);
+    }
     m_serverOnlineUsers.clear();
     QSet<QString> newUserIds;
     QHash<QString, QString> newUserNameById;
@@ -1861,6 +1888,14 @@ void MainWindow::updateUserList(const QJsonArray& users)
             if (uid.isEmpty() || uid == m_userId) continue;
             const QString name = newUserNameById.value(uid);
             showUserOnlineToast(uid, name, newUserIconById.value(uid, -1));
+        }
+
+        QSet<QString> left = previousUserIds;
+        left.subtract(newUserIds);
+        for (const QString &uid : left) {
+            if (uid.isEmpty() || uid == m_userId) continue;
+            const QString name = previousUserNameById.value(uid);
+            showUserOfflineToast(uid, name, -1);
         }
     }
     m_userListInitialized = true;
@@ -1968,29 +2003,17 @@ void MainWindow::updateUserList(const QJsonArray& users)
     }
 }
 
-static QPixmap buildCircularPixmapForToast(const QPixmap &src, int size)
+static QPixmap buildSquarePixmapForToast(const QPixmap &src, int size)
 {
     const int s = qMax(8, size);
     if (src.isNull()) {
         return QPixmap();
     }
 
-    QPixmap out(s, s);
-    out.fill(Qt::transparent);
-
-    QPainter p(&out);
-    p.setRenderHint(QPainter::Antialiasing, true);
-
-    QPainterPath path;
-    path.addEllipse(QRectF(0, 0, s, s));
-    p.setClipPath(path);
-
     const QPixmap scaled = src.scaled(s, s, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
     const int x = qMax(0, (scaled.width() - s) / 2);
     const int y = qMax(0, (scaled.height() - s) / 2);
-    p.drawPixmap(-x, -y, scaled);
-
-    return out;
+    return scaled.copy(x, y, s, s);
 }
 
 static QPixmap loadAvatarPixmapForToast(const QString &userId, int iconId, int size)
@@ -2001,7 +2024,7 @@ static QPixmap loadAvatarPixmapForToast(const QString &userId, int iconId, int s
         const QString cachedPath = QDir(appDir).filePath(QStringLiteral("avatars/%1.png").arg(userId));
         QPixmap cached(cachedPath);
         if (!cached.isNull()) {
-            return buildCircularPixmapForToast(cached, size);
+            return buildSquarePixmapForToast(cached, size);
         }
     }
 
@@ -2009,7 +2032,7 @@ static QPixmap loadAvatarPixmapForToast(const QString &userId, int iconId, int s
         const QString iconPath = QDir(appDir).filePath(QStringLiteral("maps/icon/%1.png").arg(iconId));
         QPixmap icon(iconPath);
         if (!icon.isNull()) {
-            return buildCircularPixmapForToast(icon, size);
+            return buildSquarePixmapForToast(icon, size);
         }
     }
 
@@ -2018,12 +2041,12 @@ static QPixmap loadAvatarPixmapForToast(const QString &userId, int iconId, int s
     const QString avatarPath = QFileInfo::exists(candidate1) ? candidate1 : candidate2;
     QPixmap head(avatarPath);
     if (!head.isNull()) {
-        return buildCircularPixmapForToast(head, size);
+        return buildSquarePixmapForToast(head, size);
     }
 
     QPixmap fallback(size, size);
     fallback.fill(QColor(220, 220, 220));
-    return buildCircularPixmapForToast(fallback, size);
+    return buildSquarePixmapForToast(fallback, size);
 }
 
 void MainWindow::showUserOnlineToast(const QString& userId, const QString& userName, int iconId)
@@ -2034,7 +2057,7 @@ void MainWindow::showUserOnlineToast(const QString& userId, const QString& userN
     toast->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
     QWidget *body = new QWidget(toast);
-    body->setStyleSheet("background-color: rgba(255, 255, 255, 245); border: 2px solid rgba(0, 0, 0, 40); border-radius: 18px;");
+    body->setStyleSheet("background-color: rgba(255, 255, 255, 255); border: none; border-radius: 18px;");
     body->setMinimumSize(420, 96);
     QHBoxLayout *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(20, 18, 20, 18);
@@ -2045,11 +2068,60 @@ void MainWindow::showUserOnlineToast(const QString& userId, const QString& userN
     avatar->setFixedSize(avatarSize, avatarSize);
     avatar->setPixmap(loadAvatarPixmapForToast(userId, iconId, avatarSize));
     avatar->setAlignment(Qt::AlignCenter);
+    avatar->setStyleSheet("background: transparent;");
     bodyLayout->addWidget(avatar);
 
     const QString display = userName.isEmpty() ? userId : userName;
     QLabel *label = new QLabel(QStringLiteral("%1已上线 😊").arg(display), body);
     label->setStyleSheet("color: #111111; font-size: 24px; font-weight: 800; background: transparent;");
+    bodyLayout->addWidget(label);
+
+    QVBoxLayout *root = new QVBoxLayout(toast);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->addWidget(body);
+
+    toast->adjustSize();
+    body->adjustSize();
+
+    m_onlineToasts.append(toast);
+
+    connect(toast, &QObject::destroyed, this, [this, toast]() {
+        m_onlineToasts.removeAll(toast);
+        repositionOnlineToasts();
+    });
+
+    repositionOnlineToasts();
+    toast->show();
+    toast->raise();
+
+    QTimer::singleShot(5000, toast, &QWidget::deleteLater);
+}
+
+void MainWindow::showUserOfflineToast(const QString& userId, const QString& userName, int iconId)
+{
+    QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
+    toast->setAttribute(Qt::WA_TranslucentBackground);
+    toast->setAttribute(Qt::WA_ShowWithoutActivating);
+    toast->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+
+    QWidget *body = new QWidget(toast);
+    body->setStyleSheet("background-color: rgba(140, 70, 70, 255); border: none; border-radius: 18px;");
+    body->setMinimumSize(420, 96);
+    QHBoxLayout *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(20, 18, 20, 18);
+    bodyLayout->setSpacing(14);
+
+    const int avatarSize = 56;
+    QLabel *avatar = new QLabel(body);
+    avatar->setFixedSize(avatarSize, avatarSize);
+    avatar->setPixmap(loadAvatarPixmapForToast(userId, iconId, avatarSize));
+    avatar->setAlignment(Qt::AlignCenter);
+    avatar->setStyleSheet("background: transparent;");
+    bodyLayout->addWidget(avatar);
+
+    const QString display = userName.isEmpty() ? userId : userName;
+    QLabel *label = new QLabel(QStringLiteral("%1已下班").arg(display), body);
+    label->setStyleSheet("color: #ffffff; font-size: 24px; font-weight: 800; background: transparent;");
     bodyLayout->addWidget(label);
 
     QVBoxLayout *root = new QVBoxLayout(toast);
@@ -2853,8 +2925,12 @@ void MainWindow::onUserImageClicked(const QString &userId, const QString &userNa
 void MainWindow::showMainList()
 {
     if (m_transparentImageList) {
+        if (m_transparentImageList->windowState() & Qt::WindowMinimized) {
+            m_transparentImageList->setWindowState(m_transparentImageList->windowState() & ~Qt::WindowMinimized);
+        }
         m_transparentImageList->show();
         m_transparentImageList->raise();
+        m_transparentImageList->activateWindow();
     }
 }
 
@@ -3005,6 +3081,7 @@ void MainWindow::onClearMarksRequested()
 
 void MainWindow::onExitRequested()
 {
+    m_exitRequested = true;
     // 尽量优雅地停止推流与相关进程
     stopStreaming();
     if (m_videoWindow) {

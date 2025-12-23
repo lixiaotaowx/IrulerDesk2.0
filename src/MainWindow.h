@@ -30,6 +30,7 @@ class VideoWindow;
 class NewUiWindow;
 class AvatarSettingsWindow;
 class QSoundEffect;
+class QCloseEvent;
 
 class MainWindow : public QMainWindow
 {
@@ -89,6 +90,7 @@ private:
     void stopProcesses();
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+    void closeEvent(QCloseEvent *event) override;
     
     // 配置文件相关方法
     QString getConfigFilePath() const;
@@ -142,6 +144,7 @@ private:
     void startVideoReceiving(const QString& targetDeviceId);
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
     void showUserOnlineToast(const QString& userId, const QString& userName, int iconId);
+    void showUserOfflineToast(const QString& userId, const QString& userName, int iconId);
     void repositionOnlineToasts();
 
     // 显示更新日志
@@ -236,6 +239,7 @@ private:
     class QSystemTrayIcon *m_trayIcon = nullptr;
     QMenu *m_trayMenu = nullptr;
     bool m_inSystemSuspend = false;
+    bool m_exitRequested = false;
 
     // 提示音
     QSoundEffect *m_alertSound = nullptr;

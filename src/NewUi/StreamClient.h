@@ -14,6 +14,7 @@ public:
 
     void connectToServer(const QUrl &url);
     void disconnectFromServer();
+    void setJpegQuality(int quality);
     void sendFrame(const QPixmap &pixmap, bool force = false);
     qint64 sendTextMessage(const QString &message);
     bool isConnected() const;
@@ -25,6 +26,7 @@ signals:
     void logMessage(const QString &msg);
     void frameReceived(const QPixmap &frame);
     void startStreamingRequested();
+    void hoverStreamRequested(const QString &targetId, const QString &channelId, int fps, bool enabled);
 
 private slots:
     void onConnected();
@@ -39,4 +41,5 @@ private:
     QByteArray m_lastSentBytes;
     qint64 m_lastSentAtMs = 0;
     QByteArray m_lastReceivedBytes;
+    int m_jpegQuality = 30;
 };

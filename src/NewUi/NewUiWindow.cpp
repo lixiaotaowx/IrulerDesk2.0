@@ -15,7 +15,6 @@
 #include <QFileDialog>
 #include <QSaveFile>
 #include <QDesktopServices>
-#include <QHelpEvent>
 #include <QPointer>
 #include <QCursor>
 #include <QFrame>
@@ -28,6 +27,7 @@
 #include <QAction>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QRandomGenerator>
@@ -40,6 +40,8 @@
 #include <QWebEngineView>
 #include <QWebEnginePage>
 #include <QSignalBlocker>
+#include <climits>
+#include <QAbstractButton>
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -85,83 +87,6 @@ private:
     QPointer<QWebEngineView> m_view;
 };
 
-class FancyToolTipWidget : public QWidget {
-public:
-    FancyToolTipWidget()
-        : QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint)
-    {
-        setAttribute(Qt::WA_TranslucentBackground);
-        setAttribute(Qt::WA_ShowWithoutActivating);
-        setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        setWindowFlag(Qt::ToolTip, true);
-
-        auto *layout = new QVBoxLayout(this);
-        layout->setContentsMargins(14, 10, 14, 10);
-        layout->setSpacing(0);
-
-        m_label = new QLabel(this);
-        m_label->setStyleSheet("color: #f4f4f4; background: transparent; font-size: 12px;");
-        m_label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        layout->addWidget(m_label);
-    }
-
-    void setText(const QString &text)
-    {
-        m_label->setText(text);
-        m_label->adjustSize();
-        adjustSize();
-    }
-
-    void showAt(const QPoint &globalPos)
-    {
-        adjustSize();
-        const QPoint offset(16, 24);
-        QPoint pos = globalPos + offset;
-        if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
-            const QRect avail = screen->availableGeometry();
-            const int maxX = avail.right() - width() + 1;
-            const int maxY = avail.bottom() - height() + 1;
-            pos.setX(qBound(avail.left(), pos.x(), maxX));
-            pos.setY(qBound(avail.top(), pos.y(), maxY));
-        }
-        move(pos);
-        show();
-        raise();
-    }
-
-protected:
-    void paintEvent(QPaintEvent *event) override
-    {
-        Q_UNUSED(event);
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-
-        const QRectF bubbleRect = QRectF(rect());
-        const qreal radius = 12.0;
-
-        QPainterPath bubblePath;
-        bubblePath.addRoundedRect(bubbleRect, radius, radius);
-
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(45, 45, 45, 235));
-        p.drawPath(bubblePath);
-    }
-
-private:
-    static constexpr int kShadowPad = 0;
-    QLabel *m_label = nullptr;
-};
-
-static FancyToolTipWidget *ensureFancyToolTip()
-{
-    static QPointer<FancyToolTipWidget> tip;
-    if (!tip) {
-        tip = new FancyToolTipWidget();
-        tip->hide();
-    }
-    return tip;
-}
-
 NewUiWindow::NewUiWindow(QWidget *parent)
     : QWidget(parent)
 {
@@ -197,6 +122,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint);
     setAttribute(Qt::WA_TranslucentBackground);
+    setMouseTracking(true);
     resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
     
     setupUi();
@@ -204,7 +130,8 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Timer for screenshot
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
-    m_timer->start(2000); // 2 seconds
+    m_timer->start(60 * 1000);
+    QTimer::singleShot(0, this, &NewUiWindow::onTimerTimeout);
 
     m_talkSpinnerTimer = new QTimer(this);
     connect(m_talkSpinnerTimer, &QTimer::timeout, this, &NewUiWindow::onTalkSpinnerTimeout);
@@ -212,10 +139,76 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Setup StreamClient
     m_streamClient = new StreamClient(this);
     connect(m_streamClient, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
+    connect(m_streamClient, &StreamClient::connected, this, [this]() {
+        publishLocalScreenFrame(true);
+    });
+    connect(m_streamClient, &StreamClient::startStreamingRequested, this, [this]() {
+        publishLocalScreenFrame(true);
+    });
+
+    connect(m_streamClient, &StreamClient::hoverStreamRequested, this, [this](const QString &targetId, const QString &channelId, int fps, bool enabled) {
+        if (!targetId.isEmpty() && targetId != m_myStreamId) {
+            return;
+        }
+        if (enabled) {
+            startHiFpsPublishing(channelId, fps);
+        } else {
+            stopHiFpsPublishing(channelId);
+        }
+    });
 
     m_avatarPublisher = new StreamClient(this);
     connect(m_avatarPublisher, &StreamClient::connected, this, &NewUiWindow::publishLocalAvatarOnce);
     connect(m_avatarPublisher, &StreamClient::startStreamingRequested, this, &NewUiWindow::publishLocalAvatarOnce);
+
+    m_hoverCandidateTimer = new QTimer(this);
+    m_hoverCandidateTimer->setSingleShot(true);
+    connect(m_hoverCandidateTimer, &QTimer::timeout, this, [this]() {
+        if (m_hoverCandidateUserId.isEmpty() || m_hoverCandidateUserId == m_myStreamId) {
+            return;
+        }
+        if (QCursor::pos() != m_hoverCandidatePos) {
+            return;
+        }
+        QWidget *under = QApplication::widgetAt(m_hoverCandidatePos);
+        const QString currentId = extractUserId(under);
+        if (currentId != m_hoverCandidateUserId) {
+            return;
+        }
+        startHiFpsForUser(m_hoverCandidateUserId);
+    });
+
+    m_selectionAutoPauseTimer = new QTimer(this);
+    m_selectionAutoPauseTimer->setSingleShot(true);
+    connect(m_selectionAutoPauseTimer, &QTimer::timeout, this, [this]() {
+        if (m_selectionAutoPauseUserId.isEmpty() || m_selectionAutoPauseUserId == m_myStreamId) {
+            return;
+        }
+        if (QApplication::applicationState() != Qt::ApplicationActive || !m_listWidget) {
+            return;
+        }
+        QListWidgetItem *current = m_listWidget->currentItem();
+        if (!current) {
+            return;
+        }
+        QString currentId = current->data(Qt::UserRole).toString();
+        if (currentId.isEmpty()) {
+            if (QWidget *iw = m_listWidget->itemWidget(current)) {
+                if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                    currentId = card->property("userId").toString();
+                } else {
+                    currentId = iw->property("userId").toString();
+                }
+            }
+        }
+        if (currentId != m_selectionAutoPauseUserId) {
+            return;
+        }
+        if (m_autoPausedUserId == currentId) {
+            return;
+        }
+        pauseSelectedStreamForUser(currentId);
+    });
 
     m_avatarPublishTimer = new QTimer(this);
     connect(m_avatarPublishTimer, &QTimer::timeout, this, &NewUiWindow::publishLocalAvatarOnce);
@@ -238,6 +231,36 @@ NewUiWindow::NewUiWindow(QWidget *parent)
                              avail.y() + (avail.height() - sz.height()) / 2);
         move(topLeft);
     }
+
+    m_resizeGripLeft = new QWidget(this);
+    m_resizeGripRight = new QWidget(this);
+    m_resizeGripTop = new QWidget(this);
+    m_resizeGripBottom = new QWidget(this);
+    m_resizeGripTopLeft = new QWidget(this);
+    m_resizeGripTopRight = new QWidget(this);
+    m_resizeGripBottomLeft = new QWidget(this);
+    m_resizeGripBottomRight = new QWidget(this);
+
+    const QList<QWidget*> grips = {
+        m_resizeGripLeft, m_resizeGripRight, m_resizeGripTop, m_resizeGripBottom,
+        m_resizeGripTopLeft, m_resizeGripTopRight, m_resizeGripBottomLeft, m_resizeGripBottomRight
+    };
+    for (QWidget *g : grips) {
+        g->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+        g->setMouseTracking(true);
+        g->installEventFilter(this);
+        g->raise();
+    }
+    m_resizeGripLeft->setCursor(Qt::SizeHorCursor);
+    m_resizeGripRight->setCursor(Qt::SizeHorCursor);
+    m_resizeGripTop->setCursor(Qt::SizeVerCursor);
+    m_resizeGripBottom->setCursor(Qt::SizeVerCursor);
+    m_resizeGripTopLeft->setCursor(Qt::SizeFDiagCursor);
+    m_resizeGripBottomRight->setCursor(Qt::SizeFDiagCursor);
+    m_resizeGripTopRight->setCursor(Qt::SizeBDiagCursor);
+    m_resizeGripBottomLeft->setCursor(Qt::SizeBDiagCursor);
+    updateResizeGrips();
+    setResizeGripsVisible(!(windowState() & Qt::WindowMaximized));
 }
 
 void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
@@ -253,10 +276,8 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         m_localNameLabel->setText(fullText);
     }
     if (m_videoLabel) {
-        m_videoLabel->setToolTip(QStringLiteral("自己"));
         m_videoLabel->installEventFilter(this);
         if (auto *pw = m_videoLabel->parentWidget()) {
-            pw->setToolTip(QStringLiteral("自己"));
             pw->installEventFilter(this);
         }
     }
@@ -344,6 +365,11 @@ NewUiWindow::~NewUiWindow()
     }
     if (m_avatarPublishTimer && m_avatarPublishTimer->isActive()) {
         m_avatarPublishTimer->stop();
+    }
+    stopHiFpsForUser();
+    const QStringList chs = m_hiFpsPublishers.keys();
+    for (const QString &ch : chs) {
+        stopHiFpsPublishing(ch);
     }
 }
 
@@ -818,7 +844,6 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         if (m_remoteStreams.contains(id)) {
             QLabel *imgLabel = m_userLabels.value(id, nullptr);
             if (imgLabel) {
-                imgLabel->setToolTip(name.isEmpty() ? id : name);
             }
             QListWidgetItem *existingItem = m_userItems.value(id, nullptr);
             if (existingItem && m_listWidget) {
@@ -850,6 +875,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         card->setObjectName("CardFrame");
         // [Interaction Fix] Install event filter on local card to allow double-click testing
         card->installEventFilter(this);
+        card->setProperty("userId", id);
         // m_localCard = card; // REMOVED: Incorrectly assigning remote card to local pointer
 
         card->setStyleSheet(
@@ -878,11 +904,11 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         // Image Label
         QLabel *imgLabel = new QLabel();
         imgLabel->setObjectName("StreamImageLabel");
+        imgLabel->setProperty("userId", id);
         imgLabel->setFixedSize(m_imgWidth, m_imgHeight); 
         imgLabel->setAlignment(Qt::AlignCenter);
         imgLabel->setText("Loading Stream...");
         imgLabel->setStyleSheet("color: #888; font-size: 10px;");
-        imgLabel->setToolTip(name.isEmpty() ? id : name);
         imgLabel->installEventFilter(this);
 
         QLabel *talkOverlay = new QLabel(imgLabel);
@@ -1015,7 +1041,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
 
 void NewUiWindow::onStreamLog(const QString &msg)
 {
-    Q_UNUSED(msg);
+    qInfo().noquote() << msg;
 }
 
 void NewUiWindow::setupUi()
@@ -1193,6 +1219,8 @@ void NewUiWindow::setupUi()
     QWidget *titleBar = new QWidget(rightPanel);
     titleBar->setFixedHeight(50); // Increase height to accommodate larger buttons
     titleBar->setStyleSheet("background-color: transparent;");
+    m_titleBar = titleBar;
+    titleBar->installEventFilter(this);
     
     QHBoxLayout *titleLayout = new QHBoxLayout(titleBar);
     titleLayout->setContentsMargins(0, 0, 0, 0);
@@ -1205,6 +1233,7 @@ void NewUiWindow::setupUi()
     toolsContainer->setObjectName("ToolsContainer");
     toolsContainer->setFixedSize(160, 40);
     toolsContainer->setFrameShape(QFrame::NoFrame);
+    toolsContainer->installEventFilter(this);
     // REMOVED: setAttribute(Qt::WA_TranslucentBackground); which was hiding the background
     
     // Style for the pill-shaped background
@@ -1295,6 +1324,7 @@ void NewUiWindow::setupUi()
     // Important: Ensure the widget itself doesn't paint a background, only the stylesheet image
     controlContainer->setAttribute(Qt::WA_TranslucentBackground);
     controlContainer->setObjectName("TitleControlContainer");
+    controlContainer->installEventFilter(this);
     controlContainer->setStyleSheet(
         "QPushButton {"
         "   background-color: transparent;"
@@ -1430,6 +1460,7 @@ void NewUiWindow::setupUi()
     m_listWidget->verticalScrollBar()->setSingleStep(10); // Scroll 10 pixels at a time
     // Remove default border and background to blend in
     m_listWidget->setFrameShape(QFrame::NoFrame);
+    m_listWidget->viewport()->installEventFilter(this);
 
     // [Context Menu] Right-click menu with rounded corners
     m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -1540,6 +1571,65 @@ void NewUiWindow::setupUi()
         if (!userId.isEmpty() && userId != m_myStreamId) {
              emit startWatchingRequested(userId);
         }
+    });
+
+    connect(m_listWidget, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current, QListWidgetItem *previous) {
+        Q_UNUSED(previous);
+        QString userId;
+        if (current) {
+            userId = current->data(Qt::UserRole).toString();
+            if (userId.isEmpty()) {
+                if (QWidget *iw = m_listWidget->itemWidget(current)) {
+                    if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                        userId = card->property("userId").toString();
+                    } else {
+                        userId = iw->property("userId").toString();
+                    }
+                }
+            }
+        }
+        if (userId.isEmpty() || userId == m_myStreamId) {
+            cancelHoverHiFps();
+            resetSelectionAutoPause(QString());
+            return;
+        }
+        if (QApplication::applicationState() != Qt::ApplicationActive) {
+            cancelHoverHiFps();
+            resetSelectionAutoPause(QString());
+            return;
+        }
+        if (userId == m_autoPausedUserId) {
+            resumeSelectedStreamForUser(userId);
+        }
+        startHiFpsForUser(userId);
+        resetSelectionAutoPause(userId);
+    });
+
+    connect(m_listWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+        if (!item) {
+            return;
+        }
+        QString userId = item->data(Qt::UserRole).toString();
+        if (userId.isEmpty()) {
+            if (QWidget *iw = m_listWidget->itemWidget(item)) {
+                if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                    userId = card->property("userId").toString();
+                } else {
+                    userId = iw->property("userId").toString();
+                }
+            }
+        }
+        if (userId.isEmpty() || userId == m_myStreamId) {
+            return;
+        }
+        if (QApplication::applicationState() != Qt::ApplicationActive) {
+            return;
+        }
+        if (userId == m_autoPausedUserId) {
+            resumeSelectedStreamForUser(userId);
+            startHiFpsForUser(userId);
+        }
+        resetSelectionAutoPause(userId);
     });
 
     connect(m_listWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
@@ -1697,13 +1787,6 @@ void NewUiWindow::setupUi()
         tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
         tabBtn->setIconSize(QSize(14, 14));
         
-        // [Interaction Fix] Connect local tab button for testing
-        connect(tabBtn, &QPushButton::clicked, this, [this]() {
-             if (!m_myStreamId.isEmpty()) {
-                 emit startWatchingRequested(m_myStreamId);
-             }
-        });
-
         // Text Label (Middle)
     QString displayName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
     // Format: Name only (ID removed as requested)
@@ -1992,9 +2075,62 @@ void NewUiWindow::changeEvent(QEvent *event)
     }
 }
 
+bool NewUiWindow::event(QEvent *event)
+{
+    if (event && (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::WindowActivate)) {
+        const bool active = (event->type() == QEvent::WindowActivate);
+        if (!active) {
+            if (m_selectionAutoPauseTimer) {
+                m_selectionAutoPauseTimer->stop();
+            }
+            cancelHoverHiFps();
+            const QStringList chs = m_hiFpsPublishers.keys();
+            for (const QString &ch : chs) {
+                stopHiFpsPublishing(ch);
+            }
+        } else {
+            if (QApplication::applicationState() == Qt::ApplicationActive && m_listWidget) {
+                QListWidgetItem *current = m_listWidget->currentItem();
+                QString userId;
+                if (current) {
+                    userId = current->data(Qt::UserRole).toString();
+                    if (userId.isEmpty()) {
+                        if (QWidget *iw = m_listWidget->itemWidget(current)) {
+                            if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                                userId = card->property("userId").toString();
+                            } else {
+                                userId = iw->property("userId").toString();
+                            }
+                        }
+                    }
+                }
+                if (!userId.isEmpty() && userId != m_myStreamId) {
+                    if (userId != m_autoPausedUserId) {
+                        startHiFpsForUser(userId);
+                        resetSelectionAutoPause(userId);
+                    }
+                }
+            }
+        }
+    }
+    return QWidget::event(event);
+}
+
 void NewUiWindow::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
+        const QPoint localPos = event->position().toPoint();
+        if (localPos.y() <= 80) {
+            m_titleBarDragging = true;
+            m_titleBarPendingRestore = (windowState() & Qt::WindowMaximized);
+            m_titleBarSnapMaximize = false;
+            m_titleBarPressGlobal = event->globalPosition().toPoint();
+            m_titleBarPressLocalInWindow = localPos;
+            m_titleBarDragOffset = m_titleBarPressGlobal - frameGeometry().topLeft();
+            m_dragging = false;
+            event->accept();
+            return;
+        }
         m_dragging = true;
         // Use globalPosition() for Qt6
         m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
@@ -2004,6 +2140,32 @@ void NewUiWindow::mousePressEvent(QMouseEvent *event)
 
 void NewUiWindow::mouseMoveEvent(QMouseEvent *event)
 {
+    if ((event->buttons() & Qt::LeftButton) && m_titleBarDragging) {
+        const QPoint globalPos = event->globalPosition().toPoint();
+        if (m_titleBarPendingRestore) {
+            m_titleBarPendingRestore = false;
+            const QRect restore = normalGeometry().isValid() ? normalGeometry() : geometry();
+            const int restoreW = qMax(200, restore.width());
+            const int restoreH = qMax(200, restore.height());
+            const qreal xRatio = width() > 0 ? (qreal)m_titleBarPressLocalInWindow.x() / (qreal)width() : 0.5;
+            const int newX = globalPos.x() - qRound(xRatio * restoreW);
+            const int newY = globalPos.y() - m_titleBarPressLocalInWindow.y();
+            showNormal();
+            setGeometry(QRect(QPoint(newX, newY), QSize(restoreW, restoreH)));
+            m_titleBarDragOffset = globalPos - frameGeometry().topLeft();
+        } else {
+            move(globalPos - m_titleBarDragOffset);
+        }
+
+        if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
+            const QRect avail = screen->availableGeometry();
+            m_titleBarSnapMaximize = (globalPos.y() <= avail.top() + 24);
+        } else {
+            m_titleBarSnapMaximize = false;
+        }
+        event->accept();
+        return;
+    }
     if (event->buttons() & Qt::LeftButton && m_dragging) {
         move(event->globalPosition().toPoint() - m_dragPosition);
         event->accept();
@@ -2013,51 +2175,163 @@ void NewUiWindow::mouseMoveEvent(QMouseEvent *event)
 void NewUiWindow::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
+        if (m_titleBarDragging) {
+            const bool doMaximize = m_titleBarSnapMaximize && !(windowState() & Qt::WindowMaximized);
+            m_titleBarDragging = false;
+            m_titleBarPendingRestore = false;
+            m_titleBarSnapMaximize = false;
+            if (doMaximize) {
+                toggleFunction1Maximize();
+            }
+            event->accept();
+            return;
+        }
         m_dragging = false;
         event->accept();
     }
 }
 
+void NewUiWindow::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        const QPoint localPos = event->position().toPoint();
+        if (localPos.y() <= 80) {
+            toggleFunction1Maximize();
+            event->accept();
+            return;
+        }
+    }
+    QWidget::mouseDoubleClickEvent(event);
+}
+
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
 {
-    if (event->type() == QEvent::Enter || event->type() == QEvent::HoverEnter) {
-        auto *w = qobject_cast<QWidget*>(watched);
-        FancyToolTipWidget *tip = ensureFancyToolTip();
-        if (w && tip) {
-            const QString text = w->toolTip();
-            if (!text.isEmpty()) {
-                tip->setText(text);
-                tip->showAt(QCursor::pos());
+    if (m_titleBar && (watched == m_titleBar || watched->objectName() == QStringLiteral("ToolsContainer") || watched->objectName() == QStringLiteral("TitleControlContainer"))) {
+        if (qobject_cast<QAbstractButton*>(watched)) {
+            return QWidget::eventFilter(watched, event);
+        }
+        if (watched == m_toolbarAvatarLabel || watched == m_localAvatarLabel) {
+            return QWidget::eventFilter(watched, event);
+        }
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                toggleFunction1Maximize();
+                return true;
             }
         }
-    }
-
-    if (event->type() == QEvent::ToolTip) {
-        auto *w = qobject_cast<QWidget*>(watched);
-        FancyToolTipWidget *tip = ensureFancyToolTip();
-        if (w && tip) {
-            const QString text = w->toolTip();
-            if (!text.isEmpty()) {
-                tip->setText(text);
-                QPoint gp = QCursor::pos();
-                if (auto *he = dynamic_cast<QHelpEvent*>(event)) {
-                    gp = he->globalPos();
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                m_titleBarDragging = true;
+                m_titleBarPendingRestore = (windowState() & Qt::WindowMaximized);
+                m_titleBarSnapMaximize = false;
+                m_titleBarPressGlobal = me->globalPosition().toPoint();
+                m_titleBarPressLocalInWindow = mapFromGlobal(m_titleBarPressGlobal);
+                m_titleBarDragOffset = m_titleBarPressGlobal - frameGeometry().topLeft();
+                return true;
+            }
+        }
+        if (event->type() == QEvent::MouseMove) {
+            if (m_titleBarDragging) {
+                auto *me = static_cast<QMouseEvent*>(event);
+                if (!(me->buttons() & Qt::LeftButton)) {
+                    m_titleBarDragging = false;
+                    m_titleBarPendingRestore = false;
+                    m_titleBarSnapMaximize = false;
+                    return true;
                 }
-                tip->showAt(gp);
-            } else {
-                tip->hide();
+                const QPoint globalPos = me->globalPosition().toPoint();
+                if (m_titleBarPendingRestore) {
+                    m_titleBarPendingRestore = false;
+                    const QRect restore = normalGeometry().isValid() ? normalGeometry() : geometry();
+                    const int restoreW = qMax(200, restore.width());
+                    const int restoreH = qMax(200, restore.height());
+                    const qreal xRatio = width() > 0 ? (qreal)m_titleBarPressLocalInWindow.x() / (qreal)width() : 0.5;
+                    const int newX = globalPos.x() - qRound(xRatio * restoreW);
+                    const int newY = globalPos.y() - m_titleBarPressLocalInWindow.y();
+                    showNormal();
+                    setGeometry(QRect(QPoint(newX, newY), QSize(restoreW, restoreH)));
+                    m_titleBarDragOffset = globalPos - frameGeometry().topLeft();
+                } else {
+                    move(globalPos - m_titleBarDragOffset);
+                }
+
+                if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
+                    const QRect avail = screen->availableGeometry();
+                    m_titleBarSnapMaximize = (globalPos.y() <= avail.top() + 24);
+                } else {
+                    m_titleBarSnapMaximize = false;
+                }
+                return true;
             }
         }
-        return true;
+        if (event->type() == QEvent::MouseButtonRelease) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                const bool doMaximize = m_titleBarDragging && m_titleBarSnapMaximize && !(windowState() & Qt::WindowMaximized);
+                m_titleBarDragging = false;
+                m_titleBarPendingRestore = false;
+                m_titleBarSnapMaximize = false;
+                if (doMaximize) {
+                    toggleFunction1Maximize();
+                }
+                return true;
+            }
+        }
     }
 
-    if (event->type() == QEvent::Leave ||
-        event->type() == QEvent::MouseButtonPress ||
-        event->type() == QEvent::MouseButtonRelease ||
-        event->type() == QEvent::Wheel ||
-        event->type() == QEvent::FocusOut) {
-        if (auto *tip = ensureFancyToolTip()) {
-            tip->hide();
+    if (m_listWidget && watched == m_listWidget->viewport() && event->type() == QEvent::MouseButtonPress) {
+        auto *me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton) {
+            QListWidgetItem *item = m_listWidget->itemAt(me->pos());
+            if (!item && m_listWidget->count() > 0) {
+                int bestDist = INT_MAX;
+                QListWidgetItem *bestItem = nullptr;
+                for (int i = 0; i < m_listWidget->count(); ++i) {
+                    QListWidgetItem *it = m_listWidget->item(i);
+                    if (!it) continue;
+                    const QRect r = m_listWidget->visualItemRect(it);
+                    if (!r.isValid()) continue;
+                    const int dy = qAbs(r.center().y() - me->pos().y());
+                    if (dy < bestDist) {
+                        bestDist = dy;
+                        bestItem = it;
+                    }
+                }
+                if (bestItem) {
+                    m_listWidget->setCurrentItem(bestItem);
+                    return true;
+                }
+            }
+        }
+    }
+
+    if (event->type() == QEvent::MouseButtonRelease) {
+        auto *me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton) {
+            const QVariant v = watched->property("userId");
+            if (v.isValid()) {
+                const QString userId = v.toString();
+                if (!userId.isEmpty() && userId != m_myStreamId) {
+                    if (m_listWidget) {
+                        const QListWidgetItem *it = m_userItems.value(userId, nullptr);
+                        if (it) {
+                            m_listWidget->setCurrentItem(const_cast<QListWidgetItem*>(it));
+                        }
+                    }
+                    if (QApplication::applicationState() == Qt::ApplicationActive) {
+                        if (userId == m_autoPausedUserId) {
+                            resumeSelectedStreamForUser(userId);
+                        }
+                        startHiFpsForUser(userId);
+                        resetSelectionAutoPause(userId);
+                    } else {
+                        cancelHoverHiFps();
+                        resetSelectionAutoPause(QString());
+                    }
+                }
+            }
         }
     }
 
@@ -2314,10 +2588,34 @@ int NewUiWindow::getViewerCount() const
 
 void NewUiWindow::onTimerTimeout()
 {
-    // Ensure we have a target label to update
-    if (!m_videoLabel) return;
+    publishLocalScreenFrame(false);
+}
 
-    // 1. Capture Screen
+void NewUiWindow::publishLocalScreenFrame(bool force)
+{
+    if (!m_videoLabel) {
+        return;
+    }
+
+    QPixmap previewPix;
+    QPixmap sendPix;
+    buildLocalScreenFrame(previewPix, sendPix);
+    if (previewPix.isNull() || sendPix.isNull()) {
+        return;
+    }
+
+    m_videoLabel->setPixmap(previewPix);
+
+    if (m_streamClient && m_streamClient->isConnected()) {
+        m_streamClient->sendFrame(sendPix, force);
+    }
+}
+
+void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
+{
+    previewPix = QPixmap();
+    sendPix = QPixmap();
+
     QScreen *screen = nullptr;
     const auto screens = QGuiApplication::screens();
     if (m_captureScreenIndex >= 0 && m_captureScreenIndex < screens.size()) {
@@ -2326,70 +2624,315 @@ void NewUiWindow::onTimerTimeout()
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
     }
-    if (!screen) return;
-    QPixmap originalPixmap = screen->grabWindow(0);
-    
-    // 2. Prepare Image (Scale to 300px width as requested)
-    // Use m_cardBaseWidth to ensure we capture enough resolution for the UI
+    if (!screen) {
+        return;
+    }
+
+    const QPixmap originalPixmap = screen->grabWindow(0);
+    if (originalPixmap.isNull()) {
+        return;
+    }
+
     QPixmap srcPix = originalPixmap.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
 
-    // 3. Process Image (Rounded Corners) - Reusing logic from setupUi for consistency
-    QPixmap pixmap(m_imgWidth, m_imgHeight); 
+    QPixmap pixmap(m_imgWidth, m_imgHeight);
     pixmap.fill(Qt::transparent);
-    
+
     QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
-    
-    // Scale to fit the label size (m_imgWidth x m_imgHeight)
+
     QPixmap scaledPix = srcPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-    
-    // Center crop calculation
+
     int x = (m_imgWidth - scaledPix.width()) / 2;
     int y = (m_imgHeight - scaledPix.height()) / 2;
-    
+
     QPainterPath path;
     path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
     p.setClipPath(path);
-    
     p.drawPixmap(x, y, scaledPix);
     p.end();
 
-    // 4. Update the label directly (Video effect)
-    QPixmap previewPix = pixmap;
-    QPixmap sendPix = pixmap;
-    // 服务器发送的图片质量较低，需要压缩
+    previewPix = pixmap;
+    sendPix = pixmap;
     if (sendPix.width() > 200) {
         sendPix = sendPix.scaledToWidth(200, Qt::SmoothTransformation);
     }
-    {
-        const int previewJpegQuality = 30;
-        QByteArray bytes;
-        QBuffer buffer(&bytes);
-        buffer.open(QIODevice::WriteOnly);
-        if (sendPix.save(&buffer, "JPG", previewJpegQuality)) {
-            QImage decoded;
-            if (decoded.loadFromData(bytes, "JPG") && !decoded.isNull()) {
-                QPixmap decodedPix = QPixmap::fromImage(decoded);
-                QPixmap scaledDecoded = decodedPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-                QPixmap finalPreview(m_imgWidth, m_imgHeight);
-                finalPreview.fill(Qt::black);
-                QPainter pp(&finalPreview);
-                pp.setRenderHint(QPainter::Antialiasing);
-                pp.setRenderHint(QPainter::SmoothPixmapTransform);
-                const int dx = (m_imgWidth - scaledDecoded.width()) / 2;
-                const int dy = (m_imgHeight - scaledDecoded.height()) / 2;
-                pp.drawPixmap(dx, dy, scaledDecoded);
-                pp.end();
-                previewPix = finalPreview;
+
+    const int previewJpegQuality = 30;
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    if (!sendPix.save(&buffer, "JPG", previewJpegQuality)) {
+        return;
+    }
+
+    QImage decoded;
+    if (!decoded.loadFromData(bytes, "JPG") || decoded.isNull()) {
+        return;
+    }
+
+    QPixmap decodedPix = QPixmap::fromImage(decoded);
+    QPixmap scaledDecoded = decodedPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    QPixmap finalPreview(m_imgWidth, m_imgHeight);
+    finalPreview.fill(Qt::black);
+    QPainter pp(&finalPreview);
+    pp.setRenderHint(QPainter::Antialiasing);
+    pp.setRenderHint(QPainter::SmoothPixmapTransform);
+    const int dx = (m_imgWidth - scaledDecoded.width()) / 2;
+    const int dy = (m_imgHeight - scaledDecoded.height()) / 2;
+    pp.drawPixmap(dx, dy, scaledDecoded);
+    pp.end();
+    previewPix = finalPreview;
+}
+
+QString NewUiWindow::extractUserId(QObject *obj) const
+{
+    QObject *cur = obj;
+    while (cur) {
+        const QVariant v = cur->property("userId");
+        if (v.isValid()) {
+            const QString id = v.toString();
+            if (!id.isEmpty()) {
+                return id;
             }
         }
+        cur = cur->parent();
     }
-    m_videoLabel->setPixmap(previewPix);
+    return QString();
+}
 
-    // 5. Send frame to server
-    if (m_streamClient && m_streamClient->isConnected()) {
-        m_streamClient->sendFrame(sendPix);
+QString NewUiWindow::makeHoverChannelId(const QString &targetUserId) const
+{
+    if (targetUserId.isEmpty()) {
+        return QString();
+    }
+    return QStringLiteral("hfps_%1").arg(targetUserId);
+}
+
+void NewUiWindow::scheduleHoverHiFps(const QString &userId, const QPoint &globalPos)
+{
+    if (!m_hoverCandidateTimer) {
+        return;
+    }
+    if (m_hiFpsActiveUserId == userId) {
+        return;
+    }
+    m_hoverCandidateUserId = userId;
+    m_hoverCandidatePos = globalPos;
+    m_hoverCandidateTimer->start(1000);
+}
+
+void NewUiWindow::cancelHoverHiFps()
+{
+    if (m_hoverCandidateTimer) {
+        m_hoverCandidateTimer->stop();
+    }
+    m_hoverCandidateUserId.clear();
+    stopHiFpsForUser();
+}
+
+void NewUiWindow::startHiFpsForUser(const QString &userId)
+{
+    if (userId.isEmpty() || userId == m_myStreamId) {
+        return;
+    }
+    if (m_hiFpsActiveUserId == userId) {
+        return;
+    }
+    stopHiFpsForUser();
+
+    const QString channelId = makeHoverChannelId(userId);
+    if (channelId.isEmpty()) {
+        return;
+    }
+
+    StreamClient *client = new StreamClient(this);
+    const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(channelId);
+
+    connect(client, &StreamClient::frameReceived, this, [this, userId](const QPixmap &frame) {
+        QLabel *label = m_userLabels.value(userId, nullptr);
+        if (!label || frame.isNull()) {
+            return;
+        }
+        QPixmap pixmap(m_imgWidth, m_imgHeight);
+        pixmap.fill(Qt::transparent);
+        QPainter p(&pixmap);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        QPixmap scaledPix = frame.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        int x = (m_imgWidth - scaledPix.width()) / 2;
+        int y = (m_imgHeight - scaledPix.height()) / 2;
+        QPainterPath path;
+        path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
+        p.setClipPath(path);
+        p.drawPixmap(x, y, scaledPix);
+        p.end();
+        label->setPixmap(pixmap);
+    });
+
+    connect(client, &StreamClient::connected, this, [this, userId, channelId, client]() {
+        if (m_hiFpsSubscriber != client || m_hiFpsActiveUserId != userId) {
+            return;
+        }
+        sendHiFpsControl(userId, channelId, 10, true);
+    });
+
+    client->connectToServer(QUrl(subscribeUrl));
+
+    m_hiFpsActiveUserId = userId;
+    m_hiFpsActiveChannelId = channelId;
+    m_hiFpsSubscriber = client;
+}
+
+void NewUiWindow::stopHiFpsForUser()
+{
+    if (!m_hiFpsActiveUserId.isEmpty() && !m_hiFpsActiveChannelId.isEmpty()) {
+        sendHiFpsControl(m_hiFpsActiveUserId, m_hiFpsActiveChannelId, 10, false);
+    }
+    m_hiFpsActiveUserId.clear();
+    m_hiFpsActiveChannelId.clear();
+
+    if (m_hiFpsSubscriber) {
+        m_hiFpsSubscriber->disconnectFromServer();
+        m_hiFpsSubscriber->deleteLater();
+        m_hiFpsSubscriber = nullptr;
+    }
+}
+
+void NewUiWindow::sendHiFpsControl(const QString &targetUserId, const QString &channelId, int fps, bool enabled)
+{
+    StreamClient *ctrl = m_remoteStreams.value(targetUserId, nullptr);
+    if (!ctrl || !ctrl->isConnected()) {
+        ctrl = m_streamClient;
+    }
+    if (!ctrl || !ctrl->isConnected()) {
+        qInfo().noquote() << "[HiFps] control not sent: no connected socket"
+                          << " target_id=" << targetUserId
+                          << " channel_id=" << channelId
+                          << " enabled=" << enabled
+                          << " my_id=" << m_myStreamId;
+        return;
+    }
+    QJsonObject obj;
+    obj["type"] = "hover_stream";
+    obj["channel_id"] = channelId;
+    obj["fps"] = fps;
+    obj["enabled"] = enabled;
+    obj["target_id"] = targetUserId;
+    const QString payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+    const qint64 sent = ctrl->sendTextMessage(payload);
+    qInfo().noquote() << "[HiFps] control sent"
+                      << " bytes=" << sent
+                      << " via=" << (ctrl == m_streamClient ? "publish_socket" : "subscribe_socket")
+                      << " payload=" << payload;
+}
+
+void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
+{
+    if (channelId.isEmpty()) {
+        return;
+    }
+    if (m_hiFpsPublishers.contains(channelId)) {
+        return;
+    }
+
+    StreamClient *pub = new StreamClient(this);
+    pub->setJpegQuality(50);
+    const QString pubUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(channelId);
+    pub->connectToServer(QUrl(pubUrl));
+    m_hiFpsPublishers.insert(channelId, pub);
+
+    QTimer *t = new QTimer(this);
+    const int safeFps = qMax(1, qMin(30, fps));
+    t->setInterval(qMax(1, 1000 / safeFps));
+    connect(t, &QTimer::timeout, this, [this, channelId]() {
+        StreamClient *p = m_hiFpsPublishers.value(channelId, nullptr);
+        if (!p || !p->isConnected()) {
+            return;
+        }
+        QPixmap previewPix;
+        QPixmap sendPix;
+        buildLocalScreenFrame(previewPix, sendPix);
+        if (sendPix.isNull()) {
+            return;
+        }
+        if (sendPix.width() != 300) {
+            sendPix = sendPix.scaledToWidth(300, Qt::SmoothTransformation);
+        }
+        p->sendFrame(sendPix, true);
+    });
+    t->start();
+    m_hiFpsPublisherTimers.insert(channelId, t);
+}
+
+void NewUiWindow::stopHiFpsPublishing(const QString &channelId)
+{
+    if (channelId.isEmpty()) {
+        return;
+    }
+    if (QTimer *t = m_hiFpsPublisherTimers.take(channelId)) {
+        t->stop();
+        t->deleteLater();
+    }
+    if (StreamClient *p = m_hiFpsPublishers.take(channelId)) {
+        p->disconnectFromServer();
+        p->deleteLater();
+    }
+}
+
+void NewUiWindow::resetSelectionAutoPause(const QString &userId)
+{
+    if (!m_autoPausedUserId.isEmpty() && m_autoPausedUserId != userId) {
+        if (QLabel *ov = m_reselectOverlays.value(m_autoPausedUserId, nullptr)) {
+            ov->setVisible(false);
+        }
+        m_autoPausedUserId.clear();
+    }
+
+    m_selectionAutoPauseUserId = userId;
+    if (m_selectionAutoPauseTimer) {
+        m_selectionAutoPauseTimer->stop();
+    }
+    if (userId.isEmpty() || userId == m_myStreamId) {
+        return;
+    }
+    if (QApplication::applicationState() != Qt::ApplicationActive) {
+        return;
+    }
+    if (userId == m_autoPausedUserId) {
+        return;
+    }
+    if (m_selectionAutoPauseTimer) {
+        m_selectionAutoPauseTimer->start(60 * 1000);
+    }
+}
+
+void NewUiWindow::pauseSelectedStreamForUser(const QString &userId)
+{
+    if (userId.isEmpty() || userId == m_myStreamId) {
+        return;
+    }
+    m_autoPausedUserId = userId;
+    if (QLabel *ov = m_reselectOverlays.value(userId, nullptr)) {
+        ov->setVisible(true);
+        ov->raise();
+    }
+    if (userId == m_hiFpsActiveUserId) {
+        stopHiFpsForUser();
+    }
+}
+
+void NewUiWindow::resumeSelectedStreamForUser(const QString &userId)
+{
+    if (userId.isEmpty()) {
+        return;
+    }
+    if (m_autoPausedUserId == userId) {
+        m_autoPausedUserId.clear();
+    }
+    if (QLabel *ov = m_reselectOverlays.value(userId, nullptr)) {
+        ov->setVisible(false);
     }
 }
 
@@ -2424,7 +2967,6 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     // [Interaction Fix] Install event filter to capture double clicks on the card
     card->setProperty("userId", userId);
     card->installEventFilter(this);
-    card->setToolTip(displayName);
 
     card->setStyleSheet(
         "#CardFrame {"
@@ -2455,8 +2997,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     imgLabel->setStyleSheet("color: #888; font-size: 10px;");
 
     QWidget *imageContainer = new QWidget();
+    imageContainer->setProperty("userId", userId);
     imageContainer->setFixedSize(m_imgWidth, m_imgHeight);
-    imageContainer->setToolTip(displayName);
     imageContainer->installEventFilter(this);
     imgLabel->setParent(imageContainer);
     imgLabel->move(0, 0);
@@ -2469,6 +3011,15 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     talkOverlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-size: 34px; font-weight: bold; background-color: rgba(0, 200, 83, 90); border-radius: 8px;");
     talkOverlay->setVisible(false);
     m_talkOverlays.insert(userId, talkOverlay);
+
+    QLabel *reselectOverlay = new QLabel(imageContainer);
+    reselectOverlay->setText(QStringLiteral("请重新选中观看"));
+    reselectOverlay->setAlignment(Qt::AlignCenter);
+    reselectOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    reselectOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
+    reselectOverlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-size: 22px; font-weight: bold; background-color: rgba(0, 0, 0, 110); border-radius: 8px;");
+    reselectOverlay->setVisible(false);
+    m_reselectOverlays.insert(userId, reselectOverlay);
 
     QLabel *avatarLabel = new QLabel(imageContainer);
     avatarLabel->setFixedSize(30, 30);
@@ -2588,6 +3139,11 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
              label->setPixmap(pixmap);
         }
     });
+    connect(client, &StreamClient::connected, this, [client]() {
+        QJsonObject start;
+        start["type"] = "start_streaming";
+        client->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+    });
 
     client->connectToServer(QUrl(subscribeUrl));
     m_remoteStreams.insert(userId, client);
@@ -2598,9 +3154,20 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
 void NewUiWindow::removeUser(const QString &userId)
 {
+    if (userId == m_hiFpsActiveUserId || userId == m_hoverCandidateUserId) {
+        cancelHoverHiFps();
+    }
+    if (userId == m_selectionAutoPauseUserId) {
+        resetSelectionAutoPause(QString());
+    }
+    if (userId == m_autoPausedUserId) {
+        m_autoPausedUserId.clear();
+    }
+
     m_talkButtons.remove(userId);
     m_talkOverlays.remove(userId);
     m_talkSpinnerAngles.remove(userId);
+    m_reselectOverlays.remove(userId);
 
     if (m_remoteStreams.contains(userId)) {
         StreamClient *client = m_remoteStreams.take(userId);

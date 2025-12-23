@@ -27,6 +27,9 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    bool event(QEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     void changeEvent(QEvent *event) override;
 
@@ -95,6 +98,22 @@ private:
     void refreshLocalAvatarFromCache();
     void publishLocalAvatarOnce();
     void publishLocalAvatarHint();
+    void publishLocalScreenFrame(bool force);
+    void buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix);
+    QString extractUserId(QObject *obj) const;
+    QString makeHoverChannelId(const QString &targetUserId) const;
+    void scheduleHoverHiFps(const QString &userId, const QPoint &globalPos);
+    void cancelHoverHiFps();
+    void startHiFpsForUser(const QString &userId);
+    void stopHiFpsForUser();
+    void sendHiFpsControl(const QString &targetUserId, const QString &channelId, int fps, bool enabled);
+    void startHiFpsPublishing(const QString &channelId, int fps);
+    void stopHiFpsPublishing(const QString &channelId);
+    void resetSelectionAutoPause(const QString &userId);
+    void pauseSelectedStreamForUser(const QString &userId);
+    void resumeSelectedStreamForUser(const QString &userId);
+    void updateResizeGrips();
+    void setResizeGripsVisible(bool visible);
     
     // Dragging support
     bool m_dragging = false;
@@ -140,6 +159,40 @@ private:
     QMap<QString, QLabel*> m_talkOverlays;        // userId -> "通话中" overlay label
     QTimer *m_talkSpinnerTimer = nullptr;
     QMap<QString, int> m_talkSpinnerAngles;
+    QMap<QString, QLabel*> m_reselectOverlays;
+    QTimer *m_selectionAutoPauseTimer = nullptr;
+    QString m_selectionAutoPauseUserId;
+    QString m_autoPausedUserId;
+
+    QWidget *m_titleBar = nullptr;
+    bool m_titleBarDragging = false;
+    bool m_titleBarPendingRestore = false;
+    bool m_titleBarSnapMaximize = false;
+    QPoint m_titleBarPressGlobal;
+    QPoint m_titleBarPressLocalInWindow;
+    QPoint m_titleBarDragOffset;
+
+    QWidget *m_resizeGripLeft = nullptr;
+    QWidget *m_resizeGripRight = nullptr;
+    QWidget *m_resizeGripTop = nullptr;
+    QWidget *m_resizeGripBottom = nullptr;
+    QWidget *m_resizeGripTopLeft = nullptr;
+    QWidget *m_resizeGripTopRight = nullptr;
+    QWidget *m_resizeGripBottomLeft = nullptr;
+    QWidget *m_resizeGripBottomRight = nullptr;
+    bool m_resizeDragging = false;
+    Qt::Edges m_resizeEdges;
+    QPoint m_resizePressGlobal;
+    QRect m_resizeStartGeometry;
+
+    QTimer *m_hoverCandidateTimer = nullptr;
+    QString m_hoverCandidateUserId;
+    QPoint m_hoverCandidatePos;
+    QString m_hiFpsActiveUserId;
+    QString m_hiFpsActiveChannelId;
+    StreamClient *m_hiFpsSubscriber = nullptr;
+    QMap<QString, StreamClient*> m_hiFpsPublishers;
+    QMap<QString, QTimer*> m_hiFpsPublisherTimers;
 
     // Layout constants
     int m_cardBaseWidth;

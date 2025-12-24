@@ -53,9 +53,6 @@ public:
     void stopReceiving(bool recreate = true);
     void pauseReceiving();
     bool isReceiving() const { return m_isReceiving; }
-    bool isAudioOnlySession() const { return m_audioOnlySession; }
-    QString sessionViewerId() const { return m_lastViewerId; }
-    QString sessionTargetId() const { return m_lastTargetId; }
     
     // 发送观看请求
     void sendWatchRequest(const QString &viewerId, const QString &targetId);

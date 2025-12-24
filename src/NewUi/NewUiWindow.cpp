@@ -961,7 +961,15 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
 
         m_talkButtons.insert(id, micBtn);
         connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, id]() {
+            const bool remoteActive = micBtn->property("remoteActive").toBool();
             bool isOn = micBtn->property("isOn").toBool();
+            if (remoteActive) {
+                setTalkRemoteActive(id, false);
+                if (!isOn && id != m_myStreamId) {
+                    emit kickViewerRequested(id);
+                    return;
+                }
+            }
             isOn = !isOn;
             micBtn->setProperty("isOn", isOn);
             if (id == m_myStreamId) {

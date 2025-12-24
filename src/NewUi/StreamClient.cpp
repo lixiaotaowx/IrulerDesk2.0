@@ -15,23 +15,42 @@ StreamClient::StreamClient(QObject *parent)
     connect(m_webSocket, &QWebSocket::binaryMessageReceived, this, &StreamClient::onBinaryMessageReceived);
     connect(m_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::errorOccurred),
             this, &StreamClient::onError);
+
+    m_reconnectTimer = new QTimer(this);
+    m_reconnectTimer->setSingleShot(true);
+    connect(m_reconnectTimer, &QTimer::timeout, this, &StreamClient::attemptReconnect);
 }
 
 StreamClient::~StreamClient()
 {
     if (m_webSocket) {
+        m_shouldReconnect = false;
+        if (m_reconnectTimer) {
+            m_reconnectTimer->stop();
+        }
         m_webSocket->close();
     }
 }
 
 void StreamClient::connectToServer(const QUrl &url)
 {
+    m_lastUrl = url;
+    m_shouldReconnect = true;
+    m_reconnectAttempts = 0;
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
     emit logMessage(QStringLiteral("[StreamClient] connect %1").arg(url.toString()));
     m_webSocket->open(url);
 }
 
 void StreamClient::disconnectFromServer()
 {
+    m_shouldReconnect = false;
+    m_reconnectAttempts = 0;
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
     emit logMessage(QStringLiteral("[StreamClient] disconnect"));
     m_webSocket->close();
 }
@@ -95,6 +114,7 @@ void StreamClient::onDisconnected()
     m_isConnected = false;
     emit logMessage(QStringLiteral("[StreamClient] disconnected"));
     emit disconnected();
+    scheduleReconnect();
 }
 
 void StreamClient::onTextMessageReceived(const QString &message)
@@ -150,4 +170,49 @@ void StreamClient::onError(QAbstractSocket::SocketError error)
     Q_UNUSED(error);
     emit logMessage(QStringLiteral("[StreamClient] error %1").arg(m_webSocket->errorString()));
     emit errorOccurred(m_webSocket->errorString());
+    scheduleReconnect();
+}
+
+void StreamClient::scheduleReconnect()
+{
+    if (!m_shouldReconnect) {
+        return;
+    }
+    if (!m_reconnectTimer || !m_webSocket) {
+        return;
+    }
+    if (!m_lastUrl.isValid() || m_lastUrl.isEmpty()) {
+        return;
+    }
+    const auto st = m_webSocket->state();
+    if (st == QAbstractSocket::ConnectedState || st == QAbstractSocket::ConnectingState) {
+        return;
+    }
+    if (m_reconnectTimer->isActive()) {
+        return;
+    }
+
+    const int attempt = qMax(0, m_reconnectAttempts);
+    const int delayMs = qMin(8000, 600 + attempt * 600);
+    m_reconnectAttempts = attempt + 1;
+    emit logMessage(QStringLiteral("[StreamClient] reconnect scheduled in %1ms url=%2")
+                        .arg(delayMs)
+                        .arg(m_lastUrl.toString()));
+    m_reconnectTimer->start(delayMs);
+}
+
+void StreamClient::attemptReconnect()
+{
+    if (!m_shouldReconnect || !m_webSocket) {
+        return;
+    }
+    if (!m_lastUrl.isValid() || m_lastUrl.isEmpty()) {
+        return;
+    }
+    const auto st = m_webSocket->state();
+    if (st == QAbstractSocket::ConnectedState || st == QAbstractSocket::ConnectingState) {
+        return;
+    }
+    emit logMessage(QStringLiteral("[StreamClient] reconnect %1").arg(m_lastUrl.toString()));
+    m_webSocket->open(m_lastUrl);
 }

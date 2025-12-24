@@ -725,16 +725,15 @@ void MainWindow::setupUI()
             m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
         };
 
-        auto sendWatchRequestCanceled = [this](const QString &toTargetId) {
-            if (toTargetId.isEmpty()) return;
+        auto sendKickViewer = [this](const QString &viewerId) {
+            if (viewerId.isEmpty()) return;
             if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) return;
-            QJsonObject cancelMsg;
-            cancelMsg["type"] = "watch_request_canceled";
-            cancelMsg["viewer_id"] = getDeviceId();
-            cancelMsg["target_id"] = toTargetId;
-            cancelMsg["viewer_name"] = m_userName;
-            cancelMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            m_loginWebSocket->sendTextMessage(QJsonDocument(cancelMsg).toJson(QJsonDocument::Compact));
+            QJsonObject msg;
+            msg["type"] = "kick_viewer";
+            msg["viewer_id"] = viewerId;
+            msg["target_id"] = getDeviceId();
+            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
         };
 
         auto applyTalk = [this](bool on) {
@@ -772,7 +771,6 @@ void MainWindow::setupUI()
             }
         } else {
             sendViewerMicState(targetId, false);
-            sendWatchRequestCanceled(targetId);
             if (m_transparentImageList) {
                 m_transparentImageList->setTalkConnected(targetId, false);
             }
@@ -781,20 +779,23 @@ void MainWindow::setupUI()
                 m_pendingTalkEnabled = false;
             }
             applyTalk(false);
+            if (m_isStreaming) {
+                sendKickViewer(targetId);
+            }
 
-            if (m_videoWindow) {
+            const bool shouldStopSession = (m_audioOnlyTargetId == targetId);
+            if (shouldStopSession && m_videoWindow) {
                 if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
-                    const bool shouldStopAudioOnly =
-                        vd->isReceiving() &&
-                        vd->isAudioOnlySession() &&
-                        (vd->sessionTargetId().isEmpty() || vd->sessionTargetId() == targetId || m_audioOnlyTargetId == targetId);
-                    if (shouldStopAudioOnly) {
+                    if (vd->isReceiving()) {
                         vd->stopReceiving(false);
                     }
                 }
             }
-            if (m_audioOnlyTargetId == targetId) {
+            if (shouldStopSession) {
                 m_audioOnlyTargetId.clear();
+                if (m_currentTargetId == targetId) {
+                    m_currentTargetId.clear();
+                }
             }
         }
     });

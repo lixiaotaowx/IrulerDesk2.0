@@ -2748,7 +2748,29 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_waitingDialog = nullptr;
             }
 
-            m_currentTargetId.clear();
+            if (m_pendingTalkTargetId == targetId) {
+                m_pendingTalkTargetId.clear();
+                m_pendingTalkEnabled = false;
+            }
+            if (m_audioOnlyTargetId == targetId) {
+                m_audioOnlyTargetId.clear();
+            }
+            if (m_currentTargetId == targetId) {
+                m_currentTargetId.clear();
+            }
+
+            if (m_transparentImageList && !targetId.isEmpty()) {
+                m_transparentImageList->setTalkConnected(targetId, false);
+                m_transparentImageList->setTalkRemoteActive(targetId, false);
+            }
+
+            if (m_videoWindow) {
+                m_videoWindow->setMicCheckedSilently(false);
+                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+                    vd->setTalkEnabled(false);
+                    vd->setMicSendEnabled(false);
+                }
+            }
 
             if (m_videoWindow) {
                 if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {

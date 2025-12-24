@@ -961,7 +961,9 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         talkOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
         talkOverlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-size: 34px; font-weight: bold; background-color: rgba(0, 200, 83, 90); border-radius: 8px;");
         talkOverlay->setVisible(false);
-        m_talkOverlays.insert(id, talkOverlay);
+        if (id != m_myStreamId) {
+            m_talkOverlays.insert(id, talkOverlay);
+        }
 
         // Bottom Controls Layout
         QHBoxLayout *bottomLayout = new QHBoxLayout();
@@ -972,17 +974,20 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         bottomLayout->setSpacing(5);
 
         // Left Button (tab1.png)
-        QPushButton *tabBtn = new QPushButton();
-        tabBtn->setFixedSize(14, 14);
-        tabBtn->setCursor(Qt::PointingHandCursor);
-        tabBtn->setFlat(true);
-        tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
-        tabBtn->setIconSize(QSize(14, 14));
-        
-        connect(tabBtn, &QPushButton::clicked, this, [this, id]() {
-            emit startWatchingRequested(id);
-        });
+        QPushButton *tabBtn = nullptr;
+        if (id != m_myStreamId) {
+            tabBtn = new QPushButton();
+            tabBtn->setFixedSize(14, 14);
+            tabBtn->setCursor(Qt::PointingHandCursor);
+            tabBtn->setFlat(true);
+            tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+            tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
+            tabBtn->setIconSize(QSize(14, 14));
+
+            connect(tabBtn, &QPushButton::clicked, this, [this, id]() {
+                emit startWatchingRequested(id);
+            });
+        }
         
         // Text Label (Middle)
         QLabel *txtLabel = new QLabel(name.isEmpty() ? id : name);
@@ -992,54 +997,60 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         txtLabel->setAlignment(Qt::AlignCenter);
 
         // Mic Toggle
-        QPushButton *micBtn = new QPushButton();
-        micBtn->setFixedSize(14, 14);
-        micBtn->setCursor(Qt::PointingHandCursor);
-        micBtn->setProperty("isOn", false);
-        micBtn->setProperty("remoteActive", false);
-        micBtn->setFlat(true);
-        micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
-        micBtn->setIconSize(QSize(14, 14));
+        QPushButton *micBtn = nullptr;
+        if (id != m_myStreamId) {
+            micBtn = new QPushButton();
+            micBtn->setFixedSize(14, 14);
+            micBtn->setCursor(Qt::PointingHandCursor);
+            micBtn->setProperty("isOn", false);
+            micBtn->setProperty("remoteActive", false);
+            micBtn->setFlat(true);
+            micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+            micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
+            micBtn->setIconSize(QSize(14, 14));
 
-        m_talkButtons.insert(id, micBtn);
-        connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, id]() {
-            const bool remoteActive = micBtn->property("remoteActive").toBool();
-            bool isOn = micBtn->property("isOn").toBool();
-            if (remoteActive) {
-                setTalkRemoteActive(id, false);
-                if (!isOn && id != m_myStreamId) {
-                    emit kickViewerRequested(id);
-                    return;
+            m_talkButtons.insert(id, micBtn);
+            connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, id]() {
+                const bool remoteActive = micBtn->property("remoteActive").toBool();
+                bool isOn = micBtn->property("isOn").toBool();
+                if (remoteActive) {
+                    setTalkRemoteActive(id, false);
+                    if (id != m_myStreamId) {
+                        setTalkConnected(id, false);
+                        emit kickViewerRequested(id);
+                        return;
+                    }
                 }
-            }
-            isOn = !isOn;
-            micBtn->setProperty("isOn", isOn);
-            if (id == m_myStreamId) {
-                QString iconName = isOn ? "get.png" : "end.png";
-                micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
-                updateTalkOverlay(id);
-                return;
-            }
-            if (isOn) {
-                const QStringList keys = m_talkButtons.keys();
-                for (const QString &otherId : keys) {
-                    if (otherId == id) continue;
-                    setTalkConnected(otherId, false);
-                    emit talkToggleRequested(otherId, false);
+                isOn = !isOn;
+                micBtn->setProperty("isOn", isOn);
+                if (isOn) {
+                    const QStringList keys = m_talkButtons.keys();
+                    for (const QString &otherId : keys) {
+                        if (otherId == id) continue;
+                        setTalkConnected(otherId, false);
+                        emit talkToggleRequested(otherId, false);
+                    }
                 }
-            }
-            if (isOn) {
-                setTalkPending(id, true);
-            } else {
-                setTalkConnected(id, false);
-            }
-            emit talkToggleRequested(id, isOn);
-        });
+                if (isOn) {
+                    setTalkPending(id, true);
+                } else {
+                    setTalkConnected(id, false);
+                }
+                emit talkToggleRequested(id, isOn);
+            });
+        }
 
-        bottomLayout->addWidget(tabBtn);
+        if (tabBtn) {
+            bottomLayout->addWidget(tabBtn);
+        } else {
+            bottomLayout->addStretch();
+        }
         bottomLayout->addWidget(txtLabel);
-        bottomLayout->addWidget(micBtn);
+        if (micBtn) {
+            bottomLayout->addWidget(micBtn);
+        } else {
+            bottomLayout->addStretch();
+        }
 
         cardLayout->addWidget(imgLabel);
         cardLayout->addLayout(bottomLayout);
@@ -1849,15 +1860,6 @@ void NewUiWindow::setupUi()
         // Add a bit of bottom padding
         bottomLayout->setContentsMargins(0, 0, 0, 5); 
         bottomLayout->setSpacing(5);
-
-        // Left Button (tab1.png)
-        QPushButton *tabBtn = new QPushButton();
-        tabBtn->setFixedSize(14, 14);
-        tabBtn->setCursor(Qt::PointingHandCursor);
-        tabBtn->setFlat(true);
-        tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
-        tabBtn->setIconSize(QSize(14, 14));
         
         // Text Label (Middle)
     QString displayName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
@@ -1868,28 +1870,9 @@ void NewUiWindow::setupUi()
     m_localNameLabel = txtLabel; // Store pointer for updates
     txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
     txtLabel->setAlignment(Qt::AlignCenter);
-
-        // Mic Toggle
-        QPushButton *micBtn = new QPushButton();
-        micBtn->setFixedSize(14, 14);
-        micBtn->setCursor(Qt::PointingHandCursor);
-        micBtn->setProperty("isOn", false);
-        micBtn->setFlat(true);
-        micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
-        micBtn->setIconSize(QSize(14, 14));
-
-        connect(micBtn, &QPushButton::clicked, [micBtn, appDir]() {
-            bool isOn = micBtn->property("isOn").toBool();
-            isOn = !isOn;
-            micBtn->setProperty("isOn", isOn);
-            QString iconName = isOn ? "get.png" : "end.png";
-            micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
-        });
-
-        bottomLayout->addWidget(tabBtn);
+        bottomLayout->addStretch();
         bottomLayout->addWidget(txtLabel);
-        bottomLayout->addWidget(micBtn);
+        bottomLayout->addStretch();
 
         cardLayout->addWidget(imageContainer);
         cardLayout->addLayout(bottomLayout);
@@ -3343,7 +3326,9 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     talkOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
     talkOverlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-size: 34px; font-weight: bold; background-color: rgba(0, 200, 83, 90); border-radius: 8px;");
     talkOverlay->setVisible(false);
-    m_talkOverlays.insert(userId, talkOverlay);
+    if (userId != m_myStreamId) {
+        m_talkOverlays.insert(userId, talkOverlay);
+    }
 
     QLabel *reselectOverlay = new QLabel(imageContainer);
     reselectOverlay->setText(QStringLiteral("请重新点击观看"));
@@ -3375,17 +3360,20 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     bottomLayout->setSpacing(5);
 
     // Watch Button
-    QPushButton *tabBtn = new QPushButton();
-    tabBtn->setFixedSize(14, 14);
-    tabBtn->setCursor(Qt::PointingHandCursor);
-    tabBtn->setFlat(true);
-    tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-    tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
-    tabBtn->setIconSize(QSize(14, 14));
-    
-    connect(tabBtn, &QPushButton::clicked, this, [this, userId]() {
-        emit startWatchingRequested(userId);
-    });
+    QPushButton *tabBtn = nullptr;
+    if (userId != m_myStreamId) {
+        tabBtn = new QPushButton();
+        tabBtn->setFixedSize(14, 14);
+        tabBtn->setCursor(Qt::PointingHandCursor);
+        tabBtn->setFlat(true);
+        tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+        tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
+        tabBtn->setIconSize(QSize(14, 14));
+
+        connect(tabBtn, &QPushButton::clicked, this, [this, userId]() {
+            emit startWatchingRequested(userId);
+        });
+    }
 
     // Name Label
     QLabel *txtLabel = new QLabel(displayName);
@@ -3393,46 +3381,60 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     txtLabel->setAlignment(Qt::AlignCenter);
 
     // Mic/Speaker Buttons
-    QPushButton *micBtn = new QPushButton();
-    micBtn->setFixedSize(14, 14);
-    micBtn->setCursor(Qt::PointingHandCursor);
-    micBtn->setProperty("isOn", false);
-    micBtn->setProperty("remoteActive", false);
-    micBtn->setFlat(true);
-    micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-    micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
-    micBtn->setIconSize(QSize(14, 14));
+    QPushButton *micBtn = nullptr;
+    if (userId != m_myStreamId) {
+        micBtn = new QPushButton();
+        micBtn->setFixedSize(14, 14);
+        micBtn->setCursor(Qt::PointingHandCursor);
+        micBtn->setProperty("isOn", false);
+        micBtn->setProperty("remoteActive", false);
+        micBtn->setFlat(true);
+        micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+        micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
+        micBtn->setIconSize(QSize(14, 14));
 
-    m_talkButtons.insert(userId, micBtn);
-    connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, userId]() {
-        bool isOn = micBtn->property("isOn").toBool();
-        isOn = !isOn;
-        micBtn->setProperty("isOn", isOn);
-        if (userId == m_myStreamId) {
-            QString iconName = isOn ? "get.png" : "end.png";
-            micBtn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
-            updateTalkOverlay(userId);
-            return;
-        }
-        if (isOn) {
-            const QStringList keys = m_talkButtons.keys();
-            for (const QString &otherId : keys) {
-                if (otherId == userId) continue;
-                setTalkConnected(otherId, false);
-                emit talkToggleRequested(otherId, false);
+        m_talkButtons.insert(userId, micBtn);
+        connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, userId]() {
+            const bool remoteActive = micBtn->property("remoteActive").toBool();
+            bool isOn = micBtn->property("isOn").toBool();
+            if (remoteActive) {
+                setTalkRemoteActive(userId, false);
+                if (userId != m_myStreamId) {
+                    setTalkConnected(userId, false);
+                    emit kickViewerRequested(userId);
+                    return;
+                }
             }
-        }
-        if (isOn) {
-            setTalkPending(userId, true);
-        } else {
-            setTalkConnected(userId, false);
-        }
-        emit talkToggleRequested(userId, isOn);
-    });
+            isOn = !isOn;
+            micBtn->setProperty("isOn", isOn);
+            if (isOn) {
+                const QStringList keys = m_talkButtons.keys();
+                for (const QString &otherId : keys) {
+                    if (otherId == userId) continue;
+                    setTalkConnected(otherId, false);
+                    emit talkToggleRequested(otherId, false);
+                }
+            }
+            if (isOn) {
+                setTalkPending(userId, true);
+            } else {
+                setTalkConnected(userId, false);
+            }
+            emit talkToggleRequested(userId, isOn);
+        });
+    }
 
-    bottomLayout->addWidget(tabBtn);
+    if (tabBtn) {
+        bottomLayout->addWidget(tabBtn);
+    } else {
+        bottomLayout->addStretch();
+    }
     bottomLayout->addWidget(txtLabel);
-    bottomLayout->addWidget(micBtn);
+    if (micBtn) {
+        bottomLayout->addWidget(micBtn);
+    } else {
+        bottomLayout->addStretch();
+    }
 
     cardLayout->addWidget(imageContainer);
     cardLayout->addLayout(bottomLayout);

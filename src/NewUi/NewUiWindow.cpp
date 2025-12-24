@@ -147,9 +147,33 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     });
 
     connect(m_streamClient, &StreamClient::hoverStreamRequested, this, [this](const QString &targetId, const QString &channelId, int fps, bool enabled) {
-        if (!targetId.isEmpty() && targetId != m_myStreamId) {
+        bool accept = true;
+        if (!targetId.isEmpty() && !m_myStreamId.isEmpty() && targetId != m_myStreamId) {
+            accept = false;
+        }
+        if (!accept && !m_myStreamId.isEmpty() && !channelId.isEmpty()) {
+            const QString prefix = QStringLiteral("hfps_%1").arg(m_myStreamId);
+            if (channelId == prefix || channelId.startsWith(prefix + QStringLiteral("_"))) {
+                accept = true;
+            }
+        }
+        if (!accept) {
+            qInfo().noquote() << "[HiFpsPub] hover_stream ignored"
+                              << " my_id=" << m_myStreamId
+                              << " target_id=" << targetId
+                              << " channel_id=" << channelId
+                              << " fps=" << fps
+                              << " enabled=" << enabled;
             return;
         }
+
+        qInfo().noquote() << "[HiFpsPub] hover_stream accepted"
+                          << " my_id=" << m_myStreamId
+                          << " target_id=" << targetId
+                          << " channel_id=" << channelId
+                          << " fps=" << fps
+                          << " enabled=" << enabled;
+
         if (enabled) {
             startHiFpsPublishing(channelId, fps);
         } else {
@@ -1381,7 +1405,7 @@ void NewUiWindow::setupUi()
     exitBtn->setToolTip(QStringLiteral("测试退出"));
     exitBtn->installEventFilter(this);
     connect(exitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
-    exitBtn->setVisible(false);
+    exitBtn->setVisible(true);
 
     // Menu Button
     ResponsiveButton *menuBtn = new ResponsiveButton();
@@ -1602,6 +1626,25 @@ void NewUiWindow::setupUi()
         }
     });
 
+    m_hiFpsWatchdogTimer = new QTimer(this);
+    m_hiFpsWatchdogTimer->setInterval(1500);
+    connect(m_hiFpsWatchdogTimer, &QTimer::timeout, this, [this]() {
+        if (m_hiFpsActiveUserId.isEmpty() || m_hiFpsActiveChannelId.isEmpty()) {
+            return;
+        }
+        if (!m_hiFpsSubscriber || !m_hiFpsSubscriber->isConnected()) {
+            return;
+        }
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (m_hiFpsLastFrameAtMs > 0 && (nowMs - m_hiFpsLastFrameAtMs) < 2500) {
+            return;
+        }
+        QJsonObject start;
+        start["type"] = "start_streaming";
+        m_hiFpsSubscriber->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+        sendHiFpsControl(m_hiFpsActiveUserId, m_hiFpsActiveChannelId, 10, true);
+    });
+
     connect(m_listWidget, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current, QListWidgetItem *previous) {
         Q_UNUSED(previous);
         QString userId;
@@ -1656,8 +1699,8 @@ void NewUiWindow::setupUi()
         }
         if (userId == m_autoPausedUserId) {
             resumeSelectedStreamForUser(userId);
-            startHiFpsForUser(userId);
         }
+        startHiFpsForUser(userId);
         resetSelectionAutoPause(userId);
     });
 
@@ -2125,10 +2168,12 @@ bool NewUiWindow::event(QEvent *event)
             if (m_selectionAutoPauseTimer) {
                 m_selectionAutoPauseTimer->stop();
             }
-            cancelHoverHiFps();
-            const QStringList chs = m_hiFpsPublishers.keys();
-            for (const QString &ch : chs) {
-                stopHiFpsPublishing(ch);
+            if (QApplication::applicationState() != Qt::ApplicationActive) {
+                cancelHoverHiFps();
+                const QStringList chs = m_hiFpsPublishers.keys();
+                for (const QString &ch : chs) {
+                    stopHiFpsPublishing(ch);
+                }
             }
         } else {
             if (QApplication::applicationState() == Qt::ApplicationActive && m_listWidget) {
@@ -2906,6 +2951,38 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
         return;
     }
     if (m_hiFpsActiveUserId == userId) {
+        if (m_hiFpsSubscriber && !m_hiFpsActiveChannelId.isEmpty()) {
+            m_hiFpsLastFrameAtMs = QDateTime::currentMSecsSinceEpoch();
+            if (m_hiFpsWatchdogTimer) {
+                m_hiFpsWatchdogTimer->start();
+            }
+            m_hiFpsSubscriber->setProperty("firstFrameReceived", false);
+            QJsonObject start;
+            start["type"] = "start_streaming";
+            m_hiFpsSubscriber->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+            sendHiFpsControl(userId, m_hiFpsActiveChannelId, 10, true);
+
+            QPointer<StreamClient> c = m_hiFpsSubscriber;
+            const QString channelId = m_hiFpsActiveChannelId;
+            QTimer::singleShot(250, this, [this, c, userId, channelId]() {
+                if (!c) return;
+                if (m_hiFpsActiveUserId != userId || m_hiFpsActiveChannelId != channelId) return;
+                if (c->property("firstFrameReceived").toBool()) return;
+                QJsonObject start;
+                start["type"] = "start_streaming";
+                c->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+                sendHiFpsControl(userId, channelId, 10, true);
+            });
+            QTimer::singleShot(1200, this, [this, c, userId, channelId]() {
+                if (!c) return;
+                if (m_hiFpsActiveUserId != userId || m_hiFpsActiveChannelId != channelId) return;
+                if (c->property("firstFrameReceived").toBool()) return;
+                QJsonObject start;
+                start["type"] = "start_streaming";
+                c->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+                sendHiFpsControl(userId, channelId, 10, true);
+            });
+        }
         return;
     }
     stopHiFpsForUser();
@@ -2917,8 +2994,20 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
 
     StreamClient *client = new StreamClient(this);
     const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(channelId);
+    m_hiFpsActiveUserId = userId;
+    m_hiFpsActiveChannelId = channelId;
+    m_hiFpsSubscriber = client;
+    m_hiFpsLastFrameAtMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_hiFpsWatchdogTimer) {
+        m_hiFpsWatchdogTimer->start();
+    }
 
-    connect(client, &StreamClient::frameReceived, this, [this, userId](const QPixmap &frame) {
+    client->setProperty("firstFrameReceived", false);
+    connect(client, &StreamClient::frameReceived, this, [this, userId, client](const QPixmap &frame) {
+        client->setProperty("firstFrameReceived", true);
+        if (m_hiFpsSubscriber == client && m_hiFpsActiveUserId == userId) {
+            m_hiFpsLastFrameAtMs = QDateTime::currentMSecsSinceEpoch();
+        }
         QLabel *label = m_userLabels.value(userId, nullptr);
         if (!label || frame.isNull()) {
             return;
@@ -2937,21 +3026,46 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
         p.drawPixmap(x, y, scaledPix);
         p.end();
         label->setPixmap(pixmap);
+        label->update();
     });
 
     connect(client, &StreamClient::connected, this, [this, userId, channelId, client]() {
         if (m_hiFpsSubscriber != client || m_hiFpsActiveUserId != userId) {
             return;
         }
+        QJsonObject start;
+        start["type"] = "start_streaming";
+        client->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
         sendHiFpsControl(userId, channelId, 10, true);
+    });
+
+    connect(client, &StreamClient::connected, this, [this, userId, channelId, client]() {
+        if (m_hiFpsSubscriber != client || m_hiFpsActiveUserId != userId || m_hiFpsActiveChannelId != channelId) {
+            return;
+        }
+        QPointer<StreamClient> c = client;
+        QTimer::singleShot(250, this, [this, c, userId, channelId]() {
+            if (!c) return;
+            if (m_hiFpsActiveUserId != userId || m_hiFpsActiveChannelId != channelId) return;
+            if (c->property("firstFrameReceived").toBool()) return;
+            QJsonObject start;
+            start["type"] = "start_streaming";
+            c->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+            sendHiFpsControl(userId, channelId, 10, true);
+        });
+        QTimer::singleShot(1200, this, [this, c, userId, channelId]() {
+            if (!c) return;
+            if (m_hiFpsActiveUserId != userId || m_hiFpsActiveChannelId != channelId) return;
+            if (c->property("firstFrameReceived").toBool()) return;
+            QJsonObject start;
+            start["type"] = "start_streaming";
+            c->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+            sendHiFpsControl(userId, channelId, 10, true);
+        });
     });
 
     sendHiFpsControl(userId, channelId, 10, true);
     client->connectToServer(QUrl(subscribeUrl));
-
-    m_hiFpsActiveUserId = userId;
-    m_hiFpsActiveChannelId = channelId;
-    m_hiFpsSubscriber = client;
 }
 
 void NewUiWindow::stopHiFpsForUser()
@@ -2961,6 +3075,10 @@ void NewUiWindow::stopHiFpsForUser()
     }
     m_hiFpsActiveUserId.clear();
     m_hiFpsActiveChannelId.clear();
+    m_hiFpsLastFrameAtMs = 0;
+    if (m_hiFpsWatchdogTimer) {
+        m_hiFpsWatchdogTimer->stop();
+    }
 
     if (m_hiFpsSubscriber) {
         m_hiFpsSubscriber->disconnectFromServer();
@@ -2971,18 +3089,6 @@ void NewUiWindow::stopHiFpsForUser()
 
 void NewUiWindow::sendHiFpsControl(const QString &targetUserId, const QString &channelId, int fps, bool enabled)
 {
-    StreamClient *ctrl = m_remoteStreams.value(targetUserId, nullptr);
-    if (!ctrl || !ctrl->isConnected()) {
-        ctrl = m_streamClient;
-    }
-    if (!ctrl || !ctrl->isConnected()) {
-        qInfo().noquote() << "[HiFps] control not sent: no connected socket"
-                          << " target_id=" << targetUserId
-                          << " channel_id=" << channelId
-                          << " enabled=" << enabled
-                          << " my_id=" << m_myStreamId;
-        return;
-    }
     QJsonObject obj;
     obj["type"] = "hover_stream";
     obj["channel_id"] = channelId;
@@ -2990,11 +3096,54 @@ void NewUiWindow::sendHiFpsControl(const QString &targetUserId, const QString &c
     obj["enabled"] = enabled;
     obj["target_id"] = targetUserId;
     const QString payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-    const qint64 sent = ctrl->sendTextMessage(payload);
-    qInfo().noquote() << "[HiFps] control sent"
-                      << " bytes=" << sent
-                      << " via=" << (ctrl == m_streamClient ? "publish_socket" : "subscribe_socket")
-                      << " payload=" << payload;
+
+    StreamClient *subSock = m_remoteStreams.value(targetUserId, nullptr);
+    StreamClient *pubSock = m_streamClient;
+    bool sentAny = false;
+
+    if (subSock && subSock->isConnected()) {
+        const qint64 sent = subSock->sendTextMessage(payload);
+        qInfo().noquote() << "[HiFps] control sent"
+                          << " bytes=" << sent
+                          << " via=subscribe_socket"
+                          << " payload=" << payload;
+        sentAny = true;
+    } else if (subSock) {
+        connect(subSock, &StreamClient::connected, this, [this, targetUserId, channelId, fps, enabled]() {
+            if (enabled) {
+                if (m_hiFpsActiveUserId != targetUserId || m_hiFpsActiveChannelId != channelId) {
+                    return;
+                }
+            }
+            sendHiFpsControl(targetUserId, channelId, fps, enabled);
+        }, Qt::SingleShotConnection);
+    }
+
+    if (pubSock && pubSock->isConnected()) {
+        const qint64 sent = pubSock->sendTextMessage(payload);
+        qInfo().noquote() << "[HiFps] control sent"
+                          << " bytes=" << sent
+                          << " via=publish_socket"
+                          << " payload=" << payload;
+        sentAny = true;
+    } else if (pubSock) {
+        connect(pubSock, &StreamClient::connected, this, [this, targetUserId, channelId, fps, enabled]() {
+            if (enabled) {
+                if (m_hiFpsActiveUserId != targetUserId || m_hiFpsActiveChannelId != channelId) {
+                    return;
+                }
+            }
+            sendHiFpsControl(targetUserId, channelId, fps, enabled);
+        }, Qt::SingleShotConnection);
+    }
+
+    if (!sentAny) {
+        qInfo().noquote() << "[HiFps] control not sent: no connected socket"
+                          << " target_id=" << targetUserId
+                          << " channel_id=" << channelId
+                          << " enabled=" << enabled
+                          << " my_id=" << m_myStreamId;
+    }
 }
 
 void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
@@ -3002,37 +3151,52 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
     if (channelId.isEmpty()) {
         return;
     }
-    if (m_hiFpsPublishers.contains(channelId)) {
-        return;
+    const QString pubUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(channelId);
+    StreamClient *pub = m_hiFpsPublishers.value(channelId, nullptr);
+    if (!pub) {
+        pub = new StreamClient(this);
+        pub->setJpegQuality(50);
+        m_hiFpsPublishers.insert(channelId, pub);
+        connect(pub, &StreamClient::connected, this, [this, channelId]() {
+            qInfo().noquote() << "[HiFpsPub] publisher connected channel_id=" << channelId;
+        });
+        connect(pub, &StreamClient::disconnected, this, [this, channelId]() {
+            qInfo().noquote() << "[HiFpsPub] publisher disconnected channel_id=" << channelId;
+        });
+    }
+    if (!pub->isConnected()) {
+        pub->connectToServer(QUrl(pubUrl));
     }
 
-    StreamClient *pub = new StreamClient(this);
-    pub->setJpegQuality(50);
-    const QString pubUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(channelId);
-    pub->connectToServer(QUrl(pubUrl));
-    m_hiFpsPublishers.insert(channelId, pub);
-
-    QTimer *t = new QTimer(this);
     const int safeFps = qMax(1, qMin(30, fps));
+    QTimer *t = m_hiFpsPublisherTimers.value(channelId, nullptr);
+    if (!t) {
+        t = new QTimer(this);
+        m_hiFpsPublisherTimers.insert(channelId, t);
+        connect(t, &QTimer::timeout, this, [this, channelId]() {
+            StreamClient *p = m_hiFpsPublishers.value(channelId, nullptr);
+            if (!p || !p->isConnected()) {
+                return;
+            }
+            QPixmap previewPix;
+            QPixmap sendPix;
+            buildLocalScreenFrame(previewPix, sendPix);
+            if (sendPix.isNull()) {
+                return;
+            }
+            if (sendPix.width() != 300) {
+                sendPix = sendPix.scaledToWidth(300, Qt::SmoothTransformation);
+            }
+            p->sendFrame(sendPix, true);
+        });
+    }
     t->setInterval(qMax(1, 1000 / safeFps));
-    connect(t, &QTimer::timeout, this, [this, channelId]() {
-        StreamClient *p = m_hiFpsPublishers.value(channelId, nullptr);
-        if (!p || !p->isConnected()) {
-            return;
-        }
-        QPixmap previewPix;
-        QPixmap sendPix;
-        buildLocalScreenFrame(previewPix, sendPix);
-        if (sendPix.isNull()) {
-            return;
-        }
-        if (sendPix.width() != 300) {
-            sendPix = sendPix.scaledToWidth(300, Qt::SmoothTransformation);
-        }
-        p->sendFrame(sendPix, true);
-    });
-    t->start();
-    m_hiFpsPublisherTimers.insert(channelId, t);
+    if (!t->isActive()) {
+        t->start();
+        qInfo().noquote() << "[HiFpsPub] timer started channel_id=" << channelId << " fps=" << safeFps;
+    } else {
+        qInfo().noquote() << "[HiFpsPub] timer updated channel_id=" << channelId << " fps=" << safeFps;
+    }
 }
 
 void NewUiWindow::stopHiFpsPublishing(const QString &channelId)
@@ -3182,7 +3346,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     m_talkOverlays.insert(userId, talkOverlay);
 
     QLabel *reselectOverlay = new QLabel(imageContainer);
-    reselectOverlay->setText(QStringLiteral("请重新选中观看"));
+    reselectOverlay->setText(QStringLiteral("请重新点击观看"));
     reselectOverlay->setAlignment(Qt::AlignCenter);
     reselectOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
     reselectOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
@@ -3308,6 +3472,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
              p.end();
 
              label->setPixmap(pixmap);
+             label->update();
         }
     });
     connect(client, &StreamClient::connected, this, [client]() {
@@ -3433,16 +3598,92 @@ void NewUiWindow::restartUserStreamSubscription(const QString &userId)
     if (!client) {
         return;
     }
+    QString selectedUserId;
+    if (m_listWidget) {
+        QListWidgetItem *current = m_listWidget->currentItem();
+        if (current) {
+            selectedUserId = current->data(Qt::UserRole).toString();
+            if (selectedUserId.isEmpty()) {
+                if (QWidget *iw = m_listWidget->itemWidget(current)) {
+                    if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                        selectedUserId = card->property("userId").toString();
+                    } else {
+                        selectedUserId = iw->property("userId").toString();
+                    }
+                }
+            }
+        }
+    }
+    const bool shouldForceHiFps = (!selectedUserId.isEmpty() && selectedUserId == userId && userId != m_myStreamId);
+    const bool shouldRestoreHiFps = (m_hiFpsActiveUserId == userId && !m_hiFpsActiveChannelId.isEmpty());
     if (client->isConnected()) {
         QJsonObject start;
         start["type"] = "start_streaming";
         client->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+        if (shouldRestoreHiFps) {
+            sendHiFpsControl(userId, m_hiFpsActiveChannelId, 10, true);
+        }
+        if (shouldForceHiFps) {
+            startHiFpsForUser(userId);
+            resetSelectionAutoPause(userId);
+        }
         return;
     }
 
     const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(userId);
     client->disconnectFromServer();
+    if (shouldRestoreHiFps) {
+        connect(client, &StreamClient::connected, this, [this, userId]() {
+            if (m_hiFpsActiveUserId != userId || m_hiFpsActiveChannelId.isEmpty()) {
+                return;
+            }
+            sendHiFpsControl(userId, m_hiFpsActiveChannelId, 10, true);
+        }, Qt::SingleShotConnection);
+    }
     client->connectToServer(QUrl(subscribeUrl));
+    if (shouldForceHiFps) {
+        startHiFpsForUser(userId);
+        resetSelectionAutoPause(userId);
+    }
+}
+
+void NewUiWindow::onVideoReceivingStopped(const QString &targetId)
+{
+    if (targetId.isEmpty() || targetId == m_myStreamId) {
+        return;
+    }
+    if (QApplication::applicationState() != Qt::ApplicationActive) {
+        return;
+    }
+
+    QString selectedUserId;
+    if (m_listWidget) {
+        QListWidgetItem *current = m_listWidget->currentItem();
+        if (current) {
+            selectedUserId = current->data(Qt::UserRole).toString();
+            if (selectedUserId.isEmpty()) {
+                if (QWidget *iw = m_listWidget->itemWidget(current)) {
+                    if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                        selectedUserId = card->property("userId").toString();
+                    } else {
+                        selectedUserId = iw->property("userId").toString();
+                    }
+                }
+            }
+        }
+    }
+
+    const bool isSelected = (!selectedUserId.isEmpty() && selectedUserId == targetId);
+    const bool isActiveHiFps = (m_hiFpsActiveUserId == targetId && !m_hiFpsActiveChannelId.isEmpty());
+    if (!isSelected && !isActiveHiFps) {
+        return;
+    }
+
+    if (targetId == m_autoPausedUserId) {
+        resumeSelectedStreamForUser(targetId);
+    }
+    startHiFpsForUser(targetId);
+    resetSelectionAutoPause(targetId);
 }
 
 void NewUiWindow::updateUserAvatar(const QString &userId, int iconId)

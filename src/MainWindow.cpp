@@ -725,17 +725,6 @@ void MainWindow::setupUI()
             m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
         };
 
-        auto sendKickViewer = [this](const QString &viewerId) {
-            if (viewerId.isEmpty()) return;
-            if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) return;
-            QJsonObject msg;
-            msg["type"] = "kick_viewer";
-            msg["viewer_id"] = viewerId;
-            msg["target_id"] = getDeviceId();
-            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
-        };
-
         auto applyTalk = [this](bool on) {
             if (!m_videoWindow) return;
             auto *vd = m_videoWindow->getVideoDisplayWidget();
@@ -779,9 +768,6 @@ void MainWindow::setupUI()
                 m_pendingTalkEnabled = false;
             }
             applyTalk(false);
-            if (m_isStreaming) {
-                sendKickViewer(targetId);
-            }
 
             const bool shouldStopSession = (m_audioOnlyTargetId == targetId);
             if (shouldStopSession && m_videoWindow) {
@@ -819,6 +805,7 @@ void MainWindow::setupUI()
             return;
         }
         m_transparentImageList->restartUserStreamSubscription(targetId);
+        m_transparentImageList->onVideoReceivingStopped(targetId);
     });
 
     // Initialize Streaming Island

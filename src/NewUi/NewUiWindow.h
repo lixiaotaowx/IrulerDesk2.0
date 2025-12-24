@@ -66,6 +66,7 @@ public:
     void clearUserList();
     void updateUserAvatar(const QString &userId, int iconId);
     void restartUserStreamSubscription(const QString &userId);
+    void onVideoReceivingStopped(const QString &targetId);
     QString getCurrentUserId() const; // Returns the local user ID
 
 signals:
@@ -194,6 +195,8 @@ private:
     StreamClient *m_hiFpsSubscriber = nullptr;
     QMap<QString, StreamClient*> m_hiFpsPublishers;
     QMap<QString, QTimer*> m_hiFpsPublisherTimers;
+    QTimer *m_hiFpsWatchdogTimer = nullptr;
+    qint64 m_hiFpsLastFrameAtMs = 0;
 
     // Layout constants
     int m_cardBaseWidth;

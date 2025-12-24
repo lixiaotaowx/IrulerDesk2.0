@@ -371,6 +371,25 @@ NewUiWindow::~NewUiWindow()
     for (const QString &ch : chs) {
         stopHiFpsPublishing(ch);
     }
+
+    if (m_streamClient) {
+        m_streamClient->disconnectFromServer();
+    }
+    if (m_avatarPublisher) {
+        m_avatarPublisher->disconnectFromServer();
+    }
+    const QStringList avatarKeys = m_avatarSubscribers.keys();
+    for (const QString &k : avatarKeys) {
+        if (StreamClient *c = m_avatarSubscribers.value(k, nullptr)) {
+            c->disconnectFromServer();
+        }
+    }
+    const QStringList remoteKeys = m_remoteStreams.keys();
+    for (const QString &k : remoteKeys) {
+        if (StreamClient *c = m_remoteStreams.value(k, nullptr)) {
+            c->disconnectFromServer();
+        }
+    }
 }
 
 void NewUiWindow::onLoginConnected()
@@ -1064,6 +1083,7 @@ void NewUiWindow::setupUi()
     QWidget *leftPanel = new QWidget(this);
     leftPanel->setObjectName("LeftPanel");
     leftPanel->setFixedWidth(80);
+    leftPanel->installEventFilter(this);
     // Use QSS for styling
     leftPanel->setStyleSheet(
         "QWidget#LeftPanel {"
@@ -2024,7 +2044,18 @@ void NewUiWindow::setupUi()
     // Assemble Main Layout
     mainLayout->addWidget(leftPanel);
     mainLayout->addWidget(rightPanel);
-    mainLayout->addWidget(m_farRightPanel);
+    if (m_farRightPanel) {
+        const int outerMargin = 10;
+        const int panelW = m_farRightPanel->width();
+        int yTop = outerMargin;
+        if (m_titleBar) {
+            const QPoint p = m_titleBar->mapTo(this, QPoint(0, 0));
+            yTop = p.y() + m_titleBar->height() + outerMargin;
+        }
+        const int panelH = qMax(0, height() - yTop - outerMargin);
+        m_farRightPanel->setGeometry(width() - outerMargin - panelW, yTop, panelW, panelH);
+        m_farRightPanel->raise();
+    }
 }
 
 void NewUiWindow::showFunction1Browser()
@@ -2219,6 +2250,18 @@ void NewUiWindow::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     updateResizeGrips();
+    if (m_farRightPanel) {
+        const int outerMargin = 10;
+        const int panelW = m_farRightPanel->width();
+        int yTop = outerMargin;
+        if (m_titleBar) {
+            const QPoint p = m_titleBar->mapTo(this, QPoint(0, 0));
+            yTop = p.y() + m_titleBar->height() + outerMargin;
+        }
+        const int panelH = qMax(0, height() - yTop - outerMargin);
+        m_farRightPanel->setGeometry(width() - outerMargin - panelW, yTop, panelW, panelH);
+        m_farRightPanel->raise();
+    }
 }
 
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
@@ -2285,6 +2328,46 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
             }
         }
         return true;
+    }
+
+    if (m_farRightPanel && m_farRightPanel->isVisible() && event->type() == QEvent::MouseButtonPress) {
+        auto *me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton) {
+            bool insidePanel = false;
+            QObject *cur = watched;
+            while (cur) {
+                if (cur == m_farRightPanel) {
+                    insidePanel = true;
+                    break;
+                }
+                cur = cur->parent();
+            }
+
+            if (!insidePanel && watched != m_localCard) {
+                bool insideTitleBar = false;
+                if (m_titleBar) {
+                    QObject *t = watched;
+                    while (t) {
+                        if (t == m_titleBar) {
+                            insideTitleBar = true;
+                            break;
+                        }
+                        t = t->parent();
+                    }
+                }
+                bool insideList = (m_listWidget && watched == m_listWidget->viewport());
+                if (insideList) {
+                    QListWidgetItem *pressedItem = m_listWidget->itemAt(me->pos());
+                    if (pressedItem && m_listWidget->row(pressedItem) == 0) {
+                        insideList = false;
+                    }
+                }
+                const bool insideLeftBlank = (watched && watched->objectName() == QStringLiteral("LeftPanel"));
+                if (insideTitleBar || insideList || insideLeftBlank) {
+                    m_farRightPanel->setVisible(false);
+                }
+            }
+        }
     }
 
     if (m_titleBar && (watched == m_titleBar || watched->objectName() == QStringLiteral("ToolsContainer") || watched->objectName() == QStringLiteral("TitleControlContainer"))) {
@@ -2366,24 +2449,12 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
         auto *me = static_cast<QMouseEvent*>(event);
         if (me->button() == Qt::LeftButton) {
             QListWidgetItem *item = m_listWidget->itemAt(me->pos());
-            if (!item && m_listWidget->count() > 0) {
-                int bestDist = INT_MAX;
-                QListWidgetItem *bestItem = nullptr;
-                for (int i = 0; i < m_listWidget->count(); ++i) {
-                    QListWidgetItem *it = m_listWidget->item(i);
-                    if (!it) continue;
-                    const QRect r = m_listWidget->visualItemRect(it);
-                    if (!r.isValid()) continue;
-                    const int dy = qAbs(r.center().y() - me->pos().y());
-                    if (dy < bestDist) {
-                        bestDist = dy;
-                        bestItem = it;
-                    }
-                }
-                if (bestItem) {
-                    m_listWidget->setCurrentItem(bestItem);
-                    return true;
-                }
+            if (!item) {
+                m_listWidget->clearSelection();
+                m_listWidget->setCurrentItem(nullptr);
+                cancelHoverHiFps();
+                resetSelectionAutoPause(QString());
+                return true;
             }
         }
     }
@@ -2447,7 +2518,20 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
             return false;
         }
         if (m_farRightPanel) {
-            m_farRightPanel->setVisible(!m_farRightPanel->isVisible());
+            const bool nextVisible = !m_farRightPanel->isVisible();
+            m_farRightPanel->setVisible(nextVisible);
+            if (nextVisible) {
+                const int outerMargin = 10;
+                const int panelW = m_farRightPanel->width();
+                int yTop = outerMargin;
+                if (m_titleBar) {
+                    const QPoint p = m_titleBar->mapTo(this, QPoint(0, 0));
+                    yTop = p.y() + m_titleBar->height() + outerMargin;
+                }
+                const int panelH = qMax(0, height() - yTop - outerMargin);
+                m_farRightPanel->setGeometry(width() - outerMargin - panelW, yTop, panelW, panelH);
+                m_farRightPanel->raise();
+            }
         }
         return true;
     }
@@ -2788,6 +2872,9 @@ QString NewUiWindow::makeHoverChannelId(const QString &targetUserId) const
     if (targetUserId.isEmpty()) {
         return QString();
     }
+    if (!m_myStreamId.isEmpty()) {
+        return QStringLiteral("hfps_%1_%2").arg(targetUserId, m_myStreamId);
+    }
     return QStringLiteral("hfps_%1").arg(targetUserId);
 }
 
@@ -2859,6 +2946,7 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
         sendHiFpsControl(userId, channelId, 10, true);
     });
 
+    sendHiFpsControl(userId, channelId, 10, true);
     client->connectToServer(QUrl(subscribeUrl));
 
     m_hiFpsActiveUserId = userId;
@@ -3334,6 +3422,27 @@ void NewUiWindow::clearUserList()
     for (const QString &id : keys) {
         removeUser(id);
     }
+}
+
+void NewUiWindow::restartUserStreamSubscription(const QString &userId)
+{
+    if (userId.isEmpty()) {
+        return;
+    }
+    StreamClient *client = m_remoteStreams.value(userId, nullptr);
+    if (!client) {
+        return;
+    }
+    if (client->isConnected()) {
+        QJsonObject start;
+        start["type"] = "start_streaming";
+        client->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+        return;
+    }
+
+    const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(userId);
+    client->disconnectFromServer();
+    client->connectToServer(QUrl(subscribeUrl));
 }
 
 void NewUiWindow::updateUserAvatar(const QString &userId, int iconId)

@@ -65,6 +65,7 @@ public:
     void removeUser(const QString &userId);
     void clearUserList();
     void updateUserAvatar(const QString &userId, int iconId);
+    void restartUserStreamSubscription(const QString &userId);
     QString getCurrentUserId() const; // Returns the local user ID
 
 signals:

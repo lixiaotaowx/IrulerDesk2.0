@@ -811,6 +811,16 @@ void MainWindow::setupUI()
         }
     });
 
+    connect(m_videoWindow, &VideoWindow::receivingStopped, this, [this](const QString &, const QString &targetId) {
+        if (!m_transparentImageList) {
+            return;
+        }
+        if (targetId.isEmpty()) {
+            return;
+        }
+        m_transparentImageList->restartUserStreamSubscription(targetId);
+    });
+
     // Initialize Streaming Island
     m_islandWidget = new StreamingIslandWidget(nullptr); 
     connect(m_islandWidget, &StreamingIslandWidget::stopStreamingRequested, this, &MainWindow::stopStreaming);

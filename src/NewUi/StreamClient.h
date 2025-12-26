@@ -6,6 +6,7 @@
 #include <QUrl>
 #include <QByteArray>
 #include <QTimer>
+#include <QJsonObject>
 
 class StreamClient : public QObject {
     Q_OBJECT
@@ -39,6 +40,13 @@ private slots:
 
 private:
     void scheduleReconnect();
+    void requestLanOfferIfNeeded();
+    void handleLanOfferMessage(const QJsonObject &obj);
+    QString roomIdFromUrl(const QUrl &url) const;
+    bool isSubscribeUrl(const QUrl &url) const;
+    bool isPublishUrl(const QUrl &url) const;
+    void startLanFallbackTimer();
+    void stopLanFallbackTimer();
 
     QWebSocket *m_webSocket;
     bool m_isConnected;
@@ -48,6 +56,21 @@ private:
     int m_jpegQuality = 30;
     QTimer *m_reconnectTimer = nullptr;
     QUrl m_lastUrl;
+    QUrl m_pendingOpenUrl;
+    bool m_hasPendingOpen = false;
+    bool m_manualSwitchClose = false;
     bool m_shouldReconnect = false;
     int m_reconnectAttempts = 0;
+
+    QTimer *m_lanFallbackTimer = nullptr;
+    QUrl m_cloudFallbackUrl;
+    bool m_lanSwitchInProgress = false;
+
+    quint64 m_txFrames = 0;
+    quint64 m_rxFrames = 0;
+    qint64 m_lastTxLogAtMs = 0;
+    qint64 m_lastRxLogAtMs = 0;
+    qint64 m_lastTxSkipLogAtMs = 0;
+    qint64 m_lastRxSkipLogAtMs = 0;
+    qint64 m_lastDecodeFailLogAtMs = 0;
 };

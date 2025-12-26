@@ -12,6 +12,7 @@
 #include <QHash>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QNetworkInterface>
 
 namespace AppConfig {
 
@@ -139,6 +140,32 @@ inline QString lanWsLoopbackBaseUrl()
     return QStringLiteral("ws://127.0.0.1:%1").arg(lanWsPort());
 }
 
+inline QStringList localLanBaseUrls()
+{
+    QStringList out;
+    const int port = lanWsPort();
+
+    const auto ifaces = QNetworkInterface::allInterfaces();
+    for (const QNetworkInterface &iface : ifaces) {
+        if (!iface.isValid()) continue;
+        if (!(iface.flags() & QNetworkInterface::IsUp)) continue;
+        if (iface.flags() & QNetworkInterface::IsLoopBack) continue;
+
+        const auto entries = iface.addressEntries();
+        for (const QNetworkAddressEntry &e : entries) {
+            const QHostAddress ip = e.ip();
+            if (ip.protocol() != QAbstractSocket::IPv4Protocol) continue;
+            if (ip.isNull() || ip.isLoopback()) continue;
+            const QString ipStr = ip.toString();
+            if (ipStr.isEmpty()) continue;
+            out.append(QStringLiteral("ws://%1:%2").arg(ipStr).arg(port));
+        }
+    }
+
+    out.removeDuplicates();
+    return out;
+}
+
 inline QMutex &lanBaseUrlMutex()
 {
     static QMutex m;
@@ -167,4 +194,4 @@ inline QStringList lanBaseUrlsForTarget(const QString &targetId)
 
 }
 
-118| #endif
+#endif

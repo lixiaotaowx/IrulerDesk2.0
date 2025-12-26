@@ -13,6 +13,9 @@
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
+#include <QUrl>
+#include <QDebug>
+#include "../common/AppConfig.h"
 
 WebSocketSender::WebSocketSender(QObject *parent)
     : QObject(parent)
@@ -385,6 +388,48 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     QJsonObject obj = doc.object();
     QString type = obj["type"].toString();
     
+    if (type == "lan_offer_request") {
+        if (!AppConfig::lanWsEnabled()) {
+            return;
+        }
+        const QStringList pathParts = QUrl(m_serverUrl).path().split('/', Qt::SkipEmptyParts);
+        const QString roomId = pathParts.size() >= 2 ? pathParts.value(1) : QString();
+        const QString requested = obj.value("channel_id").toString();
+        if (roomId.isEmpty()) {
+            return;
+        }
+        if (!requested.isEmpty() && roomId != requested) {
+            qInfo().noquote() << "[KickDiag][Sender] lan_offer_request ignored"
+                              << " room_id=" << roomId
+                              << " requested=" << requested
+                              << " url=" << m_serverUrl;
+            return;
+        }
+        const QStringList bases = AppConfig::localLanBaseUrls();
+        if (bases.isEmpty()) {
+            qInfo().noquote() << "[KickDiag][Sender] lan_offer_request no_local_lan_base_urls"
+                              << " room_id=" << roomId
+                              << " requested=" << requested
+                              << " url=" << m_serverUrl;
+            return;
+        }
+        qInfo().noquote() << "[KickDiag][Sender] lan_offer_request accepted"
+                          << " room_id=" << roomId
+                          << " requested=" << requested
+                          << " base_urls=" << bases.join(QStringLiteral(","))
+                          << " url=" << m_serverUrl;
+        QJsonArray arr;
+        for (const QString &b : bases) {
+            arr.append(b);
+        }
+        QJsonObject offer;
+        offer["type"] = "lan_offer";
+        offer["channel_id"] = roomId;
+        offer["base_urls"] = arr;
+        sendTextMessage(QJsonDocument(offer).toJson(QJsonDocument::Compact));
+        return;
+    }
+
     if (type == "watch_request") {
         QString viewerId = obj["viewer_id"].toString();
         QString viewerName = obj.value("viewer_name").toString();
@@ -761,6 +806,15 @@ void WebSocketSender::localApproveWatchRequest()
     startStreaming();
     if (!m_audioOnlyStreaming) {
         emit requestKeyFrame();
+    }
+    sendWatchAccepted(m_pendingViewerId, m_pendingTargetId);
+    {
+        QJsonObject ok;
+        ok["type"] = "streaming_ok";
+        ok["viewer_id"] = m_pendingViewerId;
+        ok["target_id"] = m_pendingTargetId;
+        QJsonDocument okDoc(ok);
+        sendTextMessage(okDoc.toJson(QJsonDocument::Compact));
     }
     m_waitingForApproval = false;
     m_pendingAudioOnly = false;

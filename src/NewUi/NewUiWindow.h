@@ -143,8 +143,10 @@ private:
     QWidget *m_function1BrowserPage = nullptr;
     QWebEngineView *m_function1WebView = nullptr;
     StreamClient *m_streamClient = nullptr;
+    StreamClient *m_streamClientLan = nullptr;
     LoginClient *m_loginClient = nullptr;
     StreamClient *m_avatarPublisher = nullptr;
+    StreamClient *m_avatarPublisherLan = nullptr;
     QTimer *m_avatarPublishTimer = nullptr;
     QMap<QString, StreamClient*> m_avatarSubscribers;
     QPixmap m_localAvatarPublishPixmap;
@@ -194,6 +196,7 @@ private:
     QString m_hiFpsActiveChannelId;
     StreamClient *m_hiFpsSubscriber = nullptr;
     QMap<QString, StreamClient*> m_hiFpsPublishers;
+    QMap<QString, StreamClient*> m_hiFpsPublishersLan;
     QMap<QString, QTimer*> m_hiFpsPublisherTimers;
     QTimer *m_hiFpsWatchdogTimer = nullptr;
     qint64 m_hiFpsLastFrameAtMs = 0;

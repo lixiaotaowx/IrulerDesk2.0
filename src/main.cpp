@@ -16,7 +16,16 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QByteArray>
+#include <QWebSocketServer>
+#include <QWebSocket>
+#include <QHash>
+#include <QSet>
+#include <QPointer>
+#include <QHostAddress>
+#include <QThread>
 #include <iostream>
+#include <atomic>
+#include <memory>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -25,6 +34,177 @@
 #include "common/AppConfig.h"
 #include "MainWindow.h"
 #include "NewUi/NewUiWindow.h"
+
+namespace {
+class LanRelayServer final : public QObject
+{
+public:
+    explicit LanRelayServer(QObject *parent = nullptr)
+        : QObject(parent)
+    {
+    }
+
+    bool start(quint16 port)
+    {
+        if (m_server) {
+            return true;
+        }
+
+        m_server = new QWebSocketServer(QStringLiteral("IrulerDeskpro LAN Relay"), QWebSocketServer::NonSecureMode, this);
+        if (!m_server->listen(QHostAddress::AnyIPv4, port)) {
+            m_server->deleteLater();
+            m_server = nullptr;
+            return false;
+        }
+
+        connect(m_server, &QWebSocketServer::newConnection, this, &LanRelayServer::onNewConnection);
+        return true;
+    }
+
+    quint16 port() const
+    {
+        if (!m_server) return 0;
+        return static_cast<quint16>(m_server->serverPort());
+    }
+
+private:
+    struct Room {
+        QWebSocket *publisher = nullptr;
+        QSet<QWebSocket*> subscribers;
+        QVector<QString> pendingTextToPublisher;
+        QVector<QByteArray> pendingBinaryToPublisher;
+    };
+
+    QWebSocketServer *m_server = nullptr;
+    QHash<QString, Room> m_rooms;
+
+    void onNewConnection()
+    {
+        if (!m_server) return;
+        QWebSocket *sock = m_server->nextPendingConnection();
+        if (!sock) return;
+
+        const QString path = sock->requestUrl().path();
+        const QStringList parts = path.split('/', Qt::SkipEmptyParts);
+        if (parts.size() < 2) {
+            sock->close();
+            sock->deleteLater();
+            return;
+        }
+
+        const QString role = parts.value(0);
+        const QString roomId = parts.value(1);
+        if (roomId.isEmpty()) {
+            sock->close();
+            sock->deleteLater();
+            return;
+        }
+
+        if (role != QStringLiteral("publish") && role != QStringLiteral("subscribe")) {
+            sock->close();
+            sock->deleteLater();
+            return;
+        }
+
+        Room &room = m_rooms[roomId];
+
+        if (role == QStringLiteral("publish")) {
+            if (room.publisher && room.publisher != sock) {
+                room.publisher->close();
+                room.publisher->deleteLater();
+            }
+            room.publisher = sock;
+            if (!room.pendingTextToPublisher.isEmpty()) {
+                for (const QString &msg : room.pendingTextToPublisher) {
+                    if (sock->state() == QAbstractSocket::ConnectedState) {
+                        sock->sendTextMessage(msg);
+                    }
+                }
+                room.pendingTextToPublisher.clear();
+            }
+            if (!room.pendingBinaryToPublisher.isEmpty()) {
+                for (const QByteArray &msg : room.pendingBinaryToPublisher) {
+                    if (sock->state() == QAbstractSocket::ConnectedState) {
+                        sock->sendBinaryMessage(msg);
+                    }
+                }
+                room.pendingBinaryToPublisher.clear();
+            }
+
+            connect(sock, &QWebSocket::binaryMessageReceived, this, [this, roomId](const QByteArray &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                for (QWebSocket *rawSub : it->subscribers) {
+                    QPointer<QWebSocket> sub = rawSub;
+                    if (sub && sub->state() == QAbstractSocket::ConnectedState) {
+                        sub->sendBinaryMessage(msg);
+                    }
+                }
+            });
+
+            connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                for (QWebSocket *rawSub : it->subscribers) {
+                    QPointer<QWebSocket> sub = rawSub;
+                    if (sub && sub->state() == QAbstractSocket::ConnectedState) {
+                        sub->sendTextMessage(msg);
+                    }
+                }
+            });
+        } else {
+            room.subscribers.insert(sock);
+
+            connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                QPointer<QWebSocket> pub = it->publisher;
+                if (pub && pub->state() == QAbstractSocket::ConnectedState) {
+                    pub->sendTextMessage(msg);
+                } else {
+                    it->pendingTextToPublisher.append(msg);
+                    if (it->pendingTextToPublisher.size() > 12) {
+                        it->pendingTextToPublisher.remove(0, it->pendingTextToPublisher.size() - 12);
+                    }
+                }
+            });
+
+            connect(sock, &QWebSocket::binaryMessageReceived, this, [this, roomId](const QByteArray &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                QPointer<QWebSocket> pub = it->publisher;
+                if (pub && pub->state() == QAbstractSocket::ConnectedState) {
+                    pub->sendBinaryMessage(msg);
+                } else {
+                    it->pendingBinaryToPublisher.append(msg);
+                    if (it->pendingBinaryToPublisher.size() > 6) {
+                        it->pendingBinaryToPublisher.remove(0, it->pendingBinaryToPublisher.size() - 6);
+                    }
+                }
+            });
+        }
+
+        connect(sock, &QWebSocket::disconnected, this, [this, sock, roomId]() {
+            auto it = m_rooms.find(roomId);
+            if (it == m_rooms.end()) {
+                sock->deleteLater();
+                return;
+            }
+
+            if (it->publisher == sock) {
+                it->publisher = nullptr;
+            }
+            it->subscribers.remove(sock);
+
+            if (!it->publisher && it->subscribers.isEmpty()) {
+                m_rooms.erase(it);
+            }
+
+            sock->deleteLater();
+        });
+    }
+};
+}
 
 int main(int argc, char *argv[])
 {
@@ -47,6 +227,50 @@ int main(int argc, char *argv[])
             return 0;
         }
     }
+
+    std::atomic<quint64> uiBeat{0};
+    QTimer *uiBeatTimer = new QTimer(&app);
+    uiBeatTimer->setInterval(200);
+    QObject::connect(uiBeatTimer, &QTimer::timeout, &app, [&uiBeat]() {
+        uiBeat.fetch_add(1, std::memory_order_relaxed);
+    });
+    uiBeatTimer->start();
+
+    QThread *hangThread = new QThread(&app);
+    QObject *hangWorker = new QObject();
+    hangWorker->moveToThread(hangThread);
+    QObject::connect(hangThread, &QThread::finished, hangWorker, &QObject::deleteLater);
+    hangThread->start();
+    QMetaObject::invokeMethod(hangWorker, [hangWorker, &uiBeat]() {
+        QTimer *t = new QTimer(hangWorker);
+        t->setInterval(2000);
+        auto last = std::make_shared<quint64>(uiBeat.load(std::memory_order_relaxed));
+        auto stuck = std::make_shared<int>(0);
+        auto cooldown = std::make_shared<int>(0);
+        QObject::connect(t, &QTimer::timeout, hangWorker, [last, stuck, cooldown, &uiBeat]() mutable {
+            const quint64 now = uiBeat.load(std::memory_order_relaxed);
+            if (now == *last) {
+                (*stuck)++;
+            } else {
+                *last = now;
+                *stuck = 0;
+            }
+            if (*cooldown > 0) {
+                (*cooldown)--;
+                return;
+            }
+            if (*stuck >= 4) {
+                CrashGuard::writeMiniDump("ui");
+                *cooldown = 30;
+            }
+        });
+        t->start();
+    }, Qt::QueuedConnection);
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [hangThread]() {
+        if (!hangThread) return;
+        hangThread->quit();
+        hangThread->wait(1500);
+    });
 
     QString appDir = QCoreApplication::applicationDirPath();
     app.setWindowIcon(QIcon(appDir + "/maps/logo/iruler.ico"));
@@ -170,6 +394,25 @@ int main(int argc, char *argv[])
 
     // 创建并显示主窗口
     MainWindow window;
+
+    LanRelayServer *lanRelay = nullptr;
+    QThread *lanThread = nullptr;
+    if (AppConfig::lanWsEnabled()) {
+        lanThread = new QThread(&app);
+        lanRelay = new LanRelayServer();
+        lanRelay->moveToThread(lanThread);
+        QObject::connect(lanThread, &QThread::finished, lanRelay, &QObject::deleteLater);
+        lanThread->start();
+        const quint16 port = static_cast<quint16>(AppConfig::lanWsPort());
+        QMetaObject::invokeMethod(lanRelay, [lanRelay, port]() {
+            lanRelay->start(port);
+        }, Qt::QueuedConnection);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [lanThread]() {
+            if (!lanThread) return;
+            lanThread->quit();
+            lanThread->wait(1500);
+        });
+    }
 
     QLocalServer *instServer = new QLocalServer(&app);
     QLocalServer::removeServer("IrulerDeskpro_SingleInstance");

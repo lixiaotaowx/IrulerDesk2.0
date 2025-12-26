@@ -454,6 +454,10 @@ int main(int argc, char *argv[])
     // 在编码器准备好后再启动WebSocket发送器
     // qDebug() << "[CaptureProcess] 启动WebSocket发送器...";
     WebSocketSender *sender = new WebSocketSender(&app);
+    WebSocketSender *lanSender = nullptr;
+    if (AppConfig::lanWsEnabled()) {
+        lanSender = new WebSocketSender(&app);
+    }
     
     static QVector<AnnotationOverlay*> s_overlays;
     static QVector<CursorOverlay*> s_cursorOverlays;
@@ -483,10 +487,18 @@ int main(int argc, char *argv[])
     // qDebug() << "[CaptureProcess] 连接编码器和服务器信号槽...";
     QObject::connect(encoder, &VP9Encoder::frameEncodedWithInfo,
                      sender, &WebSocketSender::enqueueFrame);
+    if (lanSender) {
+        QObject::connect(encoder, &VP9Encoder::frameEncodedWithInfo,
+                         lanSender, &WebSocketSender::enqueueFrame);
+    }
     
     // 连接首帧关键帧策略信号槽
     QObject::connect(sender, &WebSocketSender::requestKeyFrame,
                      encoder, &VP9Encoder::forceKeyFrame);
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::requestKeyFrame,
+                         encoder, &VP9Encoder::forceKeyFrame);
+    }
     // qDebug() << "[CaptureProcess] [首帧策略] 已连接关键帧请求信号槽";
     
     // 创建鼠标捕获模块
@@ -522,6 +534,7 @@ int main(int argc, char *argv[])
     static VP9Encoder *staticEncoder = encoder;
     static MouseCapture *staticMouseCapture = mouseCapture; // 新增：静态鼠标捕获指针
     static WebSocketSender *staticSender = sender; // 新增：静态WebSocket发送器指针
+    static WebSocketSender *staticLanSender = lanSender;
     static bool isCapturing = false; // 控制捕获状态
     static int currentScreenIndex = getScreenIndexFromConfig(); // 当前屏幕索引
     static QString currentUserName = getUserNameFromConfig(); // 当前用户名
@@ -529,6 +542,23 @@ int main(int argc, char *argv[])
     // 新增：质量控制相关静态状态
     static QString currentQuality = getLocalQualityFromConfig();
     static QSize targetEncodeSize = staticEncoder->getFrameSize();
+
+    auto isAnyStreaming = [&]() -> bool {
+        if (staticSender && staticSender->isStreaming()) return true;
+        if (staticLanSender && staticLanSender->isStreaming()) return true;
+        return false;
+    };
+
+    auto isAnyVideoStreaming = [&]() -> bool {
+        if (staticSender && staticSender->isStreaming() && !staticSender->isAudioOnlyStreaming()) return true;
+        if (staticLanSender && staticLanSender->isStreaming() && !staticLanSender->isAudioOnlyStreaming()) return true;
+        return false;
+    };
+
+    auto sendTextAll = [&](const QString &msg) {
+        if (staticSender) staticSender->sendTextMessage(msg);
+        if (staticLanSender) staticLanSender->sendTextMessage(msg);
+    };
 
     // -------------------------------------------------------------------------
     // 屏幕切换处理逻辑 (Screen Switch Logic)
@@ -956,7 +986,7 @@ int main(int argc, char *argv[])
             auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
-            if (!staticSender->isStreaming()) {
+            if (!isAnyStreaming()) {
                 continue; // 未开始推流时不发送音频
             }
 
@@ -990,7 +1020,7 @@ int main(int argc, char *argv[])
             msg["data_base64"] = QString::fromUtf8(opusOut.toBase64());
             
             QJsonDocument doc(msg);
-            staticSender->sendTextMessage(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+            sendTextAll(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
             audioFrameSendCount++;
             if (audioFrameSendCount % 100 == 0) {
                 qDebug() << "[Audio] Sent Opus frame #" << audioFrameSendCount << " Bytes:" << nbytes;
@@ -1335,8 +1365,11 @@ int main(int argc, char *argv[])
     // 连接推流控制信号
     static QSet<QString> activeViewerIds;
     static bool pendingLocalApproval = false;
-    QObject::connect(sender, &WebSocketSender::streamingStarted, [&, startAudio, applyQualitySetting]() {
-        const bool audioOnly = sender->isAudioOnlyStreaming();
+    auto handleStreamingStarted = [&, startAudio, applyQualitySetting](WebSocketSender *src) {
+        if (!src) {
+            return;
+        }
+        const bool audioOnly = src->isAudioOnlyStreaming();
         qDebug() << "[CaptureProcess] Streaming started signal received. isCapturing:" << isCapturing << " audioOnly:" << audioOnly;
         if (audioOnly && isCapturing) {
             isCapturing = false;
@@ -1359,17 +1392,27 @@ int main(int argc, char *argv[])
                 qDebug() << "[CaptureProcess] Audio-only streaming started; video capture skipped.";
             }
         }
-        
-        // 无论是否已经在捕获，只要收到推流信号，都强制检查并启动音频
-        // 这是为了防止 isCapturing 为 true 但音频未启动的情况 (例如之前的故障恢复)
+
         if (remoteAudioEnabled) {
             qDebug() << "[CaptureProcess] Enforcing audio start on streamingStarted...";
             startAudio();
         }
+    };
+
+    QObject::connect(sender, &WebSocketSender::streamingStarted, [&]() {
+        handleStreamingStarted(sender);
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::streamingStarted, [&]() {
+            handleStreamingStarted(lanSender);
+        });
+    }
     
-    QObject::connect(sender, &WebSocketSender::streamingStopped, [captureTimer, audioTimer, audioSource, &audioInput](bool softStop) {
+    QObject::connect(sender, &WebSocketSender::streamingStopped, [&](bool softStop) {
         activeViewerIds.clear();
+        if (isAnyStreaming()) {
+            return;
+        }
         if (isCapturing) {
             isCapturing = false;
             captureTimer->stop();
@@ -1397,6 +1440,40 @@ int main(int argc, char *argv[])
             staticEncoder->initialize(capSize.width(), capSize.height(), staticEncoder->getFrameRate());
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::streamingStopped, [&](bool softStop) {
+            if (isAnyStreaming()) {
+                return;
+            }
+            activeViewerIds.clear();
+            if (isCapturing) {
+                isCapturing = false;
+                captureTimer->stop();
+                staticMouseCapture->stopCapture();
+            }
+            audioTimer->stop();
+            if (audioSource) {
+                audioSource->stop();
+                audioInput = nullptr;
+            }
+            if (opusEnc) { opus_encoder_destroy(opusEnc); opusEnc = nullptr; }
+            if (mp3Decoder) { mp3Decoder->stop(); }
+
+            if (softStop) {
+                return;
+            }
+
+            if (staticCapture) {
+                staticCapture->cleanup();
+                staticCapture->initialize();
+            }
+            if (staticEncoder && staticCapture) {
+                staticEncoder->cleanup();
+                QSize capSize = staticCapture->getScreenSize();
+                staticEncoder->initialize(capSize.width(), capSize.height(), staticEncoder->getFrameRate());
+            }
+        });
+    }
 
     // 响应关键帧请求（带2秒冷却保护）
     QObject::connect(sender, &WebSocketSender::requestKeyFrame, []() {
@@ -1417,7 +1494,7 @@ int main(int argc, char *argv[])
     QObject::connect(sender, &WebSocketSender::viewerNameChanged, [&](const QString &){ });
     QObject::connect(sender, &WebSocketSender::viewerCursorReceived,
                      [&](const QString &viewerId, int x, int y, const QString &viewerName) {
-        if (!sender->isStreaming()) {
+        if (!isAnyVideoStreaming()) {
             return;
         }
         int idx = currentScreenIndex;
@@ -1440,9 +1517,26 @@ int main(int argc, char *argv[])
             s_cursorOverlays[idx]->onViewerCursor(viewerId, sx, sy, viewerName);
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::viewerCursorReceived,
+                         [&](const QString &viewerId, int x, int y, const QString &viewerName) {
+            if (!isAnyVideoStreaming()) {
+                return;
+            }
+            int idx = currentScreenIndex;
+            if (idx >= 0 && idx < s_cursorOverlays.size()) {
+                QSize logicalSize = s_cursorOverlays[idx]->size();
+                QSize enc = targetEncodeSize;
+
+                int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+                int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+                s_cursorOverlays[idx]->onViewerCursor(viewerId, sx, sy, viewerName);
+            }
+        });
+    }
     QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived,
                      [&](const QString &viewerId, const QString &viewerName) {
-        if (!sender->isStreaming()) {
+        if (!isAnyStreaming()) {
             return;
         }
         int idx = currentScreenIndex;
@@ -1450,55 +1544,88 @@ int main(int argc, char *argv[])
             s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::viewerNameUpdateReceived,
+                         [&](const QString &viewerId, const QString &viewerName) {
+            if (!isAnyStreaming()) {
+                return;
+            }
+            int idx = currentScreenIndex;
+            if (idx >= 0 && idx < s_cursorOverlays.size()) {
+                s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
+            }
+        });
+    }
+
+    auto isManualApprovalEnabledFromConfig = []() -> bool {
+        QStringList paths;
+        paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+        paths << QDir::currentPath() + "/config/app_config.txt";
+        for (const QString &p : paths) {
+            QFile f(p);
+            if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QTextStream in(&f);
+                while (!in.atEnd()) {
+                    QString line = in.readLine();
+                    if (line.startsWith("manual_approval_enabled=")) {
+                        QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
+                        f.close();
+                        return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
+                    }
+                }
+                f.close();
+            }
+        }
+        return true;
+    };
+
+    auto handleWatchRequest = [&](WebSocketSender *src, const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId) {
+        Q_UNUSED(viewerName);
+        Q_UNUSED(targetId);
+        Q_UNUSED(iconId);
+        if (!src) {
+            return;
+        }
+
+        if (isManualApprovalEnabledFromConfig()) {
+            qDebug() << "[CaptureProcess] Manual approval mode. Waiting for watch_request_accepted signal.";
+            if (pendingLocalApproval) {
+                pendingLocalApproval = false;
+                src->localApproveWatchRequest();
+            }
+        } else {
+            qDebug() << "[CaptureProcess] Auto-approving watch request (Auto mode)";
+            src->approveWatchRequest();
+        }
+
+        if (!viewerId.isEmpty()) {
+            activeViewerIds.insert(viewerId);
+        }
+    };
 
     QObject::connect(sender, &WebSocketSender::watchRequestReceived,
                      [&](const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId) {
-        
-        // 检查配置是否启用手动审批
-        auto isManualApprovalEnabledFromConfig = []() -> bool {
-            QStringList paths;
-            paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-            paths << QDir::currentPath() + "/config/app_config.txt";
-            for (const QString &p : paths) {
-                QFile f(p);
-                if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                    QTextStream in(&f);
-                    while (!in.atEnd()) {
-                        QString line = in.readLine();
-                        if (line.startsWith("manual_approval_enabled=")) {
-                            QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
-                            f.close();
-                            return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
-                        }
-                    }
-                    f.close();
-                }
-            }
-            // 默认开启手动同意，与MainWindow保持一致
-            return true;
-        };
-
-        if (isManualApprovalEnabledFromConfig()) {
-            // 手动模式：主程序 MainWindow 负责弹出对话框并发送 accepted 消息
-            // CaptureProcess 等待收到 watch_request_accepted 消息后再开始推流
-            qDebug() << "[CaptureProcess] Manual approval mode. Waiting for watch_request_accepted signal.";
-            // 移除自动开始推流，等待明确的同意指令
-            if (pendingLocalApproval) {
-                pendingLocalApproval = false;
-                sender->localApproveWatchRequest();
-            }
-        } else {
-            // 自动模式：直接通过
-            qDebug() << "[CaptureProcess] Auto-approving watch request (Auto mode)";
-            sender->approveWatchRequest();
-        }
+        handleWatchRequest(sender, viewerId, viewerName, targetId, iconId);
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::watchRequestReceived,
+                         [&](const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId) {
+            handleWatchRequest(lanSender, viewerId, viewerName, targetId, iconId);
+        });
+    }
 
     QObject::connect(sender, &WebSocketSender::viewerJoined, [&](const QString &viewerId) {
         if (!viewerId.isEmpty()) {
             activeViewerIds.insert(viewerId);
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::viewerJoined, [&](const QString &viewerId) {
+            if (!viewerId.isEmpty()) {
+                activeViewerIds.insert(viewerId);
+            }
+        });
+    }
 
     QObject::connect(sender, &WebSocketSender::viewerExited,
                      [&](const QString &viewerId) {
@@ -1516,8 +1643,13 @@ int main(int argc, char *argv[])
         if (!viewerId.isEmpty()) {
             activeViewerIds.remove(viewerId);
         }
-        if (sender && sender->isStreaming() && activeViewerIds.isEmpty()) {
-            sender->stopStreaming(true);
+        if (activeViewerIds.isEmpty()) {
+            if (sender && sender->isStreaming()) {
+                sender->stopStreaming(true);
+            }
+            if (lanSender && lanSender->isStreaming()) {
+                lanSender->stopStreaming(true);
+            }
         }
 
         {
@@ -1539,11 +1671,8 @@ int main(int argc, char *argv[])
     });
 
     QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
-                     [sender](const QPoint &globalPos) {
-        if (!sender->isStreaming()) {
-            return;
-        }
-        if (sender->isAudioOnlyStreaming()) {
+                     [&, sendTextAll, isAnyVideoStreaming](const QPoint &globalPos) {
+        if (!isAnyVideoStreaming()) {
             return;
         }
         const auto screens = QApplication::screens();
@@ -1574,7 +1703,7 @@ int main(int argc, char *argv[])
             std::chrono::high_resolution_clock::now().time_since_epoch()).count();
         messageObj["timestamp"] = static_cast<qint64>(timestamp);
         QJsonDocument doc(messageObj);
-        sender->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+        sendTextAll(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
     });
 
     
@@ -1582,7 +1711,7 @@ int main(int argc, char *argv[])
     // 处理观看端切换屏幕请求：滚动切换到下一屏幕
     QObject::connect(sender, &WebSocketSender::switchScreenRequested, 
                      [&](const QString &direction, int targetIndex) {
-        if (!sender->isStreaming()) {
+        if (!isAnyStreaming()) {
             return;
         }
         int finalIndex = -1;
@@ -1591,6 +1720,19 @@ int main(int argc, char *argv[])
         }
         handleScreenSwitch(finalIndex);
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::switchScreenRequested,
+                         [&](const QString &direction, int targetIndex) {
+            if (!isAnyStreaming()) {
+                return;
+            }
+            int finalIndex = -1;
+            if (direction == "index") {
+                finalIndex = targetIndex;
+            }
+            handleScreenSwitch(finalIndex);
+        });
+    }
 
     // 处理本地切换屏幕请求
     if (watchdog) {
@@ -1607,7 +1749,7 @@ int main(int argc, char *argv[])
             const bool finalEnabled = serverAudioWanted && localMicEnabled;
             remoteAudioEnabled = finalEnabled;
             if (finalEnabled) {
-                if (!sender->isStreaming()) return;
+                if (!isAnyStreaming()) return;
                 startAudio();
             } else {
                 stopAudio();
@@ -1617,11 +1759,19 @@ int main(int argc, char *argv[])
 
     // 新增：处理质量变更请求
     QObject::connect(sender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
-        if (!sender->isStreaming()) {
+        if (!isAnyStreaming()) {
             return;
         }
         applyQualitySetting(quality);
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
+            if (!isAnyStreaming()) {
+                return;
+            }
+            applyQualitySetting(quality);
+        });
+    }
 
     // 新增：处理音频开关请求（麦克风采集）
     // 变量已移至上方作为静态变量声明
@@ -1630,15 +1780,28 @@ int main(int argc, char *argv[])
         const bool finalEnabled = enabled && localMicEnabled;
         remoteAudioEnabled = finalEnabled;
         if (finalEnabled) {
-            if (!sender->isStreaming()) return;
+            if (!isAnyStreaming()) return;
             startAudio();
         } else {
             stopAudio();
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::audioToggleRequested, [&, startAudio, stopAudio](bool enabled) {
+            serverAudioWanted = enabled;
+            const bool finalEnabled = enabled && localMicEnabled;
+            remoteAudioEnabled = finalEnabled;
+            if (finalEnabled) {
+                if (!isAnyStreaming()) return;
+                startAudio();
+            } else {
+                stopAudio();
+            }
+        });
+    }
 
     QObject::connect(sender, &WebSocketSender::audioGainRequested, [&, audioSource](int percent) {
-        if (!sender->isStreaming()) {
+        if (!isAnyStreaming()) {
             return;
         }
         int p = percent;
@@ -1649,6 +1812,20 @@ int main(int argc, char *argv[])
             audioSource->setVolume(p / 100.0);
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::audioGainRequested, [&, audioSource](int percent) {
+            if (!isAnyStreaming()) {
+                return;
+            }
+            int p = percent;
+            if (p < 0) p = 0;
+            if (p > 100) p = 100;
+            currentMicGainPercent = p;
+            if (audioSource) {
+                audioSource->setVolume(p / 100.0);
+            }
+        });
+    }
 
     // --- Audio Mixing Initialization ---
     QAudioDevice outDev = QMediaDevices::defaultAudioOutput();
@@ -1813,9 +1990,25 @@ int main(int argc, char *argv[])
             watchdog->notifyViewerMicState(vid, enabled);
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::viewerMicStateReceived, [&](const QString &viewerId, bool enabled) {
+            QMutexLocker locker(&mixMutex);
+            QString vid = viewerId;
+            if (vid.isEmpty()) return;
+            peerMicExplicit[vid] = enabled;
+            if (!enabled) {
+                peerMicOn[vid] = false;
+                peerQueues.remove(vid);
+                peerBuffering[vid] = true;
+            }
+            if (watchdog) {
+                watchdog->notifyViewerMicState(vid, enabled);
+            }
+        });
+    }
 
     QObject::connect(sender, &WebSocketSender::viewerAudioOpusReceived, [&](const QString &viewerId, const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
-        if (!sender->isStreaming()) {
+        if (!isAnyStreaming()) {
             return;
         }
         QMutexLocker locker(&mixMutex);
@@ -1855,9 +2048,51 @@ int main(int argc, char *argv[])
             }
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::viewerAudioOpusReceived, [&](const QString &viewerId, const QByteArray &opus, int sr, int ch, int frameSamples, qint64 /*ts*/) {
+            if (!isAnyStreaming()) {
+                return;
+            }
+            QMutexLocker locker(&mixMutex);
+            QString vid = viewerId;
+            if (vid.isEmpty()) vid = "unknown";
+
+            if (peerMicExplicit.contains(vid) && !peerMicExplicit.value(vid, true)) {
+                return;
+            }
+
+            if (!peerDecoders.contains(vid)) {
+                int err;
+                OpusDecoder *dec = opus_decoder_create(mixSampleRate, 1, &err);
+                if (err == OPUS_OK) {
+                    peerDecoders[vid] = dec;
+                    peerBuffering[vid] = true;
+                    qDebug() << "[AudioMixer] Added new peer:" << vid;
+                } else {
+                    return;
+                }
+            }
+
+            const int MAX_PEER_QUEUE = 24;
+            if (peerQueues[vid].size() >= MAX_PEER_QUEUE) {
+                while (peerQueues[vid].size() >= MAX_PEER_QUEUE - 9) {
+                    peerQueues[vid].dequeue();
+                }
+                qDebug() << "[AudioMixer] Peer" << vid << "latency high. Dropped frames. Queue:" << peerQueues[vid].size();
+            }
+            peerQueues[vid].enqueue(opus);
+            peerLastActiveTimes[vid] = QDateTime::currentMSecsSinceEpoch();
+            if (!peerMicOn.value(vid, false)) {
+                peerMicOn[vid] = true;
+                if (watchdog) {
+                    watchdog->notifyViewerMicState(vid, true);
+                }
+            }
+        });
+    }
 
     QObject::connect(sender, &WebSocketSender::viewerListenMuteRequested, [&](bool mute) {
-        if (!sender->isStreaming()) {
+        if (!isAnyStreaming()) {
             return;
         }
         remoteListenEnabled = !mute;
@@ -1877,6 +2112,29 @@ int main(int argc, char *argv[])
              peerMicOn.clear();
         }
     });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::viewerListenMuteRequested, [&](bool mute) {
+            if (!isAnyStreaming()) {
+                return;
+            }
+            remoteListenEnabled = !mute;
+            if (mute) {
+                QMutexLocker locker(&mixMutex);
+                const auto keys = peerMicOn.keys();
+                for (const QString &vid : keys) {
+                    if (peerMicOn.value(vid, false) && watchdog) {
+                        watchdog->notifyViewerMicState(vid, false);
+                    }
+                }
+                for (auto dec : peerDecoders) opus_decoder_destroy(dec);
+                peerDecoders.clear();
+                peerQueues.clear();
+                peerSilenceCounts.clear();
+                peerLastActiveTimes.clear();
+                peerMicOn.clear();
+            }
+        });
+    }
     
     QObject::connect(captureTimer, &QTimer::timeout, []() {
         if (!isCapturing) return; // 只有在推流状态下才捕获
@@ -1922,13 +2180,23 @@ int main(int argc, char *argv[])
     QString deviceId = getDeviceIdFromConfig(); // 从配置文件读取设备ID
     const QString serverBaseUrl = AppConfig::wsBaseUrl();
     QString serverUrl = QString("%1/publish/%2").arg(serverBaseUrl, deviceId);
+    QString lanUrl;
+    if (lanSender) {
+        lanUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), deviceId);
+    }
     
     // 显示设备ID
     qDebug() << "[CaptureProcess] Current Device ID:" << deviceId;
     qDebug() << "[CaptureProcess] Target Server URL:" << serverUrl;
+    if (!lanUrl.isEmpty()) {
+        qDebug() << "[CaptureProcess] Target LAN URL:" << lanUrl;
+    }
     
     if (!sender->connectToServer(serverUrl)) {
         return -1;
+    }
+    if (lanSender && !lanUrl.isEmpty()) {
+        lanSender->connectToServer(lanUrl);
     }
     // qDebug() << "[CaptureProcess] 正在连接到WebSocket服务器:" << serverUrl;
 
@@ -1942,6 +2210,9 @@ int main(int argc, char *argv[])
             if (sender) {
                 sender->localApproveWatchRequest();
             }
+            if (lanSender) {
+                lanSender->localApproveWatchRequest();
+            }
         });
         
         QObject::connect(watchdog, &WatchdogClient::rejectionReceived, [&]() {
@@ -1950,11 +2221,17 @@ int main(int argc, char *argv[])
                 sender->rejectWatchRequest();
                 qDebug() << "[CaptureProcess] Local rejection executed: Request reset.";
             }
+            if (lanSender) {
+                lanSender->rejectWatchRequest();
+            }
         });
 
         QObject::connect(watchdog, &WatchdogClient::softStopRequested, [&]() {
             if (sender) {
                 sender->stopStreaming(true);
+            }
+            if (lanSender) {
+                lanSender->stopStreaming(true);
             }
         });
     }

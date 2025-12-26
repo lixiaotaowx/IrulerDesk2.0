@@ -142,6 +142,10 @@ private:
     int m_reconnectAttempts;
     int m_maxReconnectAttempts;
     int m_reconnectInterval; // 毫秒
+    QTimer *m_lanFallbackTimer = nullptr;
+    QString m_cloudFallbackUrl;
+    bool m_lanSwitchInProgress = false;
+    bool m_lanOfferRequested = false;
     
     // 统计信息
     ReceiverStats m_stats;

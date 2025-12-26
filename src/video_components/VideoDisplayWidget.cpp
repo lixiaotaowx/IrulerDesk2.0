@@ -227,13 +227,10 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     
     // 如果正在接收但URL不同，或者需要重新连接，先断开之前的连接
     if (m_isReceiving) {
-        stopReceiving();
-        // 断开后直接重建接收器，避免旧实例残留状态导致卡死
-        recreateReceiver();
-    } else {
-        // [Fix 4] 即使当前未接收（如暂停后恢复），也强制重建接收器，确保无状态残留
-        recreateReceiver();
+        stopReceiving(false);
     }
+    
+    recreateReceiver();
     
     m_serverUrl = serverUrl;
     

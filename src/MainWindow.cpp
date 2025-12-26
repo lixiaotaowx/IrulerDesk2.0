@@ -288,6 +288,75 @@ void MainWindow::sendWatchRequestAudioOnly(const QString& targetDeviceId)
 
 void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly)
 {
+    const QString myId = getDeviceId();
+    if (!targetDeviceId.isEmpty() && targetDeviceId == myId) {
+        if (m_waitingDialog) {
+            m_waitingDialog->close();
+            m_waitingDialog->deleteLater();
+            m_waitingDialog = nullptr;
+        }
+
+        m_currentTargetId = targetDeviceId;
+        if (audioOnly) {
+            m_pendingShowVideoWindow = false;
+            m_audioOnlyTargetId = targetDeviceId;
+        } else {
+            m_pendingShowVideoWindow = true;
+            m_audioOnlyTargetId.clear();
+        }
+
+        if (!m_isStreaming) {
+            startStreaming();
+        }
+        if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+            m_currentWatchdogSocket->write("CMD_APPROVE");
+            m_currentWatchdogSocket->flush();
+        } else {
+            m_pendingApproval = true;
+        }
+
+        if (!audioOnly && m_videoWindow) {
+            m_videoWindow->show();
+            m_videoWindow->raise();
+            m_videoWindow->activateWindow();
+        }
+
+        if (!m_videoWindow) {
+            return;
+        }
+
+        VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
+        if (!videoWidget) {
+            return;
+        }
+
+        QString serverUrl;
+        if (AppConfig::lanWsEnabled()) {
+            serverUrl = QString("%1/subscribe/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), targetDeviceId);
+        } else {
+            serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId);
+        }
+
+        int initialColorId = loadOrGenerateColorId();
+        videoWidget->setAnnotationColorId(initialColorId);
+        videoWidget->setViewerName(m_userName);
+        videoWidget->setAudioOnlySession(m_audioOnlyTargetId == targetDeviceId);
+        videoWidget->startReceiving(serverUrl);
+        videoWidget->setSessionInfo(myId, targetDeviceId);
+
+        bool spkEnabled = loadSpeakerEnabledFromConfig();
+        bool micEnabled = loadMicEnabledFromConfig();
+        if (m_pendingTalkEnabled && m_pendingTalkTargetId == targetDeviceId) {
+            micEnabled = true;
+        }
+        m_videoWindow->setSpeakerChecked(spkEnabled);
+        m_videoWindow->setMicCheckedSilently(micEnabled);
+        videoWidget->setSpeakerEnabled(spkEnabled);
+        videoWidget->setMicSendEnabled(micEnabled);
+        videoWidget->setTalkEnabled(micEnabled);
+        return;
+    }
+
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
         return;
     }
@@ -301,7 +370,7 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
         watchRequest["audio_only"] = true;
         watchRequest["action"] = "audio_only";
     }
-    watchRequest["viewer_id"] = getDeviceId();
+    watchRequest["viewer_id"] = myId;
     watchRequest["target_id"] = targetDeviceId;
     watchRequest["viewer_name"] = m_userName;
     watchRequest["viewer_icon_id"] = loadOrGenerateIconId();

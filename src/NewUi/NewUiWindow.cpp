@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QSaveFile>
+#include "../common/AppConfig.h"
 #include <QDesktopServices>
 #include <QPointer>
 #include <QCursor>
@@ -166,6 +167,17 @@ NewUiWindow::NewUiWindow(QWidget *parent)
         publishLocalScreenFrame(true);
     });
 
+    if (AppConfig::lanWsEnabled()) {
+        m_streamClientLan = new StreamClient(this);
+        connect(m_streamClientLan, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
+        connect(m_streamClientLan, &StreamClient::connected, this, [this]() {
+            publishLocalScreenFrame(true);
+        });
+        connect(m_streamClientLan, &StreamClient::startStreamingRequested, this, [this]() {
+            publishLocalScreenFrame(true);
+        });
+    }
+
     connect(m_streamClient, &StreamClient::hoverStreamRequested, this, [this](const QString &targetId, const QString &channelId, int fps, bool enabled) {
         bool accept = true;
         if (!targetId.isEmpty() && !m_myStreamId.isEmpty() && targetId != m_myStreamId) {
@@ -204,6 +216,12 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_avatarPublisher = new StreamClient(this);
     connect(m_avatarPublisher, &StreamClient::connected, this, &NewUiWindow::publishLocalAvatarOnce);
     connect(m_avatarPublisher, &StreamClient::startStreamingRequested, this, &NewUiWindow::publishLocalAvatarOnce);
+
+    if (AppConfig::lanWsEnabled()) {
+        m_avatarPublisherLan = new StreamClient(this);
+        connect(m_avatarPublisherLan, &StreamClient::connected, this, &NewUiWindow::publishLocalAvatarOnce);
+        connect(m_avatarPublisherLan, &StreamClient::startStreamingRequested, this, &NewUiWindow::publishLocalAvatarOnce);
+    }
 
     m_hoverCandidateTimer = new QTimer(this);
     m_hoverCandidateTimer->setSingleShot(true);
@@ -340,12 +358,21 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         }
     }
 
+    if (!oldId.isEmpty() && oldId == m_myStreamId) {
+        return;
+    }
+
     // 1. Connect Stream Client (Push)
-    QString serverUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), m_myStreamId);
+    const QString previewChannelId = QStringLiteral("preview_%1").arg(m_myStreamId);
+    QString serverUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), previewChannelId);
     
     if (m_streamClient) {
-        m_streamClient->disconnectFromServer();
         m_streamClient->connectToServer(QUrl(serverUrl));
+    }
+
+    if (m_streamClientLan) {
+        const QString lanUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), previewChannelId);
+        m_streamClientLan->connectToServer(QUrl(lanUrl));
     }
 
     if (!m_myStreamId.isEmpty()) {
@@ -370,10 +397,15 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         }
 
         if (m_avatarPublisher) {
-            m_avatarPublisher->disconnectFromServer();
             const QString channelId = QString("avatar_%1").arg(m_myStreamId);
             const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), channelId);
             m_avatarPublisher->connectToServer(QUrl(pubUrl));
+        }
+
+        if (m_avatarPublisherLan) {
+            const QString channelId = QString("avatar_%1").arg(m_myStreamId);
+            const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), channelId);
+            m_avatarPublisherLan->connectToServer(QUrl(pubUrl));
         }
 
         ensureAvatarSubscription(m_myStreamId);
@@ -606,23 +638,25 @@ void NewUiWindow::setAvatarLabelPixmap(QLabel *label, const QPixmap &src)
 void NewUiWindow::publishLocalAvatarOnce()
 {
     if (!m_avatarPublisher || !m_avatarPublisher->isConnected()) {
-        return;
+    } else if (!m_localAvatarPublishPixmap.isNull()) {
+        m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap, true);
     }
     if (m_localAvatarPublishPixmap.isNull()) {
-        return;
+    } else if (m_avatarPublisherLan && m_avatarPublisherLan->isConnected()) {
+        m_avatarPublisherLan->sendFrame(m_localAvatarPublishPixmap, true);
     }
-    m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap, true);
 }
 
 void NewUiWindow::publishLocalAvatarHint()
 {
     if (!m_avatarPublisher || !m_avatarPublisher->isConnected()) {
-        return;
+    } else if (!m_localAvatarPublishPixmap.isNull()) {
+        m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap, false);
     }
     if (m_localAvatarPublishPixmap.isNull()) {
-        return;
+    } else if (m_avatarPublisherLan && m_avatarPublisherLan->isConnected()) {
+        m_avatarPublisherLan->sendFrame(m_localAvatarPublishPixmap, false);
     }
-    m_avatarPublisher->sendFrame(m_localAvatarPublishPixmap, false);
 }
 
 void NewUiWindow::refreshLocalAvatarFromCache()
@@ -1436,7 +1470,7 @@ void NewUiWindow::setupUi()
     exitBtn->setToolTip(QStringLiteral("测试退出"));
     exitBtn->installEventFilter(this);
     connect(exitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
-    exitBtn->setVisible(false);
+    exitBtn->setVisible(true);
 
     // Menu Button
     ResponsiveButton *menuBtn = new ResponsiveButton();
@@ -1890,6 +1924,20 @@ void NewUiWindow::setupUi()
         // Add a bit of bottom padding
         bottomLayout->setContentsMargins(0, 0, 0, 5); 
         bottomLayout->setSpacing(5);
+
+        QPushButton *tabBtn = new QPushButton();
+        tabBtn->setFixedSize(14, 14);
+        tabBtn->setCursor(Qt::PointingHandCursor);
+        tabBtn->setFlat(true);
+        tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
+        tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
+        tabBtn->setIconSize(QSize(14, 14));
+        connect(tabBtn, &QPushButton::clicked, this, [this]() {
+            if (m_myStreamId.isEmpty()) {
+                return;
+            }
+            emit startWatchingRequested(m_myStreamId);
+        });
         
         // Text Label (Middle)
     QString displayName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
@@ -1900,6 +1948,7 @@ void NewUiWindow::setupUi()
     m_localNameLabel = txtLabel; // Store pointer for updates
     txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
     txtLabel->setAlignment(Qt::AlignCenter);
+        bottomLayout->addWidget(tabBtn);
         bottomLayout->addStretch();
         bottomLayout->addWidget(txtLabel);
         bottomLayout->addStretch();
@@ -2832,6 +2881,9 @@ void NewUiWindow::publishLocalScreenFrame(bool force)
     if (m_streamClient && m_streamClient->isConnected()) {
         m_streamClient->sendFrame(sendPix, force);
     }
+    if (m_streamClientLan && m_streamClientLan->isConnected()) {
+        m_streamClientLan->sendFrame(sendPix, force);
+    }
 }
 
 void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
@@ -3128,6 +3180,7 @@ void NewUiWindow::sendHiFpsControl(const QString &targetUserId, const QString &c
 
     StreamClient *subSock = m_remoteStreams.value(targetUserId, nullptr);
     StreamClient *pubSock = m_streamClient;
+    StreamClient *pubSockLan = m_streamClientLan;
     bool sentAny = false;
 
     if (subSock && subSock->isConnected()) {
@@ -3166,6 +3219,24 @@ void NewUiWindow::sendHiFpsControl(const QString &targetUserId, const QString &c
         }, Qt::SingleShotConnection);
     }
 
+    if (pubSockLan && pubSockLan->isConnected()) {
+        const qint64 sent = pubSockLan->sendTextMessage(payload);
+        qInfo().noquote() << "[HiFps] control sent"
+                          << " bytes=" << sent
+                          << " via=publish_lan_socket"
+                          << " payload=" << payload;
+        sentAny = true;
+    } else if (pubSockLan) {
+        connect(pubSockLan, &StreamClient::connected, this, [this, targetUserId, channelId, fps, enabled]() {
+            if (enabled) {
+                if (m_hiFpsActiveUserId != targetUserId || m_hiFpsActiveChannelId != channelId) {
+                    return;
+                }
+            }
+            sendHiFpsControl(targetUserId, channelId, fps, enabled);
+        }, Qt::SingleShotConnection);
+    }
+
     if (!sentAny) {
         qInfo().noquote() << "[HiFps] control not sent: no connected socket"
                           << " target_id=" << targetUserId
@@ -3181,6 +3252,7 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
         return;
     }
     const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), channelId);
+    const QString pubLanUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), channelId);
     StreamClient *pub = m_hiFpsPublishers.value(channelId, nullptr);
     if (!pub) {
         pub = new StreamClient(this);
@@ -3197,6 +3269,25 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
         pub->connectToServer(QUrl(pubUrl));
     }
 
+    StreamClient *pubLan = nullptr;
+    if (AppConfig::lanWsEnabled()) {
+        pubLan = m_hiFpsPublishersLan.value(channelId, nullptr);
+        if (!pubLan) {
+            pubLan = new StreamClient(this);
+            pubLan->setJpegQuality(50);
+            m_hiFpsPublishersLan.insert(channelId, pubLan);
+            connect(pubLan, &StreamClient::connected, this, [this, channelId]() {
+                qInfo().noquote() << "[HiFpsPub] lan publisher connected channel_id=" << channelId;
+            });
+            connect(pubLan, &StreamClient::disconnected, this, [this, channelId]() {
+                qInfo().noquote() << "[HiFpsPub] lan publisher disconnected channel_id=" << channelId;
+            });
+        }
+        if (!pubLan->isConnected()) {
+            pubLan->connectToServer(QUrl(pubLanUrl));
+        }
+    }
+
     const int safeFps = qMax(1, qMin(30, fps));
     QTimer *t = m_hiFpsPublisherTimers.value(channelId, nullptr);
     if (!t) {
@@ -3204,7 +3295,10 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
         m_hiFpsPublisherTimers.insert(channelId, t);
         connect(t, &QTimer::timeout, this, [this, channelId]() {
             StreamClient *p = m_hiFpsPublishers.value(channelId, nullptr);
-            if (!p || !p->isConnected()) {
+            StreamClient *pl = m_hiFpsPublishersLan.value(channelId, nullptr);
+            const bool cloudOk = (p && p->isConnected());
+            const bool lanOk = (pl && pl->isConnected());
+            if (!cloudOk && !lanOk) {
                 return;
             }
             QPixmap previewPix;
@@ -3216,7 +3310,12 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
             if (sendPix.width() != 300) {
                 sendPix = sendPix.scaledToWidth(300, Qt::SmoothTransformation);
             }
-            p->sendFrame(sendPix, true);
+            if (cloudOk) {
+                p->sendFrame(sendPix, true);
+            }
+            if (lanOk) {
+                pl->sendFrame(sendPix, true);
+            }
         });
     }
     t->setInterval(qMax(1, 1000 / safeFps));
@@ -3243,6 +3342,10 @@ void NewUiWindow::stopHiFpsPublishing(const QString &channelId)
         t->deleteLater();
     }
     if (StreamClient *p = m_hiFpsPublishers.take(channelId)) {
+        p->disconnectFromServer();
+        p->deleteLater();
+    }
+    if (StreamClient *p = m_hiFpsPublishersLan.take(channelId)) {
         p->disconnectFromServer();
         p->deleteLater();
     }
@@ -3513,7 +3616,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
     // Start Stream Subscription
     StreamClient *client = new StreamClient(this);
-    QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), userId);
+    const QString previewChannelId = QStringLiteral("preview_%1").arg(userId);
+    QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), previewChannelId);
     
     client->setProperty("firstFrameReceived", false);
     connect(client, &StreamClient::frameReceived, this, [this, userId, client](const QPixmap &frame) {
@@ -3696,7 +3800,8 @@ void NewUiWindow::restartUserStreamSubscription(const QString &userId)
         return;
     }
 
-    const QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), userId);
+    const QString previewChannelId = QStringLiteral("preview_%1").arg(userId);
+    const QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), previewChannelId);
     client->disconnectFromServer();
     if (shouldRestoreHiFps) {
         connect(client, &StreamClient::connected, this, [this, userId]() {

@@ -23,6 +23,23 @@
 #include <QtMultimedia/QMediaDevices>
 #include <QtMultimedia/QAudioFormat>
 #include <QVector>
+#include "../common/AppConfig.h"
+
+static QString roomIdFromWsUrlString(const QString &urlString)
+{
+    const QUrl url(urlString);
+    const QStringList parts = url.path().split('/', Qt::SkipEmptyParts);
+    if (parts.size() < 2) return QString();
+    return parts.value(1);
+}
+
+static bool isSubscribeWsUrlString(const QString &urlString)
+{
+    const QUrl url(urlString);
+    const QStringList parts = url.path().split('/', Qt::SkipEmptyParts);
+    if (parts.isEmpty()) return false;
+    return parts.value(0) == QStringLiteral("subscribe");
+}
 
 static int pickBestOpusSampleRate(const QAudioDevice &inDev) {
     const int candidates[] = {48000, 24000, 16000, 12000, 8000};
@@ -342,6 +359,33 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     m_reconnectTimer = new QTimer(this);
     m_reconnectTimer->setSingleShot(true);
     connect(m_reconnectTimer, &QTimer::timeout, this, &WebSocketReceiver::attemptReconnect);
+
+    m_lanFallbackTimer = new QTimer(this);
+    m_lanFallbackTimer->setSingleShot(true);
+    connect(m_lanFallbackTimer, &QTimer::timeout, this, [this]() {
+        QString fallbackUrl;
+        {
+            QMutexLocker locker(&m_mutex);
+            if (!m_lanSwitchInProgress) {
+                return;
+            }
+            if (m_connected) {
+                m_lanSwitchInProgress = false;
+                return;
+            }
+            if (m_cloudFallbackUrl.isEmpty()) {
+                m_lanSwitchInProgress = false;
+                return;
+            }
+            fallbackUrl = m_cloudFallbackUrl;
+            m_lanSwitchInProgress = false;
+            m_cloudFallbackUrl.clear();
+        }
+        qInfo().noquote() << "[KickDiag][Receiver] lan_fallback_timer fallback_to_cloud"
+                          << " url=" << fallbackUrl;
+        stopReconnectTimer();
+        connectToServer(fallbackUrl);
+    });
     
     // 环境变量控制已移除
     // 日志清理：移除冗余控制台输出
@@ -417,6 +461,14 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     m_reconnectAttempts = 0; // 主动连接归零重连计数，确保首次尝试立即进行
     m_serverUrl = url;
     m_reconnectEnabled = true;
+    m_lanOfferRequested = false;
+    if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
+        m_lanFallbackTimer->stop();
+    }
+    if (QUrl(url).port() != AppConfig::lanWsPort()) {
+        m_cloudFallbackUrl.clear();
+        m_lanSwitchInProgress = false;
+    }
 
     // qDebug() << "[Receiver] Connecting to URL:" << url;
     m_webSocket->open(QUrl(url));
@@ -491,6 +543,12 @@ void WebSocketReceiver::disconnectFromServer()
     m_frameSizes.clear();
     m_connectionStartTime = 0;
     m_connected = false;
+    if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
+        m_lanFallbackTimer->stop();
+    }
+    m_cloudFallbackUrl.clear();
+    m_lanSwitchInProgress = false;
+    m_lanOfferRequested = false;
 }
 
 bool WebSocketReceiver::isConnected() const
@@ -579,6 +637,39 @@ void WebSocketReceiver::onConnected()
             });
         }
     }
+
+    QString serverUrlCopy;
+    bool needLanOffer = false;
+    QString channelId;
+    {
+        QMutexLocker locker(&m_mutex);
+        serverUrlCopy = m_serverUrl;
+        if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
+            m_lanFallbackTimer->stop();
+        }
+        if (m_lanSwitchInProgress && QUrl(serverUrlCopy).port() == AppConfig::lanWsPort()) {
+            m_lanSwitchInProgress = false;
+        }
+        if (AppConfig::lanWsEnabled() &&
+            isSubscribeWsUrlString(serverUrlCopy) &&
+            QUrl(serverUrlCopy).port() != AppConfig::lanWsPort() &&
+            !m_lanOfferRequested) {
+            channelId = roomIdFromWsUrlString(serverUrlCopy);
+            if (!channelId.isEmpty()) {
+                m_lanOfferRequested = true;
+                needLanOffer = true;
+            }
+        }
+    }
+    if (needLanOffer && m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        qInfo().noquote() << "[KickDiag][Receiver] tx lan_offer_request"
+                          << " channel_id=" << channelId
+                          << " url=" << serverUrlCopy;
+        QJsonObject req;
+        req["type"] = "lan_offer_request";
+        req["channel_id"] = channelId;
+        m_webSocket->sendTextMessage(QJsonDocument(req).toJson(QJsonDocument::Compact));
+    }
 }
 
 void WebSocketReceiver::onDisconnected()
@@ -626,6 +717,12 @@ void WebSocketReceiver::onDisconnected()
     
     // 如果启用了重连，开始重连尝试
     if (m_reconnectEnabled && m_reconnectAttempts < m_maxReconnectAttempts) {
+        if (QUrl(m_serverUrl).port() == AppConfig::lanWsPort() && !m_cloudFallbackUrl.isEmpty()) {
+            m_lanSwitchInProgress = true;
+            if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                m_lanFallbackTimer->start(1800);
+            }
+        }
         startReconnectTimer();
     }
 }
@@ -690,6 +787,78 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
         QJsonObject obj = doc.object();
         QString type = obj["type"].toString();
         // 日志清理：不再输出文本消息类型
+
+        if (type == "lan_offer") {
+            if (!AppConfig::lanWsEnabled()) {
+                return;
+            }
+            QString currentUrl;
+            {
+                QMutexLocker locker(&m_mutex);
+                currentUrl = m_serverUrl;
+            }
+            if (QUrl(currentUrl).port() == AppConfig::lanWsPort()) {
+                return;
+            }
+
+            const QString channelId = obj.value("channel_id").toString(roomIdFromWsUrlString(currentUrl));
+            const QJsonValue v = obj.value("base_urls");
+            if (channelId.isEmpty() || !v.isArray()) {
+                return;
+            }
+            const QJsonArray arr = v.toArray();
+            if (arr.isEmpty()) {
+                return;
+            }
+
+            QStringList bases;
+            bases.reserve(arr.size());
+            for (const QJsonValue &it : arr) {
+                const QString base = it.toString();
+                if (!base.isEmpty()) {
+                    bases.append(base);
+                }
+            }
+            if (!bases.isEmpty()) {
+                AppConfig::setLanBaseUrlsForTarget(channelId, bases);
+            }
+
+            QUrl best;
+            for (const QJsonValue &it : arr) {
+                const QString base = it.toString();
+                if (base.isEmpty()) continue;
+                QUrl u(base);
+                if (!u.isValid()) continue;
+                if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) continue;
+                u.setPath(QStringLiteral("/subscribe/%1").arg(channelId));
+                best = u;
+                break;
+            }
+            if (!best.isValid() || best.isEmpty()) {
+                return;
+            }
+            const QString lanUrl = best.toString();
+            if (lanUrl.isEmpty() || lanUrl == currentUrl) {
+                return;
+            }
+
+            qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer switch_to_lan"
+                              << " channel_id=" << channelId
+                              << " base_urls=" << bases.join(QStringLiteral(","))
+                              << " chosen=" << lanUrl
+                              << " from=" << currentUrl;
+            {
+                QMutexLocker locker(&m_mutex);
+                m_cloudFallbackUrl = currentUrl;
+                m_lanSwitchInProgress = true;
+            }
+            stopReconnectTimer();
+            connectToServer(lanUrl);
+            if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                m_lanFallbackTimer->start(1800);
+            }
+            return;
+        }
         
         // 处理鼠标位置消息
         if (type == "mouse_position") {
@@ -966,6 +1135,68 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
         break;
     }
     emit connectionStatusChanged(QString("连接错误: %1").arg(errorString));
+
+    if (AppConfig::lanWsEnabled()) {
+        QString currentUrl;
+        QString channelId;
+        {
+            QMutexLocker locker(&m_mutex);
+            currentUrl = m_serverUrl;
+            if (QUrl(currentUrl).port() != AppConfig::lanWsPort() &&
+                isSubscribeWsUrlString(currentUrl) &&
+                !m_lanSwitchInProgress) {
+                channelId = roomIdFromWsUrlString(currentUrl);
+            }
+        }
+
+        if (!channelId.isEmpty()) {
+            QStringList bases = AppConfig::lanBaseUrlsForTarget(channelId);
+            if (bases.isEmpty()) {
+                bases.append(AppConfig::lanWsLoopbackBaseUrl());
+            }
+
+            QString lanUrl;
+            for (const QString &base : bases) {
+                QUrl u(base);
+                if (!u.isValid()) continue;
+                if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) continue;
+                u.setPath(QStringLiteral("/subscribe/%1").arg(channelId));
+                const QString s = u.toString();
+                if (s.isEmpty() || s == currentUrl) continue;
+                lanUrl = s;
+                break;
+            }
+
+            if (!lanUrl.isEmpty()) {
+                {
+                    QMutexLocker locker(&m_mutex);
+                    m_cloudFallbackUrl = currentUrl;
+                    m_lanSwitchInProgress = true;
+                }
+                qInfo().noquote() << "[KickDiag][Receiver] onError switch_to_lan"
+                                  << " channel_id=" << channelId
+                                  << " base_urls=" << bases.join(QStringLiteral(","))
+                                  << " to=" << lanUrl
+                                  << " from=" << currentUrl;
+                stopReconnectTimer();
+                connectToServer(lanUrl);
+                if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                    m_lanFallbackTimer->start(1800);
+                }
+                return;
+            }
+        }
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (QUrl(m_serverUrl).port() == AppConfig::lanWsPort() && !m_cloudFallbackUrl.isEmpty()) {
+            m_lanSwitchInProgress = true;
+            if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                m_lanFallbackTimer->start(1800);
+            }
+        }
+    }
     
     // 如果是网络错误或连接被拒绝，尝试重连
     if (m_reconnectEnabled && m_reconnectAttempts < m_maxReconnectAttempts) {

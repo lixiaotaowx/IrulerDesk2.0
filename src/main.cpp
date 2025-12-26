@@ -22,6 +22,7 @@
 #endif
 #include "common/ConsoleLogger.h"
 #include "common/CrashGuard.h"
+#include "common/AppConfig.h"
 #include "MainWindow.h"
 #include "NewUi/NewUiWindow.h"
 
@@ -50,10 +51,7 @@ int main(int argc, char *argv[])
     QString appDir = QCoreApplication::applicationDirPath();
     app.setWindowIcon(QIcon(appDir + "/maps/logo/iruler.ico"));
     
-    // 设置应用程序信息
-    app.setApplicationName("ScreenStreamApp");
-    app.setApplicationVersion("1.0.2");
-    app.setOrganizationName("ScreenStream");
+    AppConfig::applyApplicationInfo(app);
     
     // 设置现代化样式
     app.setStyle(QStyleFactory::create("Fusion"));

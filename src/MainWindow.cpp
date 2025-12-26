@@ -32,6 +32,7 @@
 #include <QSet>
 #include <cstdlib>
 #include <ctime>
+#include "common/AppConfig.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -369,8 +370,7 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     }
     
     // 构建WebSocket连接URL，包含目标设备ID
-    QString serverAddress = getServerAddress();
-    QString serverUrl = QString("ws://%1/subscribe/%2").arg(serverAddress, targetDeviceId);
+    QString serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId);
     
     
     // 初始化批注颜色（从配置加载）
@@ -1267,28 +1267,7 @@ void MainWindow::onWatchdogTimeout()
 
 QString MainWindow::getConfigFilePath() const
 {
-    // 使用静态变量缓存配置文件路径，避免重复计算和日志输出
-    static QString cachedConfigFilePath;
-    static bool initialized = false;
-    
-    if (!initialized) {
-        // 获取应用程序所在目录
-        QString appDir = QApplication::applicationDirPath();
-        
-        // 创建config子目录
-        QString configDir = appDir + "/config";
-        QDir dir;
-        if (!dir.exists(configDir)) {
-            dir.mkpath(configDir);
-            
-        }
-        
-        // 缓存配置文件完整路径
-        cachedConfigFilePath = configDir + "/app_config.txt";
-        initialized = true;
-    }
-    
-    return cachedConfigFilePath;
+    return AppConfig::configFilePathInAppDir();
 }
 
 int MainWindow::loadOrGenerateRandomId()
@@ -1670,37 +1649,7 @@ void MainWindow::saveDeviceIdToConfig(const QString& deviceId)
 
 QString MainWindow::getServerAddress() const
 {
-    // 使用静态变量缓存服务器地址，避免重复读取配置文件和日志输出
-    static QString cachedServerAddress;
-    static bool initialized = false;
-    
-    if (!initialized) {
-        // 从配置文件读取服务器地址
-        QString configFilePath = getConfigFilePath();
-        QFile configFile(configFilePath);
-        
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&configFile);
-            QString line;
-            while (!in.atEnd()) {
-                line = in.readLine();
-                if (line.startsWith("server_address=")) {
-                    QString serverAddress = line.mid(15); // 去掉"server_address="前缀
-                    configFile.close();
-                    cachedServerAddress = serverAddress;
-                    initialized = true;
-                    return cachedServerAddress;
-                }
-            }
-            configFile.close();
-        }
-        
-        // 如果读取失败，返回默认的腾讯云地址
-        cachedServerAddress = "123.207.222.92:8765";
-        initialized = true;
-    }
-    
-    return cachedServerAddress;
+    return AppConfig::serverAddress();
 }
 
 void MainWindow::saveServerAddressToConfig(const QString& serverAddress)
@@ -1812,8 +1761,7 @@ void MainWindow::connectToLoginServer()
         m_loginWebSocket->state() == QAbstractSocket::ConnectingState) {
         return;
     }
-    QString serverAddress = getServerAddress();
-    QString serverUrl = QString("ws://%1/login").arg(serverAddress);  // 使用专门的登录路径
+    QString serverUrl = QString("%1/login").arg(AppConfig::wsBaseUrl());  // 使用专门的登录路径
     m_loginWebSocket->open(QUrl(serverUrl));
 }
 
@@ -2418,7 +2366,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             streamOkResponse["type"] = "streaming_ok";
             streamOkResponse["viewer_id"] = viewerId;
             streamOkResponse["target_id"] = targetId;
-            streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
+            streamOkResponse["stream_url"] = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetId);
             QJsonDocument responseDoc(streamOkResponse);
             m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
             return;
@@ -2487,7 +2435,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 streamOkResponse["type"] = "streaming_ok";
                 streamOkResponse["viewer_id"] = viewerId;
                 streamOkResponse["target_id"] = targetId;
-                streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
+                streamOkResponse["stream_url"] = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetId);
                 QJsonDocument responseDoc(streamOkResponse);
                 if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
                     m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
@@ -2537,7 +2485,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             streamOkResponse["type"] = "streaming_ok";
             streamOkResponse["viewer_id"] = viewerId;
             streamOkResponse["target_id"] = targetId;
-            streamOkResponse["stream_url"] = QString("ws://%1/subscribe/%2").arg(getServerAddress(), targetId);
+            streamOkResponse["stream_url"] = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetId);
             if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
                 QJsonDocument responseDoc(streamOkResponse);
                 m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
@@ -3024,7 +2972,7 @@ void MainWindow::onAvatarSelected(int iconId)
     }
 
     {
-        QString serverUrl = QString("ws://%1/subscribe/%2").arg(getServerAddress(), getDeviceId());
+        QString serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), getDeviceId());
         QWebSocket *ws = new QWebSocket();
         connect(ws, &QWebSocket::connected, this, [this, ws, iconId]() {
             QJsonObject msg;
@@ -3087,7 +3035,7 @@ void MainWindow::onClearMarksRequested()
     }
 
     // 2. 发送网络事件清理远端或消费者端的绘制
-    QString serverUrl = QString("ws://%1/subscribe/%2").arg(getServerAddress(), getDeviceId());
+    QString serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), getDeviceId());
     QWebSocket *ws = new QWebSocket();
     connect(ws, &QWebSocket::connected, this, [this, ws]() {
         QJsonObject watch;

@@ -42,6 +42,13 @@
 #include <QSignalBlocker>
 #include <climits>
 #include <QAbstractButton>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+#include "../common/AppConfig.h"
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -86,6 +93,19 @@ protected:
 private:
     QPointer<QWebEngineView> m_view;
 };
+
+static void updateKeepAwakeRequested(bool shouldKeepAwake)
+{
+#ifdef _WIN32
+    if (shouldKeepAwake) {
+        SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+    } else {
+        SetThreadExecutionState(ES_CONTINUOUS);
+    }
+#else
+    Q_UNUSED(shouldKeepAwake);
+#endif
+}
 
 NewUiWindow::NewUiWindow(QWidget *parent)
     : QWidget(parent)
@@ -321,7 +341,7 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
     }
 
     // 1. Connect Stream Client (Push)
-    QString serverUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(m_myStreamId);
+    QString serverUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), m_myStreamId);
     
     if (m_streamClient) {
         m_streamClient->disconnectFromServer();
@@ -352,7 +372,7 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
         if (m_avatarPublisher) {
             m_avatarPublisher->disconnectFromServer();
             const QString channelId = QString("avatar_%1").arg(m_myStreamId);
-            const QString pubUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(channelId);
+            const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), channelId);
             m_avatarPublisher->connectToServer(QUrl(pubUrl));
         }
 
@@ -363,7 +383,7 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
     // 2. Connect Login Client
     // DISABLED: Main Window controls login.
     /*
-    QString loginUrl = "ws://123.207.222.92:8765/login";
+    QString loginUrl = QString("%1/login").arg(AppConfig::wsBaseUrl());
     if (m_loginClient) {
         m_loginClient->disconnectFromServer();
         m_loginClient->connectToServer(QUrl(loginUrl));
@@ -668,7 +688,7 @@ void NewUiWindow::ensureAvatarSubscription(const QString &userId)
     });
 
     const QString channelId = QString("avatar_%1").arg(userId);
-    const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(channelId);
+    const QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), channelId);
     client->connectToServer(QUrl(subscribeUrl));
 }
 
@@ -1096,7 +1116,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         });
         
         // Connect to Subscribe URL
-        QString subUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(id);
+        QString subUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), id);
         client->connectToServer(QUrl(subUrl));
     }
 }
@@ -1416,7 +1436,7 @@ void NewUiWindow::setupUi()
     exitBtn->setToolTip(QStringLiteral("测试退出"));
     exitBtn->installEventFilter(this);
     connect(exitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
-    exitBtn->setVisible(true);
+    exitBtn->setVisible(false);
 
     // Menu Button
     ResponsiveButton *menuBtn = new ResponsiveButton();
@@ -1643,17 +1663,27 @@ void NewUiWindow::setupUi()
         if (m_hiFpsActiveUserId.isEmpty() || m_hiFpsActiveChannelId.isEmpty()) {
             return;
         }
-        if (!m_hiFpsSubscriber || !m_hiFpsSubscriber->isConnected()) {
-            return;
-        }
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (m_hiFpsLastFrameAtMs > 0 && (nowMs - m_hiFpsLastFrameAtMs) < 2500) {
-            return;
+        const bool connected = (m_hiFpsSubscriber && m_hiFpsSubscriber->isConnected());
+        const bool shouldNudge = (m_hiFpsLastFrameAtMs > 0 && (nowMs - m_hiFpsLastFrameAtMs) >= 2500);
+        if (connected && shouldNudge) {
+            QJsonObject start;
+            start["type"] = "start_streaming";
+            m_hiFpsSubscriber->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+            sendHiFpsControl(m_hiFpsActiveUserId, m_hiFpsActiveChannelId, 10, true);
+        } else if (!connected && shouldNudge) {
+            sendHiFpsControl(m_hiFpsActiveUserId, m_hiFpsActiveChannelId, 10, true);
         }
-        QJsonObject start;
-        start["type"] = "start_streaming";
-        m_hiFpsSubscriber->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
-        sendHiFpsControl(m_hiFpsActiveUserId, m_hiFpsActiveChannelId, 10, true);
+
+        if (m_hiFpsLastFrameAtMs > 0 && (nowMs - m_hiFpsLastFrameAtMs) >= 8000) {
+            if (m_hiFpsLastRecoveryAtMs == 0 || (nowMs - m_hiFpsLastRecoveryAtMs) >= 8000) {
+                m_hiFpsLastRecoveryAtMs = nowMs;
+                const QString userId = m_hiFpsActiveUserId;
+                stopHiFpsForUser();
+                restartUserStreamSubscription(userId);
+                startHiFpsForUser(userId);
+            }
+        }
     });
 
     connect(m_listWidget, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current, QListWidgetItem *previous) {
@@ -2809,19 +2839,33 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
     previewPix = QPixmap();
     sendPix = QPixmap();
 
-    QScreen *screen = nullptr;
     const auto screens = QGuiApplication::screens();
+    QScreen *preferred = nullptr;
     if (m_captureScreenIndex >= 0 && m_captureScreenIndex < screens.size()) {
-        screen = screens[m_captureScreenIndex];
+        preferred = screens[m_captureScreenIndex];
     }
-    if (!screen) {
-        screen = QGuiApplication::primaryScreen();
+    QScreen *primary = QGuiApplication::primaryScreen();
+
+    QList<QScreen*> candidates;
+    if (preferred) {
+        candidates.append(preferred);
     }
-    if (!screen) {
-        return;
+    if (primary && primary != preferred) {
+        candidates.append(primary);
+    }
+    for (QScreen *s : screens) {
+        if (s && s != preferred && s != primary) {
+            candidates.append(s);
+        }
     }
 
-    const QPixmap originalPixmap = screen->grabWindow(0);
+    QPixmap originalPixmap;
+    for (QScreen *s : candidates) {
+        originalPixmap = s->grabWindow(0);
+        if (!originalPixmap.isNull()) {
+            break;
+        }
+    }
     if (originalPixmap.isNull()) {
         return;
     }
@@ -2976,7 +3020,7 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
     }
 
     StreamClient *client = new StreamClient(this);
-    const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(channelId);
+    const QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), channelId);
     m_hiFpsActiveUserId = userId;
     m_hiFpsActiveChannelId = channelId;
     m_hiFpsSubscriber = client;
@@ -2990,6 +3034,7 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
         client->setProperty("firstFrameReceived", true);
         if (m_hiFpsSubscriber == client && m_hiFpsActiveUserId == userId) {
             m_hiFpsLastFrameAtMs = QDateTime::currentMSecsSinceEpoch();
+            m_hiFpsLastRecoveryAtMs = 0;
         }
         QLabel *label = m_userLabels.value(userId, nullptr);
         if (!label || frame.isNull()) {
@@ -3059,6 +3104,7 @@ void NewUiWindow::stopHiFpsForUser()
     m_hiFpsActiveUserId.clear();
     m_hiFpsActiveChannelId.clear();
     m_hiFpsLastFrameAtMs = 0;
+    m_hiFpsLastRecoveryAtMs = 0;
     if (m_hiFpsWatchdogTimer) {
         m_hiFpsWatchdogTimer->stop();
     }
@@ -3134,7 +3180,7 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
     if (channelId.isEmpty()) {
         return;
     }
-    const QString pubUrl = QString("ws://123.207.222.92:8765/publish/%1").arg(channelId);
+    const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), channelId);
     StreamClient *pub = m_hiFpsPublishers.value(channelId, nullptr);
     if (!pub) {
         pub = new StreamClient(this);
@@ -3180,6 +3226,11 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
     } else {
         qInfo().noquote() << "[HiFpsPub] timer updated channel_id=" << channelId << " fps=" << safeFps;
     }
+
+    if (!m_keepAwakeRequested) {
+        m_keepAwakeRequested = true;
+        updateKeepAwakeRequested(true);
+    }
 }
 
 void NewUiWindow::stopHiFpsPublishing(const QString &channelId)
@@ -3194,6 +3245,19 @@ void NewUiWindow::stopHiFpsPublishing(const QString &channelId)
     if (StreamClient *p = m_hiFpsPublishers.take(channelId)) {
         p->disconnectFromServer();
         p->deleteLater();
+    }
+
+    bool anyActive = false;
+    const auto timers = m_hiFpsPublisherTimers.values();
+    for (QTimer *t : timers) {
+        if (t && t->isActive()) {
+            anyActive = true;
+            break;
+        }
+    }
+    if (!anyActive && m_keepAwakeRequested) {
+        m_keepAwakeRequested = false;
+        updateKeepAwakeRequested(false);
     }
 }
 
@@ -3449,7 +3513,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
     // Start Stream Subscription
     StreamClient *client = new StreamClient(this);
-    QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(userId);
+    QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), userId);
     
     client->setProperty("firstFrameReceived", false);
     connect(client, &StreamClient::frameReceived, this, [this, userId, client](const QPixmap &frame) {
@@ -3632,7 +3696,7 @@ void NewUiWindow::restartUserStreamSubscription(const QString &userId)
         return;
     }
 
-    const QString subscribeUrl = QString("ws://123.207.222.92:8765/subscribe/%1").arg(userId);
+    const QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), userId);
     client->disconnectFromServer();
     if (shouldRestoreHiFps) {
         connect(client, &StreamClient::connected, this, [this, userId]() {

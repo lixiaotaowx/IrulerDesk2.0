@@ -26,31 +26,45 @@ mkdir -p "$INSTALL_DIR"
 
 # 复制文件到安装目录
 echo "复制文件到安装目录..."
-if [ -f "websocket_server_standalone.cpp" ]; then
-    cp websocket_server_standalone.cpp "$INSTALL_DIR/"
-    echo "已复制源文件"
+if [ -f "websocket_server_with_routing.cpp" ]; then
+    cp websocket_server_with_routing.cpp "$INSTALL_DIR/"
+    echo "已复制路由源文件"
 else
-    echo "警告: 未找到源文件 websocket_server_standalone.cpp"
+    echo "错误: 未找到源文件 websocket_server_with_routing.cpp"
+    echo "请确保在当前目录包含该文件后再运行安装脚本"
+    exit 1
 fi
 
 if [ -f "CMakeLists.txt" ]; then
     cp CMakeLists.txt "$INSTALL_DIR/"
     echo "已复制CMakeLists.txt"
+else
+    echo "错误: 未找到 CMakeLists.txt"
+    exit 1
 fi
 
 if [ -f "build.sh" ]; then
     cp build.sh "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR/build.sh"
     echo "已复制build.sh"
+else
+    echo "错误: 未找到 build.sh"
+    exit 1
 fi
 
 if [ -f "websocket-server.service" ]; then
     cp websocket-server.service "$INSTALL_DIR/"
     echo "已复制服务配置文件"
+else
+    echo "错误: 未找到 websocket-server.service"
+    exit 1
 fi
 
 # 进入安装目录
 cd "$INSTALL_DIR"
+
+# 强制确保CMakeLists.txt使用路由版本
+sed -i -E "s@(add_executable\s*\(\s*WebSocketServer\s+)[^ )]+@\1websocket_server_with_routing.cpp@" CMakeLists.txt
 
 # 编译项目
 echo "编译项目..."

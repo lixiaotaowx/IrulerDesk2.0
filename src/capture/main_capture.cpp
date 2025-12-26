@@ -40,6 +40,7 @@
 #endif
 #include "../common/ConsoleLogger.h"
 #include "../common/CrashGuard.h"
+#include "../common/AppConfig.h"
 #include "ScreenCapture.h"
 #include "VP9Encoder.h"
 #include "WebSocketSender.h"
@@ -182,47 +183,7 @@ QString getDeviceIdFromConfig()
 
 QString getServerAddressFromConfig()
 {
-    // 尝试多个可能的配置文件路径
-    QStringList possiblePaths;
-    
-    // 路径1：使用AppDataLocation
-    QString configDir1 = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    possiblePaths << configDir1 + "/config/app_config.txt";
-    
-    // 路径2：使用当前工作目录
-    possiblePaths << QDir::currentPath() + "/config/app_config.txt";
-    
-    // 路径3：使用应用程序目录
-    QString appDir = QCoreApplication::applicationDirPath();
-    possiblePaths << appDir + "/config/app_config.txt";
-    
-    // qDebug() << "[CaptureProcess] 尝试读取服务器地址配置，可能的路径:";
-    // for (const QString& path : possiblePaths) {
-    //     qDebug() << "[CaptureProcess]   - " << path;
-    // }
-    
-    for (const QString& configFilePath : possiblePaths) {
-        QFile configFile(configFilePath);
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            // qDebug() << "[CaptureProcess] 找到配置文件:" << configFilePath;
-            QTextStream in(&configFile);
-            QString line;
-            while (!in.atEnd()) {
-                line = in.readLine();
-                if (line.startsWith("server_address=")) {
-                    QString serverAddress = line.mid(15); // 去掉"server_address="前缀
-                    configFile.close();
-                    // qDebug() << "[CaptureProcess] 从配置文件读取到服务器地址:" << serverAddress;
-                    return serverAddress;
-                }
-            }
-            configFile.close();
-        }
-    }
-    
-    // 如果读取失败，返回默认值（腾讯云）
-    // qDebug() << "[CaptureProcess] 所有配置文件路径都无法读取服务器地址，使用默认 123.207.222.92:8765";
-    return "123.207.222.92:8765";
+    return AppConfig::serverAddress();
 }
 
 // 新增：读取屏幕索引
@@ -401,6 +362,7 @@ int main(int argc, char *argv[])
     ConsoleLogger::installQtMessageHandler();
 
     QApplication app(argc, argv);
+    AppConfig::applyApplicationInfo(app);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
     
     // -------------------------------------------------------------------------
@@ -1958,8 +1920,8 @@ int main(int argc, char *argv[])
     // 连接到WebSocket服务器 - 使用推流URL格式
     // 移至此处以确保所有信号槽（特别是streamingStarted）都已连接
     QString deviceId = getDeviceIdFromConfig(); // 从配置文件读取设备ID
-    QString serverAddress = getServerAddressFromConfig(); // 从配置文件读取服务器地址
-    QString serverUrl = QString("ws://%1/publish/%2").arg(serverAddress, deviceId);
+    const QString serverBaseUrl = AppConfig::wsBaseUrl();
+    QString serverUrl = QString("%1/publish/%2").arg(serverBaseUrl, deviceId);
     
     // 显示设备ID
     qDebug() << "[CaptureProcess] Current Device ID:" << deviceId;

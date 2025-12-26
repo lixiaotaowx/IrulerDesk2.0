@@ -34,9 +34,14 @@ echo "创建备份..."
 mkdir -p "$BACKUP_DIR"
 
 # 备份现有文件
-if [ -f "$INSTALL_DIR/websocket_server_standalone.cpp" ]; then
-    cp "$INSTALL_DIR/websocket_server_standalone.cpp" "$BACKUP_DIR/"
-    echo "已备份源文件"
+if [ -f "$INSTALL_DIR/websocket_server_with_routing.cpp" ]; then
+    cp "$INSTALL_DIR/websocket_server_with_routing.cpp" "$BACKUP_DIR/"
+    echo "已备份路由源文件"
+fi
+
+if [ -f "$INSTALL_DIR/CMakeLists.txt" ]; then
+    cp "$INSTALL_DIR/CMakeLists.txt" "$BACKUP_DIR/"
+    echo "已备份CMakeLists.txt"
 fi
 
 if [ -f "$INSTALL_DIR/build/bin/WebSocketServer" ]; then
@@ -44,9 +49,9 @@ if [ -f "$INSTALL_DIR/build/bin/WebSocketServer" ]; then
     echo "已备份可执行文件"
 fi
 
-# 检查是否有新的源文件需要更新
-if [ -f "websocket_server_standalone.cpp" ]; then
-    echo "发现新的源文件，准备更新..."
+# 检查是否有新的源码/构建文件需要更新
+if [ -f "websocket_server_with_routing.cpp" ] || [ -f "CMakeLists.txt" ]; then
+    echo "发现新的源码/构建文件，准备更新..."
     
     # 停止服务
     if systemctl is-active --quiet $SERVICE_NAME; then
@@ -54,13 +59,27 @@ if [ -f "websocket_server_standalone.cpp" ]; then
         systemctl stop $SERVICE_NAME
     fi
     
-    # 复制新的源文件
-    echo "复制新的源文件..."
-    cp websocket_server_standalone.cpp "$INSTALL_DIR/"
-    chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/websocket_server_standalone.cpp"
+    # 复制新的源码/构建文件
+    if [ -f "websocket_server_with_routing.cpp" ]; then
+        echo "复制 websocket_server_with_routing.cpp ..."
+        cp websocket_server_with_routing.cpp "$INSTALL_DIR/"
+        chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/websocket_server_with_routing.cpp"
+    else
+        echo "错误: 未找到 websocket_server_with_routing.cpp"
+        echo "请在当前目录放置该文件后再运行更新脚本"
+        exit 1
+    fi
+
+    if [ -f "CMakeLists.txt" ]; then
+        echo "复制 CMakeLists.txt ..."
+        cp CMakeLists.txt "$INSTALL_DIR/"
+        chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/CMakeLists.txt"
+    fi
     
     # 进入安装目录进行编译
     cd "$INSTALL_DIR"
+
+    sed -i -E "s@(add_executable\s*\(\s*WebSocketServer\s+)[^ )]+@\1websocket_server_with_routing.cpp@" CMakeLists.txt
     
     # 清理旧的构建文件
     echo "清理旧的构建文件..."

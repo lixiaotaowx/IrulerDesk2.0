@@ -47,6 +47,7 @@ set(MAIN_SOURCES
     src/common/ConsoleLogger.h            # 控制台日志重定向声明
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
     src/common/CrashGuard.h               # 崩溃守护声明
+    src/common/AppConfig.h                # 应用配置：应用信息与服务器地址
     src/video_components/VideoDisplayWidget.cpp # 视频显示控件实现：绘制视频帧与批注事件处理
     src/video_components/VideoDisplayWidget.h   # 视频显示控件声明：接口与状态
     src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件
@@ -80,6 +81,7 @@ set(CAPTURE_SOURCES
     src/common/ConsoleLogger.h            # 控制台日志重定向声明
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
     src/common/CrashGuard.h               # 崩溃守护声明
+    src/common/AppConfig.h                # 应用配置：应用信息与服务器地址
     src/capture/ScreenCapture.cpp         # 屏幕捕获实现：抓取屏幕帧/区域
     src/capture/ScreenCapture.h           # 屏幕捕获声明
     src/capture/VP9Encoder.cpp            # VP9 编码器实现：将原始帧编码为 VP9
@@ -105,6 +107,7 @@ set(PLAYER_SOURCES
     src/common/ConsoleLogger.h            # 控制台日志重定向声明
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
     src/common/CrashGuard.h               # 崩溃守护声明
+    src/common/AppConfig.h                # 应用配置：应用信息与服务器地址
     src/player/VP9Decoder.cpp             # VP9 软件解码器实现
     src/player/VP9Decoder.h               # VP9 软件解码器声明
     src/player/DxvaVP9Decoder.cpp         # DXVA 硬件加速 VP9 解码实现
@@ -296,10 +299,19 @@ endif()
 
 # 自动部署Qt DLL
 if(WIN32)
-    find_program(WINDEPLOYQT_EXECUTABLE windeployqt
-        HINTS "${CMAKE_PREFIX_PATH}/bin"
-        PATHS "C:/Qt/6.8.3/msvc2022_64/bin"
-    )
+    set(_windeployqt_candidate "${CMAKE_PREFIX_PATH}/bin/windeployqt.exe")
+    if(EXISTS "${_windeployqt_candidate}")
+        set(WINDEPLOYQT_EXECUTABLE "${_windeployqt_candidate}")
+    else()
+        find_program(WINDEPLOYQT_EXECUTABLE windeployqt
+            HINTS "${CMAKE_PREFIX_PATH}/bin"
+            PATHS "C:/Qt/6.8.3/msvc2022_64/bin"
+            NO_DEFAULT_PATH
+        )
+        if(NOT WINDEPLOYQT_EXECUTABLE)
+            find_program(WINDEPLOYQT_EXECUTABLE windeployqt)
+        endif()
+    endif()
 
     if(WINDEPLOYQT_EXECUTABLE)
         get_filename_component(QT_BIN_DIR "${WINDEPLOYQT_EXECUTABLE}" DIRECTORY)
@@ -315,34 +327,15 @@ if(WIN32)
         endif()
 
         add_custom_command(TARGET ScreenStreamApp POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for ScreenStreamApp..."
+            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for ScreenStreamApp (covers dependencies for Capture/Player too)..."
             COMMAND ${WINDEPLOYQT_EXECUTABLE}
                 --verbose 2
                 $<IF:$<CONFIG:Debug>,--debug,--release>
                 --compiler-runtime
                 --no-system-d3d-compiler
+                --force
                 $<TARGET_FILE:ScreenStreamApp>
             COMMENT "Deploying Qt libraries and plugins for ScreenStreamApp"
-        )
-        add_custom_command(TARGET CaptureProcess POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for CaptureProcess..."
-            COMMAND ${WINDEPLOYQT_EXECUTABLE}
-                --verbose 2
-                $<IF:$<CONFIG:Debug>,--debug,--release>
-                --compiler-runtime
-                --no-system-d3d-compiler
-                $<TARGET_FILE:CaptureProcess>
-            COMMENT "Deploying Qt libraries and plugins for CaptureProcess"
-        )
-        add_custom_command(TARGET PlayerProcess POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for PlayerProcess..."
-            COMMAND ${WINDEPLOYQT_EXECUTABLE}
-                --verbose 2
-                $<IF:$<CONFIG:Debug>,--debug,--release>
-                --compiler-runtime
-                --no-system-d3d-compiler
-                $<TARGET_FILE:PlayerProcess>
-            COMMENT "Deploying Qt libraries and plugins for PlayerProcess"
         )
         message(STATUS "Found windeployqt: ${WINDEPLOYQT_EXECUTABLE}")
     else()
@@ -415,11 +408,15 @@ endif()
 include(GNUInstallDirs)
 
 # 将已部署的可执行文件与其依赖（Qt DLL、插件、资源）整体安装到根目录
-set(INSTALL_BUNDLE_DIR ${CMAKE_BINARY_DIR}/bin/$<CONFIG>)
+if(MSVC)
+    set(INSTALL_BUNDLE_DIR ${CMAKE_BINARY_DIR}/bin/Release)
+else()
+    set(INSTALL_BUNDLE_DIR ${CMAKE_BINARY_DIR}/bin/$<CONFIG>)
+endif()
+
 install(DIRECTORY ${INSTALL_BUNDLE_DIR}/ DESTINATION .
         PATTERN "*.pdb" EXCLUDE
-        PATTERN "config" EXCLUDE
-        PATTERN "config/*" EXCLUDE)
+)
 
 # 安装静态资源（地图/头像等），以确保无构建工序也可包含
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/maps DESTINATION .)
@@ -433,11 +430,33 @@ set(CPACK_PACKAGE_VERSION "1.0.1")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win64")
 set(CPACK_SYSTEM_NAME "Windows")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "IrulerDeskPro")
-set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
+set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
 set(CPACK_NSIS_ENABLE_UNINSTALL ON)
-set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "IrulerDeskPro")
-set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "ExecWait $\"taskkill /F /IM irulerdesk.exe /T$\"\nExecWait $\"taskkill /F /IM CaptureProcess.exe /T$\"\nExecWait $\"taskkill /F /IM PlayerProcess.exe /T$\"\nStrCpy $R0 $\"$\"\nReadRegStr $R0 HKLM $\"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IrulerDeskPro$\" $\"UninstallString$\"\nStrCmp $R0 $\"$\" checkHKCU haveUninst\ncheckHKCU:\nReadRegStr $R0 HKCU $\"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IrulerDeskPro$\" $\"UninstallString$\"\nStrCmp $R0 $\"$\" doneCheck haveUninst\nhaveUninst:\nMessageBox MB_ICONQUESTION|MB_YESNO $\"检测到已安装旧版本，是否先卸载后继续安装？$\" IDYES doUninstall IDNO doneCheck\ndoUninstall:\nExecWait $\"$R0$\"\ndoneCheck:\n")
+set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "
+    nsExec::ExecToLog '$SYSDIR\\\\taskkill.exe /F /IM irulerdesk.exe /T'
+    Pop $0
+    nsExec::ExecToLog '$SYSDIR\\\\taskkill.exe /F /IM ScreenStreamApp.exe /T'
+    Pop $0
+    nsExec::ExecToLog '$SYSDIR\\\\taskkill.exe /F /IM CaptureProcess.exe /T'
+    Pop $0
+    nsExec::ExecToLog '$SYSDIR\\\\taskkill.exe /F /IM PlayerProcess.exe /T'
+    Pop $0
+    Sleep 500
+
+    StrCpy $R0 ''
+    ReadRegStr $R0 HKLM 'Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\IrulerDeskPro' 'UninstallString'
+    StrCmp $R0 '' checkHKCU haveUninst
+    checkHKCU:
+    ReadRegStr $R0 HKCU 'Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\IrulerDeskPro' 'UninstallString'
+    StrCmp $R0 '' doneCheck haveUninst
+    haveUninst:
+    MessageBox MB_ICONQUESTION|MB_YESNO '检测到已安装旧版本，是否先卸载后继续安装？' IDYES doUninstall IDNO doneCheck
+    doUninstall:
+    ExecWait '$R0'
+    doneCheck:
+")
 set(CPACK_NSIS_DISPLAY_NAME "IrulerDeskPro")
 set(CPACK_NSIS_CONTACT "support@iruler.local")
 set(CPACK_NSIS_HELP_LINK "http://www.iruler.cn/")
@@ -445,9 +464,11 @@ set(CPACK_NSIS_URL_INFO_ABOUT "http://www.iruler.cn/")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/installer/LICENSE_en.txt")
 set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/src/maps/logo/iruler.ico")
 set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/src/maps/logo/iruler.ico")
+set(CPACK_NSIS_MUI_LANGUAGE "SimpChinese")
 set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 set(CPACK_NSIS_MENU_LINKS "irulerdesk.exe" "IrulerDeskPro")
 set(CPACK_NSIS_MUI_FINISHPAGE_RUN "irulerdesk.exe")
+set(CPACK_NSIS_MUI_FINISHPAGE_RUN_TEXT "运行 IrulerDeskPro")
 set(CPACK_GENERATOR "NSIS")
 set(CPACK_NSIS_EXECUTABLE "C:/Program Files (x86)/NSIS/makensis.exe")
 

@@ -1,0 +1,1346 @@
+## 架构概览（持续维护）
+本项目是一个以 WebSocket 为转发通道的远程桌面/屏幕流系统，核心由“主程序 + 捕获推流进程 + 播放解码进程 + 云端路由服务器”组成。
+1. 主程序负责 UI、用户列表/登录信令、发起观看请求、管理子进程、看门狗与配置读写。
+2. 捕获进程负责屏幕采集、光标与批注叠加、VP9 编码（以及音频采集/编码），并通过 `/publish/<deviceId>` 推送到服务器。
+3. 播放进程/观看端负责通过 `/subscribe/<targetId>` 拉取二进制帧，VP9 解码并渲染，同时把批注/控制/音频上行消息发回推流端。
+4. 服务器只做房间路由转发：将一个 `deviceId` 房间内 publisher 的二进制消息广播给该房间 subscriber（并支持 `/login` 信令）。
+5. “视频流(二进制帧)”与“控制/批注/音频(文本或二进制消息)”复用同一条 WebSocket 连接通道（同房间同 targetId）。
+6. 双工音频：观看端麦克风音频上行给推流端；推流端可回传测试音/音频流给观看端（同信道、不同消息类型）。
+7. 画质/帧率/屏幕切换等属于控制面消息，作用于推流端编码质量与采集源，避免断流切换。
+8. 看门狗机制监测捕获进程心跳，发现卡死后强杀并由主程序重启，保障长时间运行稳定性。
+9. 配置统一通过 `config/app_config.txt`（`server_address`、设备ID、用户名、屏幕索引等）驱动各进程连接同一服务器。
+10. 目标：防串流（roomId = deviceId），多观看者时服务器出网线性增长，性能瓶颈通常在网络质量/出网带宽/VP9 编解码而非“简单转发CPU”。
+
+## src/VideoWindow.cpp
+说明：视频窗口实现；承载 VideoDisplayWidget，并在关闭/布局/交互中与 MainWindow 协同（观看/对讲/批注 UI）。
+## src/video_components/AudioPlayer.cpp
+说明：音频播放实现；对接 Qt 音频输出设备选择（跟随系统/指定设备）与缓冲写入；向上发射设备选择变化信号。
+## src/video_components/VideoDisplayWidget.cpp
+说明：观看端核心组件实现；管理 WebSocketReceiver、VP9/DXVA 解码、VideoWindow UI、批注/切屏/画质/对讲/音频设备选择与统计展示。
+## src/ui/AnnotationToolbar.cpp
+说明：批注工具栏实现；管理工具模式（画笔/矩形/圆/箭头/橡皮擦/文字）、颜色与字体大小，并把操作透传给 ScreenAnnotationWidget/VideoDisplayWidget。
+## src/ui/AvatarSettingsWindow.cpp
+说明：头像选择窗口实现；展示可选头像资源并向主程序发射选中结果（iconId）。
+## src/ui/BubbleTipWidget.cpp
+说明：气泡提示窗实现；绘制圆角矩形与箭头，支持“自己/他人”不同配色与自动消失。
+## src/ui/ColorCircleButton.cpp
+说明：颜色圆点按钮实现；自绘圆形颜色与 hover 效果，用于批注颜色选择。
+## src/ui/FirstLaunchWizard.cpp
+说明：首次启动向导实现；采集用户名/服务器地址等并写入配置（app_config.txt），用于后续自动登录与连接。
+## src/ui/RainbowToolButton.cpp
+说明：彩虹动画按钮实现；通过定时器驱动渐变角度变化并自绘边框效果。
+## src/ui/ScreenAnnotationWidget.cpp
+说明：屏幕批注画布实现；接收鼠标/键盘操作生成批注事件；本地渲染并通过 VideoDisplayWidget/WebSocketReceiver 同步到远端。
+## src/ui/SnippetOverlay.cpp
+说明：局部截取/贴图 overlay 实现；用于框选截图/贴图展示等交互（与主 UI/批注工具协作）。
+## src/ui/StreamingIslandWidget.cpp
+说明：推流状态“灵动岛”悬浮窗实现；展示推流/观看/对讲状态与快捷按钮，并向 MainWindow 发射控制信号。
+## src/ui/SystemSettingsWindow.cpp
+说明：系统设置窗口实现；集中管理屏幕选择、画质预设、用户名、手动同意观看、上线通知、音频输入/输出设备等配置项与信号分发。
+## src/UpdateLog.html
+说明：版本更新日志 HTML 内容；由 MainWindow::checkAndShowUpdateLog 在版本变化时弹窗展示。
+## .vscode/settings.json
+说明：VS Code 工作区设置（如编码/格式化/索引等本地开发体验相关配置）。
+## api/README.md
+说明：API 目录说明与协议概览入口。
+## api/CaptureProcess_API.md
+说明：采集推流进程的对外接口/消息约定（控制面/数据面）。
+## api/PlayerProcess_API.md
+说明：播放解码进程的对外接口/消息约定（订阅、渲染、控制面上行）。
+## api/运行方式.md
+说明：运行/启动方式说明（主程序、采集进程、播放进程与服务器的组合）。
+## api/构架.md
+说明：系统结构与模块职责说明（与本文件“架构概览”互补）。
+## api/日志/日志.txt
+说明：历史日志片段/排查记录（人工汇总）。
+## build_log.txt
+说明：构建过程日志（用于排查编译/打包问题）。
+## installer/LICENSE.txt
+说明：安装包许可证文本（英文/通用）。
+## installer/LICENSE_en.txt
+说明：安装包许可证（英文版本）。
+## server腾讯云服不要尝试本地构建这是上传给云的/CMakeLists.txt
+说明：云端 WebSocket 路由服务器的构建脚本（服务端目录；不建议在本仓库本地构建）。
+## server腾讯云服不要尝试本地构建这是上传给云的/websocket_server_with_routing.cpp
+说明：云端 WebSocket 服务器实现（login/publish/subscribe 路由与广播逻辑）。
+## server腾讯云服不要尝试本地构建这是上传给云的/build.sh
+说明：云端构建脚本（编译/部署使用）。
+## server腾讯云服不要尝试本地构建这是上传给云的/install-service.sh
+说明：安装 systemd 服务脚本。
+## server腾讯云服不要尝试本地构建这是上传给云的/uninstall-service.sh
+说明：卸载 systemd 服务脚本。
+## server腾讯云服不要尝试本地构建这是上传给云的/update-service.sh
+说明：更新/重启服务脚本。
+## server腾讯云服不要尝试本地构建这是上传给云的/websocket-server.service
+说明：systemd service unit 文件（服务端常驻运行配置）。
+## server腾讯云服不要尝试本地构建这是上传给云的/安装方法.md
+说明：云端安装与运维步骤说明。
+## tests/NewUi/CMakeLists.txt
+说明：NewUi 相关测试目标的 CMake 配置。
+## tests/NewUi/main.cpp
+说明：NewUi 测试入口（创建并展示测试窗口/组件）。
+## tests/NewUi/NewUiWindow.cpp
+说明：NewUiWindow 测试版本实现（用于 UI 迭代/验证）。
+## tests/NewUi/NewUiWindow.h
+说明：NewUiWindow 测试版本头文件。
+## tests/NewUi/README.md
+说明：NewUi 测试说明与运行方式记录。
+## 实时日志/服务器实时日志.md
+说明：服务器侧实时日志记录（人工整理）。
+## 实时日志/客户端实时日志.md
+说明：客户端侧实时日志记录（人工整理）。
+## 修复日志/1212问题汇总.md
+说明：1212 相关问题汇总与排查记录。
+## 修复日志/vp9编解码优化网略传输速度优化.md
+说明：VP9 编解码与网络传输优化过程记录。
+## 修复日志/第二次进入没有画面的bug修复排除法.md
+说明：二次进入黑屏问题的排查与修复过程记录。
+## 修复日志/建议功能.md
+说明：功能建议与需求收集。
+## 修复日志/清理日志世界难题.md
+说明：日志清理/噪声日志治理的记录。
+## 修复日志/视频传输速度优化完成.md
+说明：视频传输速度优化完成总结。
+## 修复日志/双工音频.md
+说明：双工音频设计与实现记录。
+## 修复日志/通话质量排除法.md
+说明：通话质量问题排查记录。
+## 修复日志/瓦片分步todo.md
+说明：瓦片渲染/传输相关 TODO 列表。
+## 修复日志/瓦片渲染集成测试完成.md
+说明：瓦片渲染集成测试记录与结果。
+## 修复日志/消费者听不到生产者排除法.md
+说明：观看端听不到推流端的排查记录。
+## 修复日志/修复颜色反相.md
+说明：颜色反相问题的排查与修复记录。
+## 修复日志/音频逐步过程.md
+说明：音频链路逐步实现与调试过程记录。
+## installer/LICENSE_zh.rtf
+说明：安装包许可证（中文 RTF 富文本版本）。
+## .qt/QtDeploySupport-Debug.cmake
+说明：Qt 部署辅助 CMake 脚本（Debug）；通常由 Qt Creator/部署流程生成与使用。
+## .qt/QtDeploySupport-MinSizeRel.cmake
+说明：Qt 部署辅助 CMake 脚本（MinSizeRel）；通常由 Qt Creator/部署流程生成与使用。
+## .qt/QtDeploySupport-Release.cmake
+说明：Qt 部署辅助 CMake 脚本（Release）；通常由 Qt Creator/部署流程生成与使用。
+## .qt/QtDeploySupport-RelWithDebInfo.cmake
+说明：Qt 部署辅助 CMake 脚本（RelWithDebInfo）；通常由 Qt Creator/部署流程生成与使用。
+## .qt/QtDeployTargets-Debug.cmake
+说明：Qt 部署目标列表（Debug）；用于把目标产物与依赖拷贝到部署目录。
+## .qt/QtDeployTargets-MinSizeRel.cmake
+说明：Qt 部署目标列表（MinSizeRel）；用于把目标产物与依赖拷贝到部署目录。
+## .qt/QtDeployTargets-Release.cmake
+说明：Qt 部署目标列表（Release）；用于把目标产物与依赖拷贝到部署目录。
+## .qt/QtDeployTargets-RelWithDebInfo.cmake
+说明：Qt 部署目标列表（RelWithDebInfo）；用于把目标产物与依赖拷贝到部署目录。
+## 项目目录.md
+说明：本文件；用于持续维护仓库文件索引与关键逻辑摘要，便于快速定位与回溯。
+
+---
+## src/main.cpp
+函数名：main：应用入口；安装崩溃守护与日志重定向；单实例检测；设置应用信息/主题；启动启动画面；创建 MainWindow 并把 splash 动画过渡到 NewUiWindow；进入事件循环。
+变量名：argc：命令行参数数量（传入 QApplication 用于 Qt 初始化）。
+变量名：argv：命令行参数数组（传入 QApplication 用于 Qt 初始化）。
+变量名：app：QApplication 实例；全局事件循环与 Qt 资源管理根对象。
+变量名：probe：QLocalSocket 单实例探测用；尝试连接固定 serverName 判断是否已有实例运行。
+变量名：payload：发送给已运行实例的消息内容（show_main_window），用于唤起主界面。
+变量名：appDir：当前可执行文件所在目录；用于加载图标等资源。
+变量名：darkPalette：深色主题调色板；覆盖 Window/Text/Button 等颜色以统一视觉风格。
+变量名：dir：资源目录（applicationDirPath）；用于选择启动图背景与水印资源。
+变量名：idx：启动图随机编号（0-8）；用于从 maps/assets 选择一张背景图。
+变量名：base：启动图背景原图 QPixmap；可能为空（缺资源时走兜底尺寸）。
+变量名：maxEdge：启动图最大边长（640）；用于按比例缩放背景图。
+变量名：ss：启动图画布尺寸；由 base 比例与 maxEdge 决定或走兜底。
+变量名：canvas：启动图最终画布；被绘制背景、水印与进度条。
+变量名：p：QPainter；用于在 canvas 上绘制背景、水印与进度条底。
+变量名：wm：水印图 QPixmap（shuiyin.png）；用于在启动图右下角叠加。
+变量名：maxW：水印最大宽度；按画布宽度比例限制最小 24px。
+变量名：w：水印绘制宽度；由 maxW 与源图宽度决定。
+变量名：h：水印绘制高度；按源图比例缩放得到。
+变量名：m：水印边距（12）；用于计算绘制位置。
+变量名：x：水印绘制左上角 x；右下角对齐并留边距。
+变量名：y：水印绘制左上角 y；右下角对齐并留边距。
+变量名：barWidth：进度条宽度；画布宽度的 40%。
+变量名：barHeight：进度条高度（4）。
+变量名：barX：进度条起点 x；水平居中。
+变量名：barY：进度条起点 y；靠近底部并留固定边距。
+变量名：splash：QSplashScreen；启动遮罩窗口，展示 canvas 并动态刷新进度条。
+变量名：splashTimer：QTimer；以 30ms 周期更新进度条进度与 splash 显示。
+函数名：lambda@splashTimer.timeout：定时更新启动进度；重绘进度条并更新 splash pixmap，同时用“先快后慢”策略模拟加载进度。
+变量名：window：MainWindow 主窗口对象；承载主逻辑（登录、进程管理、配置、watchdog）并创建 NewUiWindow。
+变量名：instServer：QLocalServer；用于实现单实例通信，接收 show_main_window 并唤起透明图片列表窗口。
+函数名：lambda@instServer.newConnection：接受来自后启动实例的连接，并注册 readyRead 以处理唤起消息。
+变量名：cli：新连接的 QLocalSocket；承载后启动实例发送的控制消息。
+函数名：lambda@cli.readyRead：读取消息内容；遇到 show_main_window 则唤起 NewUiWindow（透明图片列表）。
+变量名：data：从 cli 读取的消息字节；用于判断是否包含 show_main_window。
+变量名：til：NewUiWindow 指针；通过 MainWindow::transparentImageList 获取并用于 show/raise。
+函数名：lambda@window.appReady：在主窗口准备就绪后停止 splashTimer，并执行“splash 飞入动画”过渡到 NewUiWindow。
+变量名：startRect：splash 初始几何矩形；作为飞入动画起点。
+变量名：target：NewUiWindow 指针；飞入动画的目标窗口（用于计算目标中心点）。
+变量名：destCenter：飞入动画目标中心点；优先取 target 的中心，否则取 startRect 右下角附近。
+变量名：ew：飞入结束宽度；按 startRect 取 1/10 并限制最小 8。
+变量名：eh：飞入结束高度；按 startRect 取 1/10 并限制最小 8。
+变量名：endRect：飞入动画结束矩形；以 destCenter 为中心的缩小矩形。
+变量名：fly：临时 QLabel 顶层窗口；承载 canvas 图像，做几何与透明度动画实现“飞走”效果。
+变量名：opacity：QGraphicsOpacityEffect；控制 fly 的透明度动画。
+变量名：geomAnim：QPropertyAnimation；控制 fly 的 geometry 从 startRect 到 endRect。
+变量名：opAnim：QPropertyAnimation；控制 fly 的 opacity 从 1 到 0。
+变量名：group：QParallelAnimationGroup；并行动画组，结束后销毁 fly/opacity/group。
+变量名：result：事件循环返回码；作为 main 返回值传递给系统。
+## src/MainWindow.cpp（第一批）
+
+函数名：MainWindow::MainWindow：主窗口构造；初始化成员指针/状态；首次启动向导写入配置；搭建 UI；初始化托盘菜单；触发 appReady；初始化登录系统；启动更新日志弹窗检查。
+变量名：g_hJob：Windows Job Object 句柄；用于把子进程纳入同一 Job，主进程退出时联动杀死子进程。
+函数名：AddProcessToJob：把指定 pid 的进程加入 Job Object（Windows）；实现“主进程崩溃/退出时子进程不残留”。
+函数名：MainWindow::checkAndShowUpdateLog：读取 QSettings 中记录的上次版本号；版本变化时弹出 UpdateLog.html 的大字体更新日志对话框。
+变量名：CURRENT_VERSION：当前应用版本号（QCoreApplication::applicationVersion）。
+变量名：settings：QSettings("ScreenStream","ScreenStreamApp")；存储上次版本号，用于判断是否弹更新日志。
+变量名：lastVersion：上一次运行保存的版本号字符串。
+变量名：logDialog：更新日志对话框（QDialog*），模态展示。
+变量名：layout：更新日志对话框布局（QVBoxLayout*）。
+变量名：title：更新日志标题 QLabel（大字加粗）。
+变量名：titleFont：标题字体对象（设置字号/粗体）。
+变量名：content：QTextEdit；承载 UpdateLog.html 内容，禁编辑大字号展示。
+变量名：contentFont：正文字体对象（设置字号）。
+变量名：html：读取到的更新日志 HTML 文本（失败则用兜底 HTML）。
+变量名：logPath：UpdateLog.html 路径；优先 applicationDirPath，缺失则尝试开发目录兼容路径。
+变量名：logFile：读取更新日志文件的 QFile。
+变量名：btn：关闭按钮（“我知道了 / Got it”）。
+变量名：btnFont：按钮字体对象（设置字号/粗体）。
+函数名：MainWindow::nativeEvent：拦截 Windows 电源广播消息；在系统挂起/恢复时更新 m_inSystemSuspend 标志，供后续逻辑决策。
+变量名：msg：Windows MSG 指针；用于判断 WM_POWERBROADCAST 等消息。
+函数名：MainWindow::closeEvent：关闭事件拦截；非退出请求时改为隐藏到托盘并忽略关闭。
+函数名：MainWindow::transparentImageList：返回 NewUiWindow（透明图片列表/主交互窗）指针。
+函数名：MainWindow::sendWatchRequest：默认发起带视频观看请求（对 sendWatchRequestWithVideo 的轻包装）。
+函数名：MainWindow::sendWatchRequestWithVideo：设置为“显示视频窗口”模式并清空 audioOnly 目标；发送 watch_request（audio_only=false）。
+函数名：MainWindow::sendWatchRequestAudioOnly：设置为“仅音频/不弹视频窗口”模式；发送 watch_request（audio_only=true）。
+函数名：MainWindow::sendWatchRequestInternal：通过登录 WebSocket 发送 watch_request（包含 viewer_id/target_id/viewer_name/icon）；非 audio_only 时弹出“等待同意”对话框并提供挂断（发送 watch_request_canceled）。
+变量名：watchRequest：观看请求 JSON 对象；type=watch_request，携带 viewer/target/name/icon 等字段。
+变量名：doc：QJsonDocument；将 watchRequest/cancelMsg 序列化为紧凑 JSON。
+变量名：message：要发送的 JSON 字符串（Compact）。
+变量名：m_waitingDialog：等待对方同意的非模态 QMessageBox；支持挂断取消。
+变量名：hangupBtn：等待框里的“挂断”按钮；点击后发送取消并关闭等待框。
+变量名：cancelMsg：取消观看请求 JSON 对象；type=watch_request_canceled。
+函数名：MainWindow::startVideoReceiving：创建订阅 URL（/subscribe/<targetId>）；设置批注颜色/用户名/音频会话；启动 VideoDisplayWidget 接收；初始化话筒/扬声器状态与会话信息。
+变量名：videoWidget：VideoWindow 中的 VideoDisplayWidget；负责真正的解码渲染与交互事件发送。
+变量名：serverUrl：订阅连接 URL（wsBaseUrl + /subscribe/<targetId>）。
+变量名：initialColorId：初始批注颜色 ID（从配置读取/生成）。
+变量名：viewerId：本端设备 ID（用于会话标识与消息字段）。
+变量名：spkEnabled：扬声器开关（从配置读取）。
+变量名：micEnabled：麦克风开关（从配置读取，或受“待开启对讲”状态影响）。
+函数名：MainWindow::startPlayerProcess：启动外部 PlayerProcess.exe；必要时杀旧进程；传 targetId；Windows 下加入 Job Object；监听 finished 以回收与诊断输出。
+变量名：playerPath：播放器进程可执行文件路径（applicationDirPath/PlayerProcess.exe）。
+变量名：arguments：播放器启动参数列表（当前只传 targetDeviceId）。
+函数名：MainWindow::~MainWindow：析构；关闭登录 WebSocket；停止/清理子进程。
+函数名：MainWindow::onWatchButtonClicked：读取列表选中项；解析“用户名(设备ID)”中的 deviceId；弹出视频窗口并发送观看请求。
+变量名：currentItem：当前选中 QListWidgetItem。
+变量名：selectedUser：列表项文本（含用户名与设备ID）。
+变量名：regex：用于提取括号内 deviceId 的正则表达式。
+变量名：match：正则匹配结果，用于判断是否提取成功。
+变量名：targetDeviceId：从列表项文本中解析出的目标设备 ID。
+函数名：MainWindow::setupUI：构建主窗口 UI（列表、按钮、ID 标签等）；创建 VideoWindow 与 NewUiWindow；绑定信号槽（观看、设置、麦克风/清理标记等）；从配置初始化颜色/音频设备/开关状态。
+变量名：titleLabel：标题“在线用户”标签。
+变量名：hasSelection：是否有列表选中项（用于控制按钮可用性）。
+变量名：currentText：选中项文本；用于过滤“等待连接服务器...”等占位行。
+变量名：enableButton：是否启用“开始观看”按钮的判定结果。
+变量名：randomId：从配置读/生成的 5 位随机 ID（用于显示与设备标识）。
+变量名：idText：显示在 m_idLabel 上的文本（“我的ID: xxxxx”）。
+
+变量名：m_centralWidget：主窗口中央部件（作为主布局容器）。
+变量名：m_mainLayout：主窗口垂直布局；承载标题、用户列表、按钮与 ID 标签等。
+变量名：m_listWidget：在线用户列表控件；支持右键菜单与选择变化。
+变量名：m_idLabel：显示本机 ID 的标签（UI 展示）。
+变量名：m_watchButton：开始观看按钮；依据列表选择状态启用/禁用。
+变量名：m_videoWindow：视频窗口；承载 VideoDisplayWidget（接收解码渲染、批注、音频设备选择）。
+变量名：m_transparentImageList：NewUiWindow；透明悬浮式主交互窗（用户头像卡片/观看入口/设置入口）。
+变量名：m_avatarSettingsWindow：头像设置窗口指针；用户选择头像资源。
+变量名：m_systemSettingsWindow：系统设置窗口指针；集中管理开关项与设备选择。
+变量名：m_statusLabel：状态栏显示标签；展示连接/推流状态信息。
+变量名：m_isStreaming：是否正在推流（主控状态）。
+变量名：m_isScreenSwitching：是否处于“切屏进行中”状态；用于避免重复触发切屏流程。
+变量名：m_switchFrameConn：切屏时监听“首帧到达”的连接句柄；用于完成一次性解绑。
+变量名：m_captureProcess：捕获推流子进程（CaptureProcess.exe）的 QProcess。
+变量名：m_playerProcess：播放解码子进程（PlayerProcess.exe）的 QProcess（旧流程/备用）。
+变量名：m_watchdogServer：本地 QLocalServer；捕获进程连接上来发送心跳与事件。
+变量名：m_watchdogTimer：看门狗定时器；检测捕获进程心跳超时并采取动作。
+变量名：m_lastHeartbeatTime：最近一次收到捕获进程心跳的时间戳（ms）。
+变量名：m_currentWatchdogSocket：当前捕获进程与主进程之间的本地 socket 连接。
+变量名：m_watchdogRxBuffer：看门狗 socket 的接收缓存；用于按行解析事件协议。
+变量名：m_pendingApproval：是否有待下发的本地审批指令（用于无 socket 时延后发）。
+变量名：m_crashTimestamps：近期崩溃时间戳列表；用于熔断判断。
+变量名：MAX_CRASH_COUNT：熔断阈值：窗口内允许的最大崩溃次数。
+变量名：CRASH_WINDOW_MS：熔断时间窗口长度（ms）。
+变量名：m_startupTimer：启动时序诊断计时器；用于输出阶段耗时或调试。
+变量名：m_serverReadyTimer：服务器就绪重试定时器；连接/登录前做探测。
+变量名：m_serverReadyRetryCount：服务器就绪重试计数。
+变量名：m_heartbeatTimer：登录系统心跳定时器；维持在线状态与防踢出。
+变量名：m_loginWebSocket：登录系统 WebSocket 连接；用于在线用户列表/观看请求/同意拒绝等信令。
+变量名：m_userId：本机用户 ID（通常等于设备 ID，用于登录/路由房间）。
+变量名：m_userName：本机用户名（配置/向导/主机名兜底）。
+变量名：m_isLoggedIn：是否已完成登录系统登录。
+变量名：m_serverOnlineUsers：服务器上报的在线用户集合（蓄水池，用于过滤抖动与提示）。
+变量名：m_userListInitialized：在线用户列表是否初始化完成（影响提示策略）。
+变量名：m_onlineToasts：在线/离线 toast 窗口列表（用于统一管理与重排）。
+变量名：m_userCleanupTimer：蓄水池清理定时器；周期性移除过期在线记录。
+变量名：m_reconnectTimer：统一重连定时器；登录 WS 断线后延迟重连。
+变量名：m_currentTargetId：当前正在观看的目标 ID；用于源切换后重发 watch_request。
+变量名：m_pendingTalkTargetId：待开启对讲的目标 ID（用于在连接建立后开麦）。
+变量名：m_pendingTalkEnabled：是否待开启对讲。
+变量名：m_pendingShowVideoWindow：本次 watch_request 是否需要展示视频窗口。
+变量名：m_audioOnlyTargetId：本次音频会话目标 ID（用于区分音频-only 会话）。
+变量名：m_islandWidget：推流状态灵动岛悬浮窗指针。
+变量名：m_waitingDialog：等待对方同意的非模态弹窗指针。
+变量名：m_approvalDialog：收到观看请求时的审批弹窗指针。
+变量名：m_selfCancelled：是否由本端主动取消观看请求（用于区分对方拒绝/本端挂断）。
+变量名：m_appReadyEmitted：是否已发出 appReady 信号（用于防重复）。
+变量名：m_trayIcon：系统托盘图标对象指针。
+变量名：m_trayMenu：托盘右键菜单指针。
+变量名：m_inSystemSuspend：系统是否处于挂起态（nativeEvent 更新）。
+变量名：m_exitRequested：是否请求真正退出（影响 closeEvent 行为）。
+变量名：m_alertSound：提示音对象指针（用于来电/上线提示等）。
+## src/MainWindow.cpp（第二批：推流/看门狗）
+
+函数名：MainWindow::setupStatusBar：初始化状态栏；创建 m_statusLabel 并启动 1 秒定时器周期刷新状态显示。
+变量名：statusTimer：状态刷新 QTimer（每秒触发 updateStatus）。
+函数名：MainWindow::startStreaming：推流开始入口；防重复启动；清空崩溃计数；更新状态栏样式；启动捕获进程与看门狗。
+函数名：MainWindow::stopStreaming：推流停止入口；停止子进程/看门狗；更新状态栏为“已停止”。
+函数名：MainWindow::updateStatus：拼接“设备ID + 推流/空闲”状态字符串并显示到状态栏。
+变量名：status：状态栏显示字符串（设备ID与当前状态）。
+函数名：MainWindow::startProcesses：启动 CaptureProcess.exe；创建 QLocalServer 管道作为看门狗通道；启动心跳超时检测定时器；Windows 下把子进程加入 Job Object。
+变量名：appDir：应用程序目录（用于定位 CaptureProcess.exe）。
+变量名：pipeName：看门狗管道名（IrulerWatchdog_<deviceId>_<timestamp>）。
+变量名：captureExe：捕获进程可执行文件路径（applicationDirPath/CaptureProcess.exe）。
+变量名：args：捕获进程启动参数（--watchdog <pipeName>）。
+函数名：MainWindow::stopProcesses：停止看门狗定时器/服务器；kill 并回收捕获/播放进程对象。
+函数名：MainWindow::onCaptureProcessFinished：捕获进程退出回调；CrashExit 时做熔断判断并尝试延时重启；正常退出时更新状态提示。
+变量名：exitCode：子进程退出码（当前逻辑主要看 exitStatus）。
+变量名：exitStatus：退出类型（NormalExit/CrashExit）。
+函数名：MainWindow::checkCrashLoop：维护“1 分钟窗口内崩溃时间戳队列”；超过 MAX_CRASH_COUNT 触发熔断并停止自动重试。
+变量名：now：当前时间戳（ms）。
+函数名：MainWindow::onPlayerProcessFinished：播放进程退出回调；在推流状态下更新状态栏为“播放进程已退出”（旧流程/备用）。
+函数名：MainWindow::onWatchdogNewConnection：捕获进程连上本地管道时保存 socket；如存在待审批指令则立即发送；绑定 readyRead/disconnected。
+变量名：clientConnection：新接入的 QLocalSocket。
+函数名：MainWindow::onWatchdogDataReady：从本地管道读取数据并按行解析；处理 EVT_VIEWER_EXIT（观众退出）与 EVT_VIEWER_MIC（观众麦克风状态）；刷新最后心跳时间；必要时触发软停推流。
+变量名：kViewerExitPrefix：观众退出事件前缀（EVT_VIEWER_EXIT:）。
+变量名：kViewerMicPrefix：观众麦克风事件前缀（EVT_VIEWER_MIC:）。
+变量名：line：解析到的一行事件数据（去空白后）。
+函数名：MainWindow::onWatchdogTimeout：每秒检查捕获进程心跳超时；启动期更宽容；超时后 kill 捕获进程并提示无响应，交由 onCaptureProcessFinished 走重启/熔断。
+变量名：diff：距离上次心跳的间隔（ms）。
+函数名：MainWindow::getConfigFilePath：返回配置文件路径（当前通过 AppConfig::configFilePathInAppDir 统一给出）。
+## src/MainWindow.cpp（第三批：配置/ID/头像/批注）
+
+函数名：MainWindow::loadOrGenerateRandomId：从配置读取 random_id；不存在则基于网卡 MAC 生成稳定 5 位数并写回配置。
+变量名：macs：拼接的 MAC 地址字符串（用于生成稳定ID）。
+变量名：hash：对 macs 做的 MD5 哈希（用于派生数字）。
+变量名：newRandomId：新生成的 5 位随机/派生 ID。
+函数名：MainWindow::loadOrGenerateIconId：从配置读取 icon_id；不存在则基于 MAC 派生 3-21 范围头像编号并写回配置。
+变量名：newIconId：新生成的头像编号（3-21）。
+函数名：MainWindow::saveRandomIdToConfig：把 random_id 写回配置文件（覆盖或追加），并附带说明行。
+变量名：configLines：配置文件逐行缓存（用于覆盖写回）。
+变量名：randomIdExists：配置中是否已存在 random_id= 行。
+函数名：MainWindow::saveIconIdToConfig：把 icon_id 写回配置文件（覆盖或追加），并附带说明行。
+变量名：iconIdExists：配置中是否已存在 icon_id= 行。
+函数名：MainWindow::loadOrGenerateColorId：读取 color_id；缺失/非法则用默认值并写回。
+函数名：MainWindow::saveColorIdToConfig：保存批注颜色 ID（超范围会裁剪到 0-3）。
+函数名：MainWindow::onAnnotationColorChanged：收到批注颜色变化信号后立即持久化到配置。
+函数名：MainWindow::getDeviceId：设备ID获取；用 static 缓存避免重复读盘；优先取 random_id，否则生成并缓存。
+变量名：cachedDeviceId：静态缓存的设备ID字符串（进程内全局复用）。
+变量名：initialized：静态标志，确保只初始化一次。
+函数名：MainWindow::generateUniqueDeviceId：生成新的 5 位数字字符串（一次性随机；当前主要用于旧逻辑/备用）。
+函数名：MainWindow::saveDeviceIdToConfig：把 device_id 写回配置（旧字段；当前主流程更偏向 random_id）。
+函数名：MainWindow::getServerAddress：返回当前服务器地址（由 AppConfig::serverAddress 统一读取）。
+函数名：MainWindow::saveServerAddressToConfig：把 server_address 写入配置文件（覆盖或追加）。
+## src/MainWindow.cpp（第四批：登录/在线用户/信令）
+
+函数名：MainWindow::initializeLoginSystem：确保配置存在（首次启动向导）；加载/兜底用户名；初始化登录 WebSocket、心跳、在线用户蓄水池清理、断线重连；延迟连接服务器。
+函数名：MainWindow::connectToLoginServer：连接登录 WebSocket（wsBaseUrl + /login），避免重复连接状态下的重复 open。
+变量名：serverUrl：登录 WebSocket URL（.../login）。
+函数名：MainWindow::sendLoginRequest：发送 login 信令；携带 id/name 与 icon_id/viewer_icon_id 字段，兼容不同服务器实现。
+变量名：loginRequest：登录请求 JSON（type=login，data=userData）。
+变量名：userData：用户数据 JSON（id/name/icon_id/viewer_icon_id）。
+函数名：MainWindow::sendHeartbeat：登录后周期发送 ping 保活（未登录/未连接时不发）。
+函数名：MainWindow::updateUserList：把服务器在线用户数组同步到主列表与 NewUiWindow；维护在线蓄水池；按增量弹“上线/下线” toast；检测当前观看目标是否离线并提示。
+变量名：previousUserIds：上次在线用户集合（用于算新增/离线差集）。
+变量名：newUserIds：本次在线用户集合。
+变量名：newUserNameById：本次 uid->name 映射（用于 toast 与 UI 更新）。
+变量名：newUserIconById：本次 uid->iconId 映射（用于 toast 与头像更新）。
+函数名：buildSquarePixmapForToast：把任意头像图裁剪/缩放成固定尺寸正方形（toast 头像用）。
+函数名：loadAvatarPixmapForToast：按优先级加载 toast 头像（缓存 avatars/<userId>.png → maps/icon/<iconId>.png → head.png 兜底）。
+函数名：MainWindow::showUserOnlineToast：创建右下角悬浮上线提示窗（白底大字），5 秒后自动销毁并触发重排。
+变量名：toast：toast 顶层 QWidget。
+变量名：body：toast 内容容器（带圆角背景）。
+变量名：avatar：头像 QLabel。
+函数名：MainWindow::showUserOfflineToast：创建右下角离线提示窗（红底），5 秒后自动销毁并触发重排。
+函数名：MainWindow::repositionOnlineToasts：根据鼠标所在屏幕，把 toast 从右下角向上堆叠布局。
+变量名：avail：屏幕可用区域矩形（availableGeometry）。
+函数名：MainWindow::onUserCleanupTimerTimeout：定时兜底清理 UI 列表中“不在蓄水池”的用户，并同步移除 NewUiWindow 用户卡片。
+函数名：MainWindow::onLoginWebSocketConnected：登录 WS 连接成功；更新列表提示；立即发送 login 请求。
+函数名：MainWindow::onLoginWebSocketDisconnected：断线；停止心跳；清空在线蓄水池与 toast；提示断线；5 秒后触发重连。
+函数名：MainWindow::onLoginWebSocketTextMessageReceived：解析并分发服务器 JSON 消息：login_response、online_users_update、start_streaming_request（含 cancel/音频-only/手动同意）、watch_request_*、viewer_exit、kick_viewer、streaming_ok、avatar_update 等；联动推流/看门狗/等待弹窗/视频窗口/对讲状态。
+变量名：type：消息类型（obj["type"]）。
+变量名：viewerId：观看者设备ID（对方或自己，取决于消息）。
+变量名：targetId：被观看/房主设备ID（房间号）。
+函数名：MainWindow::onLoginWebSocketError：把 SocketError 映射成中文提示写入列表，并安排 10 秒后统一重连。
+## src/MainWindow.cpp（第五批：交互/UI/设置项）
+
+函数名：MainWindow::showContextMenu：在用户列表项上弹出右键菜单（观看/选项二）。
+变量名：contextMenu：右键 QMenu（临时创建并 exec）。
+函数名：MainWindow::onContextMenuOption1：右键“观看”；从列表项文本中解析目标 deviceId 并发送观看请求。
+函数名：MainWindow::onContextMenuOption2：右键“选项二”；目前占位未实现实际动作。
+函数名：MainWindow::onUserImageClicked：点击 NewUiWindow 用户头像卡片；发送观看请求（等待 streaming_ok 后再拉流）。
+函数名：MainWindow::showMainList：把 NewUiWindow 从最小化/隐藏恢复到前台显示。
+函数名：MainWindow::onSetAvatarRequested：打开头像设置窗口（AvatarSettingsWindow），并连接 avatarSelected。
+函数名：MainWindow::onAvatarSelected：保存 icon_id 到配置；本地立即刷新头像；向服务器广播 avatar_update（登录 WS + 额外临时 WS 到自己房间兜底）。
+变量名：jsonString：avatar_update 紧凑 JSON 文本。
+函数名：MainWindow::onSystemSettingsRequested：打开系统设置窗口（SystemSettingsWindow），绑定屏幕/画质/用户名/审批/上线通知等设置变更信号，并强制置顶显示。
+函数名：MainWindow::onClearMarksRequested：清空本地所有 ScreenAnnotationWidget；并向网络发送 annotation_event(clear) 做远端同步清屏。
+函数名：MainWindow::onExitRequested：标记真正退出；停止推流与窗口；退出应用。
+函数名：MainWindow::onHideRequested：隐藏所有相关窗口（视频窗/NewUiWindow/设置窗等），用于“最小化到托盘”。
+函数名：MainWindow::onMicToggleRequested：全局麦克风开关；保存配置并更新 VideoDisplayWidget/NewUiWindow；需要时向服务器发送 viewer_mic_state；推流端则下发本地 CMD_AUDIO_TOGGLE 给捕获进程。
+函数名：MainWindow::onSpeakerToggleRequested：扬声器开关；保存配置并更新 VideoDisplayWidget 播放开关。
+函数名：MainWindow::onManualApprovalEnabledChanged：手动同意观看开关变更；保存到配置。
+函数名：MainWindow::onOnlineNotificationEnabledChanged：上线/下线 toast 开关变更；保存到配置。
+函数名：MainWindow::onScreenSelected：切换捕获屏幕；推流中优先通过看门狗管道发 CMD_SWITCH_SCREEN 直接控制捕获进程；观看中则走 VideoDisplayWidget::sendSwitchScreenIndex 并等待首帧回调确认；否则仅保存配置。
+函数名：MainWindow::saveScreenIndexToConfig：保存 screen_index 到配置文件（覆盖或追加）。
+函数名：MainWindow::loadScreenIndexFromConfig：读取 screen_index（默认 0）。
+函数名：MainWindow::onLocalQualitySelected：保存本地画质配置，并在状态栏给出提示文本。
+函数名：MainWindow::onAudioOutputSelectionChanged：保存音频输出设备选择（跟随系统/指定设备）；并让 VideoDisplayWidget 运行时重新应用输出设备。
+函数名：MainWindow::onMicInputSelectionChanged：保存麦克风输入设备选择（跟随系统/指定设备）。
+函数名：MainWindow::saveLocalQualityToConfig：保存 local_quality 到配置文件（覆盖或追加）。
+函数名：MainWindow::loadAudioOutputFollowSystemFromConfig：读取 audio_output_follow_system（默认 true）。
+函数名：MainWindow::loadSpeakerEnabledFromConfig：读取 speaker_enabled（默认 true）。
+函数名：MainWindow::loadMicEnabledFromConfig：读取 mic_enabled（默认 true）。
+函数名：MainWindow::saveSpeakerEnabledToConfig：保存 speaker_enabled。
+函数名：MainWindow::onToggleStreamingIsland：手动显示/隐藏推流灵动岛，并按当前 screen_index 定位到目标屏幕。
+函数名：MainWindow::saveMicEnabledToConfig：保存 mic_enabled。
+函数名：MainWindow::loadManualApprovalEnabledFromConfig：读取 manual_approval_enabled（默认 true）。
+函数名：MainWindow::saveManualApprovalEnabledToConfig：保存 manual_approval_enabled。
+函数名：MainWindow::loadOnlineNotificationEnabledFromConfig：读取 online_notification_enabled（默认 true）。
+函数名：MainWindow::saveOnlineNotificationEnabledToConfig：保存 online_notification_enabled。
+函数名：MainWindow::loadAudioOutputDeviceIdFromConfig：读取 audio_output_device_id。
+函数名：MainWindow::saveAudioOutputFollowSystemToConfig：保存 audio_output_follow_system。
+函数名：MainWindow::saveAudioOutputDeviceIdToConfig：保存 audio_output_device_id。
+函数名：MainWindow::loadMicInputFollowSystemFromConfig：读取 mic_input_follow_system（默认 true）。
+函数名：MainWindow::loadMicInputDeviceIdFromConfig：读取 mic_input_device_id。
+函数名：MainWindow::saveMicInputFollowSystemToConfig：保存 mic_input_follow_system。
+函数名：MainWindow::saveMicInputDeviceIdToConfig：保存 mic_input_device_id。
+函数名：MainWindow::onUserNameChanged：用户名变更；写回配置；更新 NewUiWindow 与 VideoDisplayWidget；已登录时重发 login 让服务器同步昵称。
+函数名：MainWindow::loadUserNameFromConfig：读取 user_name。
+函数名：MainWindow::saveUserNameToConfig：保存 user_name。
+## src/NewUi/NewUiWindow.h
+
+函数名：NewUiWindow::NewUiWindow：透明主交互窗构造；搭建 UI、初始化推流/拉流/头像/HiFps/对讲/拖拽缩放等状态。
+函数名：NewUiWindow::~NewUiWindow：析构清理；停止定时器、关闭 HiFps、断开所有 StreamClient 连接并释放。
+函数名：NewUiWindow::mousePressEvent：窗口拖拽起始；顶部区域进入标题栏拖拽，否则进入普通拖拽。
+函数名：NewUiWindow::mouseMoveEvent：处理标题栏拖拽与吸附最大化提示、以及普通拖拽移动窗口。
+函数名：NewUiWindow::mouseReleaseEvent：结束拖拽；若拖到屏幕顶触发“吸附最大化”则切换最大化。
+函数名：NewUiWindow::mouseDoubleClickEvent：双击顶部区域切换最大化/还原。
+函数名：NewUiWindow::resizeEvent：窗口尺寸变化时更新 8 个 resize grip，并重算“我的房间”侧栏位置。
+函数名：NewUiWindow::event：监听窗口激活/失活；失活时停止自动暂停计时并在应用非激活态关闭 HiFps；激活时对当前选中用户恢复 HiFps/自动暂停逻辑。
+函数名：NewUiWindow::eventFilter：统一拦截卡片/头像/标题栏/resize grip 等鼠标事件；支持点击选中、双击观看、标题栏拖拽、边缘拉伸、侧栏显示/隐藏、hover HiFps 候选等交互。
+函数名：NewUiWindow::changeEvent：窗口状态切换时刷新最大化按钮图标并显隐 resize grip。
+函数名：NewUiWindow::onTimerTimeout：每分钟触发一次本地截图发布（publishLocalScreenFrame）。
+函数名：NewUiWindow::onTalkSpinnerTimeout：对“待接通”的对讲按钮绘制旋转 spinner 图标并驱动动画。
+函数名：NewUiWindow::onStreamLog：把 StreamClient/LoginClient 的日志转发到 qInfo。
+函数名：NewUiWindow::onUserListUpdated：旧的 LoginClient 在线列表回调（当前由 MainWindow 接管，逻辑禁用）。
+函数名：NewUiWindow::onLoginConnected：旧的 LoginClient 连接回调（当前由 MainWindow 接管，逻辑禁用）。
+函数名：NewUiWindow::toggleFunction1Maximize：切换最大化/还原并同步标题栏按钮与 resize grip。
+函数名：NewUiWindow::setMyStreamId：设置本机 userId/userName；重连本地 publish；初始化/订阅头像并刷新本地头像展示。
+函数名：NewUiWindow::setCaptureScreenIndex：设置截图屏幕索引；立即刷新本地预览。
+函数名：NewUiWindow::setTalkPending：设置对讲“待接通”状态并启动/停止 spinner 动画；更新卡片绿色“通话中”叠层与样式。
+函数名：NewUiWindow::setTalkConnected：设置对讲已连接；关闭 pending 并更新叠层。
+函数名：NewUiWindow::setTalkRemoteActive：标记对方主动对讲（remoteActive）；同步按钮状态并更新叠层。
+函数名：NewUiWindow::setViewerMicState：更新“我的房间”观众列表中某观众的麦克风图标状态。
+函数名：NewUiWindow::setGlobalMicCheckedSilently：不触发 toggled 信号地同步标题栏全局麦克风开关按钮状态。
+函数名：NewUiWindow::addViewer：向“我的房间”侧栏添加观众行（昵称/踢出/麦克风状态），并做去重与昵称更新。
+函数名：NewUiWindow::removeViewer：从观众列表移除指定 id（含 map 与列表兜底清理）。
+函数名：NewUiWindow::clearViewers：清空观众列表与关联索引。
+函数名：NewUiWindow::getViewerCount：返回当前观众数量（以 m_viewerItems 为准）。
+函数名：NewUiWindow::updateViewerNameIfExists：若观众存在则更新显示名称。
+函数名：NewUiWindow::sendKickToSubscribers：通过本地 publish socket 向房间广播 kick_viewer 文本消息（推流端通知观看端退出）。
+函数名：NewUiWindow::addUser：由主程序同步在线用户；创建远端卡片、订阅 /subscribe/<userId>，并订阅其 avatar_<userId>。
+函数名：NewUiWindow::removeUser：移除远端用户卡片并断开其视频/头像订阅；同时清理 HiFps/自动暂停相关状态。
+函数名：NewUiWindow::clearUserList：批量移除所有远端用户（遍历 m_remoteStreams 调用 removeUser）。
+函数名：NewUiWindow::updateUserAvatar：刷新某用户卡片头像显示（优先 avatars 缓存，缺失则用 head.png 兜底）。
+函数名：NewUiWindow::restartUserStreamSubscription：对指定 userId 的订阅 socket 做重连/重发 start_streaming，并按需要恢复 HiFps。
+函数名：NewUiWindow::onVideoReceivingStopped：外部告知目标视频接收停止；若目标为选中/HiFps 活跃则尝试重新拉起 HiFps。
+函数名：NewUiWindow::getCurrentUserId：返回当前本机 userId（m_myStreamId）。
+
+变量名：m_dragging：窗口普通拖拽是否进行中。
+变量名：m_dragPosition：普通拖拽时鼠标与窗口左上角偏移。
+变量名：m_listWidget：右侧主列表（卡片网格）控件。
+变量名：m_timer：本地截图发布定时器（默认 60s）。
+变量名：m_videoLabel：本机卡片预览图 QLabel（发布前也用于本地展示）。
+变量名：m_logoLabel：左侧 logo 标签（点击打开官网）。
+变量名：m_farRightPanel：“我的房间”侧栏容器（观众列表/关闭房间）。
+变量名：m_viewerList：观众列表 QListWidget。
+变量名：m_viewerItems：viewerId -> QListWidgetItem（观众行索引）。
+变量名：m_viewerMicButtons：viewerId -> QPushButton（观众麦克风图标按钮）。
+变量名：m_viewerMicStates：viewerId -> bool（观众麦克风状态缓存）。
+变量名：m_localNameLabel：本机卡片名称标签（显示昵称或 id）。
+变量名：m_localCard：本机卡片 QFrame（用于单击切侧栏等事件过滤）。
+变量名：m_toolbarAvatarLabel：标题栏头像 QLabel（点击更换本机头像）。
+变量名：m_localAvatarLabel：本机卡片左上角头像 QLabel（点击更换本机头像）。
+变量名：m_titleMaximizeBtn：标题栏最大化/还原按钮。
+变量名：m_titleMicBtn：标题栏全局麦克风开关按钮（checkable）。
+变量名：m_titleMicIconOn：麦克风开图标缓存。
+变量名：m_titleMicIconOff：麦克风关图标缓存。
+变量名：m_rightContentStack：右侧内容页切换容器（主页卡片页/故事板页）。
+变量名：m_homeContentPage：主页内容页（卡片列表容器）。
+变量名：m_function1BrowserPage：故事板页容器。
+变量名：m_function1WebView：故事板 QWebEngineView。
+变量名：m_streamClient：本机推流发布 socket（/publish/<m_myStreamId>），发送预览帧与控制文本。
+变量名：m_loginClient：旧登录信令客户端（当前由 MainWindow 接管，通常未启用）。
+变量名：m_avatarPublisher：本机头像发布 socket（/publish/avatar_<m_myStreamId>）。
+变量名：m_avatarPublishTimer：定时发布头像（默认 1h 一次）。
+变量名：m_avatarSubscribers：userId -> StreamClient（订阅 /subscribe/avatar_<userId>）。
+变量名：m_localAvatarPublishPixmap：本机待发布头像像素（缩放并中心裁剪后）。
+变量名：m_myStreamId：本机 userId/房间号。
+变量名：m_myUserName：本机昵称。
+变量名：m_remoteStreams：userId -> StreamClient（远端视频订阅 /subscribe/<userId>）。
+变量名：m_userItems：userId -> QListWidgetItem（远端卡片索引）。
+变量名：m_userLabels：userId -> QLabel（远端视频帧绘制目标）。
+变量名：m_userAvatarLabels：userId -> QLabel（远端卡片头像绘制目标）。
+变量名：m_talkButtons：userId -> QPushButton（对讲按钮，isOn/isPending/remoteActive 属性）。
+变量名：m_talkOverlays：userId -> QLabel（“通话中”叠层）。
+变量名：m_talkSpinnerTimer：对讲 spinner 全局定时器。
+变量名：m_talkSpinnerAngles：userId -> int（spinner 当前角度）。
+变量名：m_reselectOverlays：userId -> QLabel（自动暂停后提示“请重新点击观看”叠层）。
+变量名：m_selectionAutoPauseTimer：选中后 60s 自动暂停计时器。
+变量名：m_selectionAutoPauseUserId：当前计时目标 userId。
+变量名：m_autoPausedUserId：已被自动暂停的 userId（用于恢复与叠层显示）。
+变量名：m_titleBar：标题栏 QWidget（用于拖拽与双击最大化）。
+变量名：m_titleBarDragging：标题栏拖拽状态。
+变量名：m_titleBarPendingRestore：拖拽开始时是否处于最大化（用于拖动即还原）。
+变量名：m_titleBarSnapMaximize：拖拽到屏幕顶部时是否触发吸附最大化。
+变量名：m_titleBarPressGlobal：标题栏按下时全局坐标。
+变量名：m_titleBarPressLocalInWindow：标题栏按下时窗口内局部坐标。
+变量名：m_titleBarDragOffset：标题栏拖拽时窗口左上角偏移。
+变量名：m_resizeGripLeft/m_resizeGripRight/m_resizeGripTop/m_resizeGripBottom：四边拉伸触发区。
+变量名：m_resizeGripTopLeft/m_resizeGripTopRight/m_resizeGripBottomLeft/m_resizeGripBottomRight：四角拉伸触发区。
+变量名：m_resizeDragging：是否处于边缘拉伸中。
+变量名：m_resizeEdges：当前拉伸的边集合（Qt::Edges）。
+变量名：m_resizePressGlobal：拉伸按下全局坐标。
+变量名：m_resizeStartGeometry：拉伸开始时窗口 geometry。
+变量名：m_hoverCandidateTimer：悬停候选计时器（1s 后触发 hover HiFps）。
+变量名：m_hoverCandidateUserId：当前悬停候选 userId。
+变量名：m_hoverCandidatePos：悬停候选时鼠标全局坐标（用于判定是否仍停留）。
+变量名：m_hiFpsActiveUserId：当前处于 HiFps 预览的 userId。
+变量名：m_hiFpsActiveChannelId：当前 HiFps 预览订阅频道（hfps_*）。
+变量名：m_hiFpsSubscriber：HiFps 预览订阅 socket（/subscribe/<m_hiFpsActiveChannelId>）。
+变量名：m_hiFpsPublishers：channelId -> StreamClient（本机作为被 hover 的一方时，对外发布 HiFps 频道）。
+变量名：m_hiFpsPublisherTimers：channelId -> QTimer（对应 HiFps 发布帧率控制）。
+变量名：m_hiFpsWatchdogTimer：HiFps 预览看门狗（检测无帧/断连后重发 start_streaming/重建订阅）。
+变量名：m_hiFpsLastFrameAtMs：HiFps 最近收到帧的时间戳（ms）。
+变量名：m_hiFpsLastRecoveryAtMs：HiFps 最近一次自恢复时间戳（ms）。
+变量名：m_keepAwakeRequested：是否已向系统申请“保持唤醒”（HiFps 发布期间防息屏/休眠）。
+变量名：m_cardBaseWidth：卡片可见宽度基准（统一尺寸入口）。
+变量名：m_bottomAreaHeight：卡片底部按钮区高度。
+变量名：m_shadowSize：卡片阴影外扩尺寸。
+变量名：m_aspectRatio：卡片预览宽高比（16:9）。
+变量名：m_cardBaseHeight：卡片可见高度（由宽度与底部区高度计算）。
+变量名：m_totalItemWidth/m_totalItemHeight：含阴影的列表 item 尺寸。
+变量名：m_imgWidth/m_imgHeight：预览图区域尺寸。
+变量名：m_marginX/m_marginTop：卡片内边距（用于让预览图居中并留边框）。
+变量名：m_topAreaHeight：卡片上部预览区域高度。
+变量名：m_captureScreenIndex：本机抓屏目标屏幕索引（-1 表示未指定，回退 primary）。
+## src/NewUi/NewUiWindow.cpp
+
+函数名：ResponsiveButton::paintEvent：按下时缩小 iconSize 的自绘按钮，提供更“即时”的按压反馈。
+函数名：StoryboardWebPage::acceptNavigationRequest：拦截 iruler:// scheme 导航（返回 false），避免 WebView 跳转到自定义协议。
+函数名：updateKeepAwakeRequested：Windows 下调用 SetThreadExecutionState 申请/释放“系统与屏幕保持唤醒”。
+函数名：NewUiWindow::setMyStreamId：重连本机 /publish/<id>；确保头像缓存与发布通道 avatar_<id>；订阅自己的头像并刷新 UI。
+函数名：NewUiWindow::buildSpinnerIcon：绘制对讲 pending 的弧形 spinner 图标（角度由定时器推进）。
+函数名：NewUiWindow::buildTestAvatarPixmap：用于本机/默认头像的取图逻辑（优先微信目录最新图片，其次 maps/logo/head.png），并缩放中心裁剪成固定尺寸。
+函数名：NewUiWindow::buildHeadAvatarPixmap：从 maps/logo/head.png 读取默认头像并缩放中心裁剪成固定尺寸。
+函数名：NewUiWindow::pickAndApplyLocalAvatar：弹出文件选择器选择头像；保存到 avatars/<myId>.png；更新本机头像展示并发布一次。
+函数名：NewUiWindow::avatarCacheDirPath：返回头像缓存目录（applicationDirPath/avatars）。
+函数名：NewUiWindow::avatarCacheFilePath：返回某用户头像缓存文件路径（avatars/<userId>.png）。
+函数名：NewUiWindow::ensureAvatarCacheDir：确保头像缓存目录存在。
+函数名：NewUiWindow::makeCircularPixmap：把输入图缩放并中心裁剪成指定尺寸的正方形。
+函数名：NewUiWindow::setAvatarLabelPixmap：按 label 当前尺寸裁剪并设置头像 pixmap。
+函数名：NewUiWindow::publishLocalAvatarOnce：向 avatarPublisher 发送头像关键帧（force=true）。
+函数名：NewUiWindow::publishLocalAvatarHint：向 avatarPublisher 发送头像非关键帧/提示帧（force=false）。
+函数名：NewUiWindow::refreshLocalAvatarFromCache：从缓存读取本机头像并同步到本机卡片与标题栏头像。
+函数名：NewUiWindow::ensureAvatarSubscription：为指定 userId 建立头像订阅（/subscribe/avatar_<userId>）；收到后写缓存并更新 UI。
+函数名：NewUiWindow::setTalkPending/setTalkConnected/setTalkRemoteActive：维护对讲按钮属性、spinner 动画、以及卡片“通话中”叠层与样式。
+函数名：NewUiWindow::updateTalkOverlay：根据 pending/on 状态显隐叠层，并动态切换卡片边框色（选中橙/通话绿/默认灰）。
+函数名：NewUiWindow::updateListWidget：旧在线列表同步实现（增删用户、订阅 /subscribe/<id>、刷新名称；当前主流程由 MainWindow 调用 addUser/removeUser）。
+函数名：NewUiWindow::setupUi：搭建三栏 UI（左导航/右主内容/右侧“我的房间”）；初始化标题栏按钮、QStackedWidget、卡片列表、HiFps watchdog 与各种交互信号。
+函数名：NewUiWindow::showFunction1Browser：切换到“故事板”WebView 页。
+函数名：NewUiWindow::showHomeContent：切换回主页卡片列表页。
+函数名：NewUiWindow::updateTitleMaximizeButton：根据 windowState 切换最大化/还原图标与 tooltip。
+函数名：NewUiWindow::event：在窗口激活/失活时暂停/恢复 HiFps 与自动暂停计时，并在非激活态停止所有 HiFps 发布。
+函数名：NewUiWindow::eventFilter：处理 resize grip 拉伸、标题栏拖拽、列表空白点击清选中、卡片单击选中/双击观看、logo 打开官网、头像点击更换、侧栏显隐等。
+函数名：NewUiWindow::sendKickToSubscribers：通过推流 publish socket 往房间发 kick_viewer 文本消息（viewer_id/target_id/timestamp）。
+函数名：NewUiWindow::publishLocalScreenFrame：抓屏生成 preview/send 两份 pixmap；更新本机预览，并通过 m_streamClient 发送 sendPix（二进制帧）。
+函数名：NewUiWindow::buildLocalScreenFrame：按 m_captureScreenIndex 优先抓取目标屏幕，失败回退其他屏幕；统一裁剪成圆角预览并压缩为较小 JPG 再解码回预览（模拟低码率预览）。
+函数名：NewUiWindow::extractUserId：从 QObject 链向上查找 userId 属性（用于从任意子控件定位所属卡片用户）。
+函数名：NewUiWindow::makeHoverChannelId：构造 HiFps hover 频道（hfps_<targetId>_<myId> 或 hfps_<targetId>）。
+函数名：NewUiWindow::scheduleHoverHiFps：记录 hover 候选 userId 与鼠标位置，并在 1s 后仍停留时触发 startHiFpsForUser。
+函数名：NewUiWindow::cancelHoverHiFps：取消 hover 候选并停止当前 HiFps 订阅。
+函数名：NewUiWindow::startHiFpsForUser：为某远端 userId 建立 HiFps 订阅（/subscribe/<hfps_*>)，并通过 sendHiFpsControl 请求对方向该频道以指定 fps 发布。
+函数名：NewUiWindow::stopHiFpsForUser：停止 HiFps 订阅并发送 enabled=false 的 hover_stream 控制消息。
+函数名：NewUiWindow::sendHiFpsControl：向目标的 subscribe socket 与本机 publish socket 双通道发送 hover_stream 文本控制；未连接则挂 SingleShotConnection 等待连接后补发。
+函数名：NewUiWindow::startHiFpsPublishing：当本机作为被 hover 的目标时，按 channelId 建立 /publish/<channelId> 并用定时器按 fps 发布 300px 宽预览帧；同时申请 keep-awake。
+函数名：NewUiWindow::stopHiFpsPublishing：停止对应频道定时器与发布 socket；当无任何活跃 HiFps 发布时释放 keep-awake。
+函数名：NewUiWindow::resetSelectionAutoPause：对选中 userId 启动 60s 计时；到期后 pauseSelectedStreamForUser 显示“请重新点击观看”并停止 HiFps。
+函数名：NewUiWindow::pauseSelectedStreamForUser：标记 m_autoPausedUserId 并显示重选叠层；若该用户正处于 HiFps 则停止。
+函数名：NewUiWindow::resumeSelectedStreamForUser：取消自动暂停标记并隐藏重选叠层。
+函数名：NewUiWindow::addUser/removeUser：与 MainWindow 联动的在线用户增删入口；负责 UI 卡片与 StreamClient/头像订阅生命周期。
+函数名：NewUiWindow::updateResizeGrips：按窗口 rect 布局 8 个拉伸触发区并置顶。
+函数名：NewUiWindow::setResizeGripsVisible：统一显隐 8 个拉伸触发区（最大化时隐藏）。
+函数名：NewUiWindow::restartUserStreamSubscription：对指定 userId 重新发送 start_streaming/重连订阅，并在选中态下强制拉起 HiFps。
+函数名：NewUiWindow::onVideoReceivingStopped：若目标为当前选中或 HiFps 活跃，则触发 HiFps 自恢复。
+函数名：NewUiWindow::updateUserAvatar：按缓存优先更新卡片头像（无缓存且已有 pixmap 则不重复设置）。
+函数名：NewUiWindow::getCurrentUserId：返回 m_myStreamId。
+## src/NewUi/StreamClient.h
+
+函数名：StreamClient::StreamClient：封装 QWebSocket；建立连接/断线/收发帧与重连定时器的基础信号槽。
+函数名：StreamClient::~StreamClient：析构时停止重连并关闭 WebSocket。
+函数名：StreamClient::connectToServer：保存 url、开启自动重连、清空重连计数并 open。
+函数名：StreamClient::disconnectFromServer：关闭自动重连、停止重连计时器并 close。
+函数名：StreamClient::setJpegQuality：设置 sendFrame 的 JPEG 压缩质量（0-100）。
+函数名：StreamClient::sendFrame：把 QPixmap 压缩成 JPG 并通过二进制消息发送；默认避免 20 秒内重复发送同一帧。
+函数名：StreamClient::sendTextMessage：发送文本消息（未连接时返回 -1 并输出日志）。
+函数名：StreamClient::isConnected：返回当前连接状态标志。
+
+信号：StreamClient::connected：WebSocket 连接成功。
+信号：StreamClient::disconnected：WebSocket 断开。
+信号：StreamClient::errorOccurred：发生 socket 错误（带 errorString）。
+信号：StreamClient::logMessage：输出内部调试日志。
+信号：StreamClient::frameReceived：收到二进制帧并解码成 QPixmap 后上抛。
+信号：StreamClient::startStreamingRequested：收到 start_streaming（纯文本或 JSON）后上抛。
+信号：StreamClient::hoverStreamRequested：收到 hover_stream 控制消息后上抛（target/channel/fps/enabled）。
+
+函数名：StreamClient::onConnected：置 connected=true，清空收发缓存并发射 connected。
+函数名：StreamClient::onDisconnected：置 connected=false，发射 disconnected 并按需安排重连。
+函数名：StreamClient::onTextMessageReceived：处理 start_streaming / hover_stream（支持纯文本与 JSON 格式）。
+函数名：StreamClient::onBinaryMessageReceived：去重后解码图片数据并发射 frameReceived。
+函数名：StreamClient::onError：发射 errorOccurred 并按需安排重连。
+函数名：StreamClient::scheduleReconnect：按递增延迟（上限 8s）启动单次重连计时器。
+函数名：StreamClient::attemptReconnect：到点后在非连接/非连接中状态下重新 open 上次 url。
+
+变量名：m_webSocket：底层 QWebSocket。
+变量名：m_isConnected：连接状态缓存。
+变量名：m_lastSentBytes：最近一次成功发送的二进制帧（用于去重）。
+变量名：m_lastSentAtMs：最近一次成功发送时间戳（ms）。
+变量名：m_lastReceivedBytes：最近一次收到的二进制帧（用于去重）。
+变量名：m_jpegQuality：发送帧的 JPEG 质量（默认 30）。
+变量名：m_reconnectTimer：单次重连定时器（singleShot）。
+变量名：m_lastUrl：上次连接的 url（用于自动重连）。
+变量名：m_shouldReconnect：是否允许自动重连。
+变量名：m_reconnectAttempts：自动重连次数（用于退避计算）。
+## src/NewUi/StreamClient.cpp
+
+函数名：StreamClient::sendFrame：JPG 压缩后走 sendBinaryMessage；非 force 时对“完全相同帧”做 20s 节流。
+函数名：StreamClient::onTextMessageReceived：优先识别纯文本 start_streaming；其次解析 JSON 的 type=start_streaming/hover_stream。
+函数名：StreamClient::onBinaryMessageReceived：对完全相同的二进制消息直接丢弃，避免 UI 重复刷新。
+函数名：StreamClient::scheduleReconnect：仅在 shouldReconnect=true 且 url 有效、且 socket 非连接/连接中时安排重连。
+函数名：StreamClient::attemptReconnect：按 m_lastUrl 重开连接并输出日志。
+## src/NewUi/LoginClient.h
+
+函数名：LoginClient::LoginClient：封装登录信令 WebSocket；初始化心跳定时器（5s）。
+函数名：LoginClient::~LoginClient：析构时停止心跳并关闭 WebSocket。
+函数名：LoginClient::connectToServer：连接到 /login 入口。
+函数名：LoginClient::disconnectFromServer：主动断开登录 WebSocket。
+函数名：LoginClient::login：发送 login 消息（type=login,data={id,name}），并在成功连接后启动心跳。
+函数名：LoginClient::isConnected：返回登录连接状态。
+
+信号：LoginClient::connected：登录 WebSocket 已连接。
+信号：LoginClient::disconnected：登录 WebSocket 已断开。
+信号：LoginClient::errorOccurred：登录 WebSocket 错误字符串。
+信号：LoginClient::logMessage：日志输出。
+信号：LoginClient::userListUpdated：收到 online_users_update 后抛出 users 数组。
+
+变量名：m_webSocket：登录信令 QWebSocket。
+变量名：m_isConnected：连接状态缓存。
+变量名：m_heartbeatTimer：心跳定时器（5s）。
+变量名：m_currentUserId：当前登录 userId（心跳携带）。
+## src/NewUi/LoginClient.cpp
+
+函数名：LoginClient::login：保存 m_currentUserId；发送 login JSON；启动 5s 心跳。
+函数名：LoginClient::sendHeartbeat：周期发送 heartbeat（type=heartbeat,id=<userId>）保持在线。
+函数名：LoginClient::onTextMessageReceived：解析 online_users_update 并发射 userListUpdated；解析 login_response 但不做 UI 行为。
+## src/NewUi/main.cpp
+
+函数名：main：NewUi 独立入口；初始化 QApplication 与 AppConfig；创建并展示 NewUiWindow。
+## src/NewUi/CMakeLists.txt
+
+项名：project：NewUiTest；NewUi 独立编译/调试用的最小 CMake 工程目标。
+配置项：CMAKE_CXX_STANDARD：C++17。
+配置项：CMAKE_AUTOMOC/CMAKE_AUTOUIC/CMAKE_AUTORCC：启用 Qt 自动生成流程。
+配置项：CMAKE_PREFIX_PATH：默认指向本机 Qt 安装路径（C:/Qt/6.8.3/msvc2022_64）。
+依赖：find_package(Qt6 COMPONENTS Core Widgets Gui WebSockets REQUIRED)。
+目标名：NewUiTest：可执行文件；包含 main.cpp、NewUiWindow、StreamClient、LoginClient。
+构建后步骤：拷贝资源目录 ../../src/maps/logo 到 输出目录 maps/logo；拷贝 maps/t.png 到 输出目录 maps/t.png。
+## src/NewUi/README.md
+
+内容：目前为空文件（占位）。
+## src/common/AppConfig.h
+
+函数名：AppConfig::applicationName：返回应用名（irulerdeskpro）。
+函数名：AppConfig::applicationVersion：返回应用版本号（1.0.2）。
+函数名：AppConfig::organizationName：返回组织名（irulerdeskpro）。
+函数名：AppConfig::applyApplicationInfo：设置 QCoreApplication 的 name/version/orgName。
+函数名：AppConfig::defaultServerAddress：默认服务器地址（115.159.43.237:8765）。
+函数名：AppConfig::normalizeWsBaseUrl：把输入规范化成 ws:// 或 wss:// 前缀的 baseUrl。
+函数名：AppConfig::configFilePathInAppDir：返回并确保应用目录下 config/app_config.txt 路径存在。
+函数名：AppConfig::configFileCandidatePaths：返回多个配置候选路径（appDir、cwd、AppDataLocation 等）。
+函数名：AppConfig::readConfigValue：按 key= 形式遍历候选文件读取配置值，支持注释行与 UTF-8。
+函数名：AppConfig::serverAddress：读取 server_address，缺失则回退 defaultServerAddress。
+函数名：AppConfig::wsBaseUrl：基于 serverAddress 构造 WebSocket baseUrl。
+## src/common/ConsoleLogger.h
+
+函数名：ConsoleLogger::attachToParentConsole：Windows 下尝试 AttachConsole 到父进程终端并重定向 stdin/stdout/stderr。
+函数名：ConsoleLogger::installQtMessageHandler：安装 Qt 消息处理器，把 qDebug/qInfo/qWarning/qCritical 输出到控制台与日志文件。
+## src/common/ConsoleLogger.cpp
+
+函数名：qtConsoleMessageHandler：统一格式化 Qt 日志；过滤特定噪声日志；Release 下默认仅保留 Critical/Fatal（或带 [KickDiag] 关键字）。
+函数名：ConsoleLogger::attachToParentConsole：设置控制台编码 UTF-8，并禁用 stdout/stderr 缓冲便于实时输出。
+函数名：ConsoleLogger::installQtMessageHandler：调用 qInstallMessageHandler(qtConsoleMessageHandler)。
+
+变量名：logFile：懒加载的进程日志文件（applicationDirPath/logs/process_<pid>.log）。
+变量名：logMutex：写日志文件互斥锁，避免多线程交错。
+## src/common/CrashGuard.h
+
+函数名：CrashGuard::install：安装未处理异常捕获（Windows）并在崩溃时输出调用栈。
+## src/common/CrashGuard.cpp
+
+函数名：UnhandledExceptionFilterFn：Windows 未处理异常回调；使用 dbghelp 输出最多 64 帧调用栈（尽量带源码行号），最后 ExitProcess(1)。
+函数名：CrashGuard::install：调用 SetUnhandledExceptionFilter 注册 UnhandledExceptionFilterFn。
+## src/VideoWindow.h
+
+函数名：VideoWindow::VideoWindow：无边框视频窗口构造；创建标题栏与工具条；内嵌 VideoDisplayWidget。
+函数名：VideoWindow::~VideoWindow：析构清理长按定时器/浮层提示等 UI 状态。
+函数名：VideoWindow::getVideoDisplayWidget：返回内嵌的视频显示组件。
+函数名：VideoWindow::setMicChecked/setMicCheckedSilently/isMicChecked：同步标题栏麦克风按钮状态（silently 不触发信号）。
+函数名：VideoWindow::setSpeakerChecked/isSpeakerChecked：同步标题栏扬声器按钮状态。
+
+信号：VideoWindow::avatarUpdateReceived：透传头像更新（userId/iconId）。
+信号：VideoWindow::receivingStopped：透传停止接收（viewerId/targetId）。
+信号：VideoWindow::micToggled：麦克风按钮切换。
+信号：VideoWindow::speakerToggled：扬声器按钮切换。
+信号：VideoWindow::closeClicked：窗口关闭按钮点击。
+
+函数名：VideoWindow::mousePressEvent/mouseMoveEvent/mouseReleaseEvent：无边框窗口拖拽移动。
+函数名：VideoWindow::paintEvent：绘制窗口背景/圆角效果等。
+函数名：VideoWindow::nativeEvent：拦截系统消息（Windows）用于窗口行为适配。
+函数名：VideoWindow::eventFilter：处理子控件事件（如双击全屏、滑条拖拽等）。
+函数名：VideoWindow::resizeEvent：窗口尺寸变化时同步浮层/控件位置。
+
+变量名：m_videoDisplayWidget：视频显示与交互核心（解码/批注/音频/对讲/输入采集）。
+变量名：m_micButton/m_speakerButton：标题栏音频开关按钮。
+变量名：m_penButton/.../m_eraserButton：批注工具按钮组。
+变量名：m_colorButton：批注颜色按钮（与 VideoDisplayWidget 的 colorId 同步）。
+变量名：m_textSizeSlider/m_volumeSlider：长按弹出的字体大小/音量滑条控件。
+变量名：m_dragging/m_dragPosition：窗口拖拽状态。
+变量名：m_isMaximized/m_normalGeometry：最大化/还原状态缓存。
+## src/video_components/AudioPlayer.h
+
+函数名：AudioPlayer::AudioPlayer/~AudioPlayer：初始化/清理 QAudioSink 与设备监测。
+函数名：AudioPlayer::setSpeakerEnabled/isSpeakerEnabled：本地扬声器播放开关。
+函数名：AudioPlayer::setVolumePercent/volumePercent：设置播放音量百分比。
+函数名：AudioPlayer::selectAudioOutputFollowSystem/selectAudioOutputById/selectAudioOutputByRawId：选择输出设备（跟随系统/指定设备）。
+函数名：AudioPlayer::applyAudioOutputSelectionRuntime：运行期重建/切换 sink 使设备选择即时生效。
+函数名：AudioPlayer::processAudioData：输入 PCM（含采样率/通道/位深）并写入播放缓冲（必要时重采样/转换）。
+函数名：AudioPlayer::stop：停止播放并释放相关资源。
+
+信号：AudioPlayer::audioOutputSelectionChanged：输出设备选择变化回调（followSystem/deviceId）。
+
+变量名：m_audioSink/m_audioIO：Qt 音频输出与写入通道。
+变量名：m_followSystemOutput/m_outputDeviceId：输出设备选择策略与目标设备 ID。
+变量名：m_ringBuffer：简单环形缓冲，用于平滑写入与避免阻塞。
+## src/video_components/VideoDisplayWidget.h
+
+函数名：VideoDisplayWidget::VideoDisplayWidget/~VideoDisplayWidget：视频接收组件构造/析构；管理 receiver/decoder/audioPlayer 生命周期。
+函数名：VideoDisplayWidget::startReceiving/stopReceiving/pauseReceiving：启动/停止/暂停接收（stop 可选择是否重建接收器）。
+函数名：VideoDisplayWidget::sendWatchRequest：向采集端发送 watch_request（viewerId/targetId）。
+函数名：VideoDisplayWidget::setSessionInfo：设置会话信息（viewerId/targetId），用于重连/恢复流程。
+函数名：VideoDisplayWidget::setAudioOnlySession：标记是否为音频-only 会话并通知 receiver。
+函数名：VideoDisplayWidget::setViewerName：设置观看端昵称并同步到 receiver（用于对讲/光标名等上行字段）。
+函数名：VideoDisplayWidget::setShowControls：显隐组件内部控制条（开始/停止、状态栏、统计等）。
+函数名：VideoDisplayWidget::setAnnotationColorId/annotationColorId：设置/获取批注颜色 ID。
+函数名：VideoDisplayWidget::setAnnotationEnabled/setToolMode/setTextFontSize：批注开关、工具模式与文字大小。
+函数名：VideoDisplayWidget::sendSwitchScreenIndex：请求采集端按索引切屏（不断流热切换）。
+函数名：VideoDisplayWidget::sendAudioToggle：请求采集端开启/关闭测试音发送。
+函数名：VideoDisplayWidget::setSpeakerEnabled/setVolumePercent：本地播放开关与音量。
+函数名：VideoDisplayWidget::setMicGainPercent：设置本地麦克风增益百分比（对讲上行用）。
+函数名：VideoDisplayWidget::setTalkEnabled/setMicSendEnabled：对讲开关与麦克风是否上行发送。
+函数名：VideoDisplayWidget::selectAudioOutputFollowSystem/selectAudioOutputById：选择本地音频输出设备。
+函数名：VideoDisplayWidget::selectMicInputFollowSystem/selectMicInputById：选择本地麦克风输入设备。
+函数名：VideoDisplayWidget::applyAudioOutputSelectionRuntime：让输出设备选择立即生效。
+
+信号：VideoDisplayWidget::receivingStopped：停止接收时抛出（viewerId/targetId），用于上层清理会话状态。
+信号：VideoDisplayWidget::fullscreenToggleRequested：双击视频区域请求全屏切换。
+信号：VideoDisplayWidget::annotationColorChanged：批注颜色变化（用于上层持久化与 UI 同步）。
+信号：VideoDisplayWidget::audioOutputSelectionChanged/micInputSelectionChanged：本地设备选择变化回调。
+信号：VideoDisplayWidget::avatarUpdateReceived：收到头像更新事件（userId/iconId）。
+
+槽函数：VideoDisplayWidget::renderFrame/renderFrameWithTimestamp：渲染解码后的 RGB 帧（带捕获时间戳用于端到端延迟统计）。
+槽函数：VideoDisplayWidget::onMousePositionReceived：接收远端鼠标位置并更新叠加显示状态。
+槽函数：VideoDisplayWidget::sendUndo/sendClear/sendCloseOverlay/sendLike：向采集端发送撤销/清屏/关闭浮层/点赞等控制。
+函数名：VideoDisplayWidget::eventFilter：拦截视频区域鼠标/键盘事件并映射到源坐标（用于批注与光标上行）。
+
+变量名：m_receiver：WebSocketReceiver；负责订阅二进制帧与收发控制/音频/对讲消息。
+变量名：m_decoder：DxvaVP9Decoder；优先硬解 VP9（失败回退软件解码）。
+变量名：m_audioPlayer：AudioPlayer；本地 PCM 播放与设备选择。
+变量名：m_lastViewerId/m_lastTargetId：最近一次会话信息（重连后自动恢复用）。
+变量名：m_annotationEnabled/m_toolMode/m_currentColorId：批注状态与颜色 ID。
+## src/ui/SystemSettingsWindow.h
+
+函数名：SystemSettingsWindow::SystemSettingsWindow：系统设置弹窗构造；承载屏幕选择、画质选择、用户名编辑、手动审批与上线通知等开关项。
+
+信号：SystemSettingsWindow::screenSelected：选择屏幕索引变化通知。
+信号：SystemSettingsWindow::localQualitySelected：本地画质预设选择（low/medium/high/extreme）。
+信号：SystemSettingsWindow::userNameChanged：用户名确认后通知上层写入配置并同步到在线信令。
+信号：SystemSettingsWindow::manualApprovalEnabledChanged：手动同意观看开关变更通知。
+信号：SystemSettingsWindow::onlineNotificationEnabledChanged：上线/下线 toast 通知开关变更。
+
+槽函数：SystemSettingsWindow::notifySwitchSucceeded：通知切屏成功（用于关闭/更新 m_progress 等提示状态）。
+
+函数名：SystemSettingsWindow::populateScreens：枚举屏幕并填充列表项。
+函数名：SystemSettingsWindow::setupQualityControls：创建画质单选按钮组并绑定选择逻辑。
+函数名：SystemSettingsWindow::setupUserNameControls：创建用户名输入与确认按钮并绑定提交逻辑。
+函数名：SystemSettingsWindow::setupManualApprovalControls：创建“手动审批”开关控件并返回容器 Frame。
+函数名：SystemSettingsWindow::setupNotificationControls：创建“上线通知”开关控件并返回容器 Frame。
+
+变量名：m_list：屏幕列表控件。
+变量名：m_progress：切屏中的进度提示框。
+变量名：m_qualityLabel/m_qualityGroup：画质区域标题与单选按钮组。
+变量名：m_lowBtn/m_mediumBtn/m_highBtn/m_extremeBtn：画质预设单选按钮。
+变量名：m_userNameLabel/m_userNameEdit/m_userNameConfirmBtn：用户名输入与确认按钮。
+变量名：m_manualApprovalCheck：手动审批勾选框。
+变量名：m_onlineNotificationCheck：上线通知勾选框。
+## src/ui/AvatarSettingsWindow.h
+
+函数名：AvatarSettingsWindow::AvatarSettingsWindow/~AvatarSettingsWindow：头像选择窗口构造/析构；创建自定义标题栏与头像网格。
+
+信号：AvatarSettingsWindow::avatarSelected：用户选择头像后抛出 iconId。
+
+槽函数：AvatarSettingsWindow::onMinimizeClicked/onCloseClicked：标题栏最小化/关闭按钮响应。
+槽函数：AvatarSettingsWindow::onAvatarClicked：点击某个头像（iconId）并更新选中态。
+
+函数名：AvatarSettingsWindow::setupUI：组装整体布局（标题栏 + 滚动区域）。
+函数名：AvatarSettingsWindow::setupCustomTitleBar：创建自绘标题栏与按钮。
+函数名：AvatarSettingsWindow::setupAvatarGrid：创建头像网格布局与占位控件。
+函数名：AvatarSettingsWindow::loadAvatarImages：从 maps/logo 或资源目录加载头像图片并填充网格。
+函数名：AvatarSettingsWindow::selectAvatar：设置选中 iconId 并更新选中框/预览。
+
+函数名：AvatarSettingsWindow::mousePressEvent/mouseMoveEvent/mouseReleaseEvent：无边框窗口拖拽移动。
+函数名：AvatarSettingsWindow::paintEvent：窗口背景与圆角等自绘。
+函数名：AvatarSettingsWindow::eventFilter：处理头像标签点击/hover 等交互（用于转发到 onAvatarClicked）。
+
+变量名：m_mainLayout：主布局（垂直）。
+变量名：m_titleBar/m_titleBarLayout：自定义标题栏与其布局。
+变量名：m_titleLabel：标题文字。
+变量名：m_minimizeButton/m_closeButton：标题栏按钮。
+变量名：m_scrollArea/m_contentWidget/m_contentLayout：滚动区域与内容容器。
+变量名：m_avatarGridLayout：头像网格布局。
+变量名：m_dragging/m_dragPosition：拖拽状态。
+变量名：m_selectedIconId：当前选中的头像 ID。
+变量名：m_selectedAvatarLabel：选中态高亮/预览 Label。
+变量名：m_avatarLabels：网格中所有头像 Label 列表（便于更新选中样式）。
+
+常量：AVATAR_SIZE/GRID_COLUMNS/WINDOW_WIDTH/WINDOW_HEIGHT：头像尺寸、列数、窗口尺寸。
+## src/ui/FirstLaunchWizard.h
+
+函数名：FirstLaunchWizard::FirstLaunchWizard：首次启动向导构造；通过多页栈收集用户名与默认屏幕索引。
+函数名：FirstLaunchWizard::userName：返回向导最终填写的用户名（可为空则上层兜底）。
+函数名：FirstLaunchWizard::screenIndex：返回选择的屏幕索引（未选中时为 -1）。
+函数名：FirstLaunchWizard::exitRequested：返回是否在向导期间请求退出（closeEvent 设置）。
+
+函数名：FirstLaunchWizard::closeEvent：拦截关闭以标记退出请求状态。
+
+函数名：FirstLaunchWizard::setupStyle：初始化向导的统一样式（字体/背景/按钮）。
+函数名：FirstLaunchWizard::buildPages：构建所有页面并设置到 QStackedWidget。
+函数名：FirstLaunchWizard::buildUserPage：构建“用户名”页面。
+函数名：FirstLaunchWizard::buildScreenPage：构建“屏幕选择”页面（预览缩略图/按钮组）。
+函数名：FirstLaunchWizard::selectScreen：选择并记录屏幕索引。
+函数名：FirstLaunchWizard::updateNav：更新上一页/下一页/完成/跳过按钮可用状态。
+
+变量名：m_stack：页面栈容器。
+变量名：m_userPage/m_screenPage：用户名页与屏幕页。
+变量名：m_nameEdit：用户名输入框。
+变量名：m_screenRow：屏幕按钮横向容器。
+变量名：m_screenButtons/m_screenGroup：屏幕选择按钮列表与按钮组。
+变量名：m_selectedScreenIndex：当前选择的屏幕索引。
+变量名：m_prevBtn/m_nextBtn/m_finishBtn/m_skipBtn：导航按钮。
+变量名：m_exitRequested：是否在向导内发起退出。
+## src/ui/StreamingIslandWidget.h
+
+函数名：StreamingIslandWidget::StreamingIslandWidget/~StreamingIslandWidget：推流灵动岛悬浮窗构造/析构；承载 AnnotationToolbar 与 ScreenAnnotationWidget。
+函数名：StreamingIslandWidget::showOnScreen：展示并定位到目标屏幕区域。
+函数名：StreamingIslandWidget::setTargetScreen：设置目标屏幕（用于定位与遮罩尺寸更新）。
+
+信号：StreamingIslandWidget::stopStreamingRequested：用户请求停止推流。
+
+函数名：StreamingIslandWidget::mousePressEvent/mouseMoveEvent/mouseReleaseEvent：拖拽移动灵动岛。
+函数名：StreamingIslandWidget::hideEvent：隐藏时回收/重置交互状态。
+函数名：StreamingIslandWidget::resizeEvent/moveEvent：窗口尺寸或位置变化时更新批注遮罩与交互区域。
+
+函数名：StreamingIslandWidget::setupUI：创建内容容器、工具栏与批注层并布局。
+函数名：StreamingIslandWidget::showClipboardToast：显示剪贴板/提示性 toast（截屏/片段等入口反馈）。
+函数名：StreamingIslandWidget::updateAnnotationMask：更新 ScreenAnnotationWidget 的遮罩/可绘制区域以匹配目标屏幕与窗口位置。
+
+变量名：m_contentWidget：内容容器。
+变量名：m_layout：水平布局。
+变量名：m_toolbar：批注工具条（工具/颜色/撤销/清屏/截图/片段）。
+变量名：m_annotationWidget：本地屏幕批注绘制层（覆盖在目标屏幕上）。
+变量名：m_dragging/m_dragPosition：拖拽状态。
+变量名：m_targetScreen：目标屏幕指针。
+## src/ui/AnnotationToolbar.h
+
+函数名：AnnotationToolbar::AnnotationToolbar/~AnnotationToolbar：批注工具条构造/析构；创建工具按钮与颜色选择按钮。
+函数名：AnnotationToolbar::resetTools：复位所有工具为未选中状态。
+函数名：AnnotationToolbar::currentColorId：返回当前选择的颜色 ID。
+
+信号：AnnotationToolbar::toolSelected：工具模式变更（0:None,1:Pen,2:Rect,3:Circle,4:Arrow,5:Text,6:Eraser）。
+信号：AnnotationToolbar::colorChanged：颜色 ID 变更。
+信号：AnnotationToolbar::undoRequested：请求撤销。
+信号：AnnotationToolbar::cameraRequested：请求截图（整屏）。
+信号：AnnotationToolbar::snippetRequested：请求截取片段。
+信号：AnnotationToolbar::clearRequested：请求清屏。
+
+槽函数：AnnotationToolbar::onToolToggled：工具按钮切换处理（互斥、取消等）。
+槽函数：AnnotationToolbar::updateToolStyles：刷新按钮样式（选中态/默认态）。
+
+函数名：AnnotationToolbar::setupUI：创建并布局颜色按钮、各工具按钮与功能按钮。
+
+变量名：m_layout：水平布局。
+变量名：m_colorButton：颜色选择按钮。
+变量名：m_penButton/m_rectButton/m_circleButton/m_arrowButton/m_textButton/m_eraserButton：工具按钮组。
+变量名：m_undoButton/m_cameraButton/m_snippetButton/m_clearButton：功能按钮组。
+变量名：m_micButtonStyle/m_selectedToolStyle：样式字符串缓存。
+## src/ui/ScreenAnnotationWidget.h
+
+类型：AnnotationItem：本地批注数据结构（Pen/Rect/Circle/Arrow/Text/Eraser），包含 path/start/end/text/penWidth/colorId 等字段。
+
+函数名：ScreenAnnotationWidget::ScreenAnnotationWidget/~ScreenAnnotationWidget：批注绘制层构造/析构。
+函数名：ScreenAnnotationWidget::setTool：设置当前工具模式（0-6）。
+函数名：ScreenAnnotationWidget::setColorId：设置颜色 ID。
+函数名：ScreenAnnotationWidget::clear：清空所有已绘制项。
+函数名：ScreenAnnotationWidget::undo：撤销最近一次绘制动作。
+函数名：ScreenAnnotationWidget::setEnabled/isEnabled：控制批注层启用与事件穿透（enabled=false 时仅做透明遮罩或完全穿透）。
+
+信号：ScreenAnnotationWidget::toolCancelled：例如 ESC 取消当前工具状态的通知。
+
+函数名：ScreenAnnotationWidget::paintEvent：绘制所有历史项与当前项。
+函数名：ScreenAnnotationWidget::mousePressEvent/mouseMoveEvent/mouseReleaseEvent：绘制交互（收集路径/更新形状终点/完成一次操作）。
+函数名：ScreenAnnotationWidget::keyPressEvent：处理快捷键（如 ESC 取消）。
+
+函数名：ScreenAnnotationWidget::drawItem：按类型绘制单个 AnnotationItem。
+函数名：ScreenAnnotationWidget::getColor：根据颜色 ID 取 QColor。
+
+变量名：m_items：历史绘制项列表。
+变量名：m_currentItem：当前正在绘制的项。
+变量名：m_isDrawing：是否处于绘制中。
+变量名：m_currentTool：当前工具模式（0-6）。
+变量名：m_currentColorId：当前颜色 ID。
+变量名：m_enabled：是否启用批注层。
+## src/ui/SnippetOverlay.h
+
+函数名：SnippetOverlay::SnippetOverlay：截图选区浮层构造；传入全屏截取的 fullPixmap 作为背景。
+
+函数名：SnippetOverlay::paintEvent：绘制蒙层与选区矩形。
+函数名：SnippetOverlay::mousePressEvent/mouseMoveEvent/mouseReleaseEvent：拖拽选择区域并更新 m_selectionRect。
+函数名：SnippetOverlay::mouseDoubleClickEvent：双击确认选区。
+函数名：SnippetOverlay::keyPressEvent：键盘取消/确认（如 ESC）。
+
+函数名：SnippetOverlay::confirmSelection：确认选区并输出（通常写入剪贴板或触发上层回调）。
+函数名：SnippetOverlay::cancelSelection：取消选区并关闭浮层。
+
+变量名：m_fullPixmap：全屏背景图。
+变量名：m_startPos/m_currentPos：拖拽起点与当前点。
+变量名：m_selectionRect：选区矩形。
+变量名：m_isSelecting：是否处于拖拽选择。
+变量名：m_selectionFinished：是否已完成一次选区。
+## src/ui/BubbleTipWidget.h
+
+函数名：BubbleTipWidget::BubbleTipWidget：气泡提示构造；内部使用 QLabel 显示文本。
+函数名：BubbleTipWidget::showBubble：按 anchorPoint（头像右侧中心的全局坐标）定位并显示气泡；isSelf 控制背景色。
+
+函数名：BubbleTipWidget::paintEvent：绘制气泡圆角矩形与箭头。
+
+变量名：m_label：文本标签。
+变量名：m_backgroundColor：背景色（根据 isSelf 切换）。
+
+常量：ARROW_WIDTH/ARROW_HEIGHT/BORDER_RADIUS/PADDING_H/PADDING_V：气泡样式参数。
+## src/ui/ColorCircleButton.h
+
+函数名：ColorCircleButton::ColorCircleButton：颜色圆点按钮构造。
+函数名：ColorCircleButton::setColorId/colorId：设置/获取颜色 ID。
+
+函数名：ColorCircleButton::paintEvent：绘制圆形颜色按钮（含 hover/边框效果）。
+函数名：ColorCircleButton::enterEvent/leaveEvent：维护 hovered 状态并触发重绘。
+函数名：ColorCircleButton::sizeHint：返回推荐尺寸。
+
+函数名：ColorCircleButton::colorForId：把颜色 ID 映射为实际 QColor。
+
+变量名：m_colorId：当前颜色 ID。
+变量名：m_hovered：是否 hover。
+## src/ui/RainbowToolButton.h
+
+函数名：RainbowToolButton::RainbowToolButton/~RainbowToolButton：彩虹渐变按钮构造/析构；内部使用定时器驱动动画角度变化。
+
+函数名：RainbowToolButton::paintEvent：自绘按钮（渐变边框/彩虹效果等）。
+
+槽函数：RainbowToolButton::updateAnimation：更新动画角度并触发重绘。
+
+变量名：m_timer：动画定时器。
+变量名：m_angle：当前动画角度。
+## src/capture/ScreenCapture.h
+
+函数名：ScreenCapture::initialize/cleanup：初始化/释放捕获资源（Windows 优先 D3D11/DXGI，失败回退 Qt 抓屏）。
+函数名：ScreenCapture::captureScreen：抓取一帧屏幕图像并返回字节数据（RGBA 等原始格式，供编码器使用）。
+函数名：ScreenCapture::getScreenSize：返回当前捕获屏幕尺寸。
+函数名：ScreenCapture::setTargetScreenIndex：设置目标屏幕索引（多屏）。
+
+信号：ScreenCapture::frameReady：输出帧数据。
+信号：ScreenCapture::error：捕获错误文本。
+
+变量名：m_useD3D11：是否使用 D3D11 捕获路径。
+变量名：m_targetScreenIndex：当前目标屏幕索引。
+## src/capture/VP9Encoder.h
+
+函数名：VP9Encoder::initialize/cleanup：初始化/释放 VP9 编码器上下文与 YUV 缓冲。
+函数名：VP9Encoder::encode：把抓屏原始帧编码成 VP9（可传入输入宽高用于缩放/适配）。
+函数名：VP9Encoder::setQualityPreset：按字符串 quality 预设批量调整编码参数。
+函数名：VP9Encoder::forceKeyFrame：强制下一帧生成关键帧。
+
+函数名：VP9Encoder::setEnableStaticDetection/setStaticThreshold/setStaticBitrateReduction/setSkipStaticFrames：静态检测与“静止画面省流”策略参数。
+函数名：VP9Encoder::setCpuUsed/setQuantizerRange/setRateControl/setDeadline：更细粒度编码器参数调优入口。
+
+信号：VP9Encoder::frameEncoded/frameEncodedWithInfo：编码完成输出（含是否关键帧）。
+信号：VP9Encoder::error：编码错误。
+
+变量名：m_codec/m_config/m_rawImage：libvpx 编码器上下文与配置。
+变量名：m_frameSize/m_frameRate/m_bitrate：编码分辨率、帧率与码率参数。
+变量名：m_enableStaticDetection/m_skipStaticFrames/m_previousFrameData：静态检测状态与上一帧缓存。
+变量名：m_forceNextKeyFrame：下一帧强制关键帧标志。
+## src/capture/WebSocketClient.h
+
+函数名：WebSocketClient::connectToServer/disconnectFromServer：连接/断开 WebSocket 推流通道。
+函数名：WebSocketClient::sendFrame：发送二进制帧数据。
+函数名：WebSocketClient::isConnected：返回连接状态。
+函数名：WebSocketClient::getStats：返回发送统计（帧数/字节数/平均帧大小/连接时长）。
+
+信号：WebSocketClient::connected/disconnected：连接状态回调。
+信号：WebSocketClient::frameSent：发送回调（带帧数据）。
+信号：WebSocketClient::connectionError：错误回调。
+信号：WebSocketClient::statsUpdated：统计更新回调。
+
+变量名：m_webSocket：底层 QWebSocket。
+变量名：m_statsTimer：定时更新统计信息。
+## src/capture/WebSocketSender.h
+
+函数名：WebSocketSender::connectToServer/disconnectFromServer：连接/断开 WebSocket 推流通道（/publish/<deviceId>）。
+函数名：WebSocketSender::enqueueFrame：按队列缓存 encoded 帧并携带 keyFrame 标志，供定时发送线程节流。
+函数名：WebSocketSender::sendFrame：直接发送二进制帧。
+函数名：WebSocketSender::sendTextMessage：发送控制面文本消息（批注/切屏/质量/音频/对讲等）。
+
+函数名：WebSocketSender::startStreaming/stopStreaming：控制推流开停（可 softStop）。
+函数名：WebSocketSender::forceKeyFrame：触发 requestKeyFrame 信号请求编码器出关键帧。
+函数名：WebSocketSender::approveWatchRequest/localApproveWatchRequest/rejectWatchRequest：手动同意观看请求相关流程。
+
+信号：WebSocketSender::requestKeyFrame：请求编码器生成关键帧。
+信号：WebSocketSender::annotationEventReceived/textAnnotationReceived：收到观看端批注事件（含颜色ID与文字大小）。
+信号：WebSocketSender::switchScreenRequested：收到切屏请求（方向或指定 index）。
+信号：WebSocketSender::qualityChangeRequested：收到质量变更请求（low/medium/high/extreme）。
+信号：WebSocketSender::audioToggleRequested/audioGainRequested：收到测试音/增益控制。
+信号：WebSocketSender::viewerAudioOpusReceived/viewerMicStateReceived：收到对讲音频与对方麦克风状态。
+信号：WebSocketSender::viewerCursorReceived/viewerNameUpdateReceived：收到观看端鼠标与昵称同步事件。
+信号：WebSocketSender::viewerJoined/viewerExited：收到观众进出事件。
+信号：WebSocketSender::watchRequestReceived：收到观看请求（viewerId/viewerName/targetId/iconId）。
+
+变量名：m_frameQueue/m_keyQueue：待发送帧队列与关键帧标记队列（含队列长度与最大滞留时间淘汰策略）。
+变量名：m_reconnectTimer/m_reconnectAttempts：断线自动重连机制。
+变量名：m_waitingForApproval/m_pendingViewerId/...：手动同意观看请求的挂起状态。
+变量名：m_audioOnlyStreaming：是否处于音频-only 推流模式标志。
+## src/capture/AnnotationOverlay.h
+
+函数名：AnnotationOverlay::AnnotationOverlay：批注叠加层构造（透明顶层 QWidget）；用于在采集端本地屏幕上展示观看端的批注结果与点赞动效。
+函数名：AnnotationOverlay::alignToScreen：把 overlay 尺寸/位置对齐到指定屏幕（支持多屏各自一个 overlay）。
+函数名：AnnotationOverlay::clear：清空笔迹、文本与光标轨迹（与 clear 指令同步）。
+
+槽函数：AnnotationOverlay::onAnnotationEvent：处理批注事件（phase=begin/move/end/rect_begin/.../clear 等）并更新 Stroke/形状状态。
+槽函数：AnnotationOverlay::onTextAnnotation：处理文字批注（text/x/y/viewer/color/fontSize）并记录到 m_texts。
+槽函数：AnnotationOverlay::hideOverlay：隐藏叠加层（空闲一段时间或控制面触发）。
+槽函数：AnnotationOverlay::onLikeRequested：展示点赞动效（按 viewerId 区分来源）。
+槽函数：AnnotationOverlay::onCursorMoved：处理本端光标移动（用于调试或本端显示）。
+槽函数：AnnotationOverlay::onViewerCursor：处理观看端光标（viewerId/x/y/viewerName）并更新 m_cursors。
+槽函数：AnnotationOverlay::onViewerNameUpdate：更新某个 viewerId 的显示名字。
+槽函数：AnnotationOverlay::onViewerExited：清理 viewerId 对应的光标与颜色缓存。
+
+函数名：AnnotationOverlay::paintEvent：绘制所有笔迹/形状/文本与远端光标（含名字）。
+
+类型：AnnotationOverlay::Stroke/TextItem/OpEntry：笔迹/文本/操作记录（用于撤销、批量清理等）。
+变量名：m_currentStroke：当前笔迹缓存。
+变量名：m_strokes：历史笔迹列表。
+变量名：m_texts：文字标注列表。
+变量名：m_ops：操作记录（用于 undo/clear 的批量回退）。
+变量名：m_drawingRect/m_rectStart/m_rectEnd/m_currentShapeColor：矩形绘制状态。
+变量名：m_drawingCircle/m_circleStart/m_circleEnd：圆形绘制状态。
+变量名：m_drawingArrow/m_arrowStart/m_arrowEnd：箭头绘制状态。
+变量名：m_likeLabel/m_likeMovie：点赞动效控件与动图资源。
+变量名：m_idleTimer/m_lastEventMs：空闲隐藏定时器与最近事件时间戳。
+变量名：m_cursorPixmap/m_cursorSmall：光标资源（常规/小尺寸）。
+变量名：m_cursors：viewerId -> CursorItem（位置/名字/最近更新时间）。
+变量名：m_cursorColors：viewerId -> QColor（不同观众的光标颜色区分）。
+变量名：m_selfName：本端昵称缓存（用于区分 self 光标样式）。
+## src/capture/CursorOverlay.h
+
+函数名：CursorOverlay::CursorOverlay：光标叠加层构造（透明顶层 QWidget）；用于在采集端本地屏幕上展示观看端光标与名字（不含笔迹/文字）。
+函数名：CursorOverlay::alignToScreen：把 overlay 尺寸/位置对齐到指定屏幕。
+函数名：CursorOverlay::clear：清空所有光标记录。
+
+槽函数：CursorOverlay::onCursorMoved：处理本端光标移动。
+槽函数：CursorOverlay::onViewerCursor：处理观看端光标（viewerId/x/y/viewerName）并更新 m_cursors。
+槽函数：CursorOverlay::onViewerNameUpdate：更新某个 viewerId 的显示名字。
+槽函数：CursorOverlay::onViewerExited：移除 viewerId 对应记录。
+
+函数名：CursorOverlay::paintEvent：绘制所有光标与名字标签。
+
+变量名：m_cursorPixmap/m_cursorSmall：光标资源。
+变量名：m_cursors：viewerId -> CursorItem（位置/名字/最近更新时间）。
+变量名：m_cursorColors：viewerId -> QColor（观众颜色区分）。
+变量名：m_selfName：本端昵称缓存。
+## src/capture/MouseCapture.h
+
+函数名：MouseCapture::MouseCapture/~MouseCapture：鼠标采集构造/析构；内部使用定时器轮询系统鼠标坐标。
+函数名：MouseCapture::startCapture/stopCapture：启动/停止捕获（默认 10ms 级别轮询）。
+函数名：MouseCapture::setScreenRect：设置源屏幕物理区域与目标编码分辨率，用于坐标偏移与缩放映射。
+函数名：MouseCapture::getCurrentPosition：获取当前鼠标位置（已做偏移/缩放后的坐标）。
+函数名：MouseCapture::isCapturing：返回是否在捕获。
+
+信号：MouseCapture::mousePositionChanged：鼠标坐标变化通知（QPoint）。
+信号：MouseCapture::mousePositionMessage：鼠标坐标 JSON 文本消息（供 WebSocketSender 上行）。
+
+槽函数：MouseCapture::checkMousePosition：轮询系统坐标、对比 m_lastPosition，变化则发信号。
+
+函数名：MouseCapture::getSystemMousePosition：从系统读取鼠标坐标并按 sourceRect/targetSize 做偏移缩放。
+函数名：MouseCapture::createMousePositionMessage：把 QPoint 序列化为 JSON 文本。
+
+变量名：m_captureTimer：轮询定时器。
+变量名：m_lastPosition：上一次坐标。
+变量名：m_isCapturing：捕获状态。
+变量名：m_updateInterval：轮询间隔（ms）。
+变量名：m_sourceRect：源屏幕物理区域（用于坐标偏移）。
+变量名：m_targetSize：目标编码分辨率（用于缩放）。
+变量名：m_needScaling：是否需要缩放映射。
+## src/capture/PerformanceMonitor.h
+
+函数名：PerformanceMonitor::PerformanceMonitor/~PerformanceMonitor：性能监控器构造/析构；周期性汇总并输出统计信息（默认 30s 一次）。
+函数名：PerformanceMonitor::registerWebSocketSender：注册 WebSocketSender 以便输出发送统计。
+函数名：PerformanceMonitor::startMonitoring/stopMonitoring：启动/停止定期报告。
+函数名：PerformanceMonitor::setReportInterval：设置报告间隔（ms）。
+函数名：PerformanceMonitor::generateReport：立即输出一次简要报告。
+函数名：PerformanceMonitor::generateDetailedReport：立即输出一次详细报告。
+函数名：PerformanceMonitor::resetAllStats：重置内部累计统计。
+函数名：PerformanceMonitor::setVerboseLogging：启用/关闭更详细日志。
+函数名：PerformanceMonitor::setLogToFile：启用/关闭输出到文件，并设置文件路径。
+
+槽函数：PerformanceMonitor::onPerformanceReport：定时器触发的报告入口。
+
+函数名：PerformanceMonitor::outputSystemInfo：输出系统信息摘要。
+函数名：PerformanceMonitor::outputWebSocketSenderStats：输出 WebSocketSender 发送统计摘要。
+函数名：PerformanceMonitor::outputSummaryStats：输出总体汇总信息。
+函数名：PerformanceMonitor::formatBytes/formatTime/formatRate：格式化字节数、时间与速率显示。
+
+变量名：m_webSocketSender：被监控的发送器指针。
+变量名：m_reportTimer：定时器。
+变量名：m_reportInterval：报告间隔。
+变量名：m_isMonitoring：是否在监控。
+变量名：m_monitoringStartTime：监控开始时间戳。
+变量名：m_reportCount：已输出报告计数。
+变量名：m_verboseLogging：是否详细输出。
+变量名：m_logToFile/m_logFilePath：文件输出开关与路径。
+变量名：m_mutex：互斥锁（多线程读写保护）。
+## src/capture/main_capture.cpp
+
+函数名：getLocalQualityFromConfig：读取 local_quality（low/medium/high/extreme），默认 medium。
+函数名：getUserNameFromConfig：读取 user_name。
+函数名：getMicEnabledFromConfig：读取 mic_enabled（默认 true）。
+函数名：getDeviceIdFromConfig：读取 random_id（设备ID/房间号），默认 25561。
+函数名：getServerAddressFromConfig：读取 server_address（复用 AppConfig）。
+函数名：getScreenIndexFromConfig：读取 screen_index（默认 0）。
+函数名：saveScreenIndexToConfig：写回 screen_index 到 appDir/config/app_config.txt。
+函数名：main：采集进程入口；初始化 CrashGuard/ConsoleLogger；启动 ScreenCapture 与 VP9Encoder；启动 WebSocketSender 推流；创建批注与光标 Overlay；捕获鼠标并上报；定时抓帧编码并发到服务器；处理切屏/质量/音频/观看请求/对讲等控制面消息；通过 --watchdog 参数连接主进程本地管道上报心跳/事件。
+
+变量名：watchdogPipeName：来自启动参数 --watchdog 的本地管道名，用于向主进程发送心跳与事件。
+变量名：capture：ScreenCapture 实例。
+变量名：encoder：VP9Encoder 实例（含静态检测与跳帧省流策略）。
+变量名：sender：WebSocketSender 实例（推流与控制面收发）。
+变量名：mouseCapture：MouseCapture 实例（采集鼠标坐标并发送 cursor 事件）。
+变量名：captureTimer：抓帧定时器（驱动捕获/编码/发送循环）。
+## src/player/VP9Decoder.h
+
+函数名：VP9Decoder::initialize/cleanup：初始化/释放 libvpx 软件解码器。
+函数名：VP9Decoder::decode/decodeFrame：解码 VP9 二进制帧并输出 RGB 帧数据。
+函数名：VP9Decoder::getFrameSize：返回最近一次解码帧尺寸。
+函数名：VP9Decoder::getStats：返回解码统计（总帧、成功/失败、平均耗时）。
+
+信号：VP9Decoder::frameDecoded：输出解码后的帧与尺寸。
+信号：VP9Decoder::decoderError：解码错误。
+信号：VP9Decoder::statsUpdated：统计更新。
+
+变量名：m_codec：libvpx 解码器上下文。
+变量名：m_stats：解码统计信息。
+## src/player/DxvaVP9Decoder.h
+
+函数名：DxvaVP9Decoder::initialize/cleanup：初始化/释放解码器；优先尝试 DXVA/D3D11 硬解，失败回退 VP9Decoder 软件解码。
+函数名：DxvaVP9Decoder::decode/decodeFrame：解码 VP9 帧并输出 RGB 数据。
+函数名：DxvaVP9Decoder::isHardwareAccelerated：返回当前是否在用硬件加速。
+函数名：DxvaVP9Decoder::getStats：返回统计信息（含 decoderType 与 hardwareAccelerated 标志）。
+
+信号：DxvaVP9Decoder::frameDecoded/decoderError/statsUpdated：解码输出与统计回调。
+信号：DxvaVP9Decoder::hardwareStatusChanged：硬解启用状态变化通知。
+
+变量名：m_softwareDecoder：软件解码 fallback。
+变量名：m_useHardwareDecoding：是否启用硬件解码标志。
+变量名：m_frameSize：当前帧尺寸缓存。
+## src/player/WebSocketReceiver.h
+
+函数名：WebSocketReceiver::connectToServer/disconnectFromServer：连接/断开订阅通道（/subscribe/<targetId>）。
+函数名：WebSocketReceiver::sendWatchRequest：发送观看请求信令（viewerId/targetId），用于需要同意的流程。
+函数名：WebSocketReceiver::setSessionInfo：设置本地会话信息（viewerId/targetId）用于恢复与上行字段。
+函数名：WebSocketReceiver::setAudioOnly：设置是否为音频-only 会话并影响控制面行为。
+
+函数名：WebSocketReceiver::sendAnnotationEvent/sendTextAnnotation：发送批注事件（含颜色ID与字体大小）。
+函数名：WebSocketReceiver::sendSwitchScreenNext/sendSwitchScreenIndex：请求采集端切屏（滚动或指定 index）。
+函数名：WebSocketReceiver::sendSetQuality：请求采集端调整编码质量。
+函数名：WebSocketReceiver::sendAudioToggle/sendAudioGain：请求采集端发送测试音与设置增益。
+函数名：WebSocketReceiver::setTalkEnabled：开启/关闭对讲采集与上行。
+函数名：WebSocketReceiver::sendViewerListenMute：控制本端是否静音收听（发送到采集端用于状态同步）。
+函数名：WebSocketReceiver::sendLikeEvent：发送点赞事件。
+函数名：WebSocketReceiver::setLocalInputDeviceFollowSystem/setLocalInputDeviceById：选择本地麦克风输入设备。
+函数名：WebSocketReceiver::setViewerName：设置观看端昵称并用于对端展示。
+函数名：WebSocketReceiver::sendViewerCursor：上报本端鼠标坐标（用于采集端叠加/远端展示）。
+函数名：WebSocketReceiver::sendStopStreaming/sendRequestKeyFrame：暂停推流/请求关键帧（用于恢复首帧与降低黑屏概率）。
+函数名：WebSocketReceiver::sendViewerExit：通知采集端该观众主动退出（用于主机侧清理与观众列表更新）。
+函数名：WebSocketReceiver::sendViewerMicState：同步观众麦克风开关状态给采集端。
+函数名：WebSocketReceiver::stopAudio：停止本地音频处理（定时器/队列）用于静音场景。
+
+信号：WebSocketReceiver::frameReceived/frameReceivedWithTimestamp：收到视频帧（可带 captureTimestamp）。
+信号：WebSocketReceiver::mousePositionReceived：收到远端鼠标位置（position/timestamp/name）。
+信号：WebSocketReceiver::audioFrameReceived：收到并解码后的 PCM 音频帧（用于本地播放）。
+信号：WebSocketReceiver::approvalRequired/watchRequestAccepted/watchRequestRejected/kicked：观看请求审批与踢出流程事件。
+信号：WebSocketReceiver::avatarUpdateReceived：头像更新事件（userId/iconId）。
+
+变量名：m_webSocket：底层 QWebSocket。
+变量名：m_reconnectTimer/m_reconnectAttempts：自动重连与退避计数。
+变量名：m_lastViewerId/m_lastTargetId：用于断线后自动重发 watch_request 的缓存。
+变量名：m_opusDecoder/m_localOpusEnc：对讲音频 Opus 解码/编码器。
+变量名：m_localAudioSource：本地麦克风采集源（对讲上行）。
+## src/player/VideoRenderer.h
+
+函数名：VideoRenderer::VideoRenderer/~VideoRenderer：播放器窗口构造/析构。
+函数名：VideoRenderer::renderFrame：渲染一帧 RGB 图像到 QLabel，并保持缩放适配。
+函数名：VideoRenderer::setConnectionStatus：更新连接状态用于状态栏提示。
+函数名：VideoRenderer::getStats：返回渲染统计（FPS、帧数、尺寸）。
+
+信号：VideoRenderer::windowClosed：窗口关闭回调。
+信号：VideoRenderer::statsUpdated：渲染统计更新。
+
+变量名：m_videoLabel：视频画面显示控件。
+变量名：m_displayTimer/m_statsTimer：刷新显示与统计定时器。
+## src/player/main_player.cpp
+
+函数名：main：播放进程入口；初始化 CrashGuard/ConsoleLogger；解析参数（--embedded/--server/--target）；连接 /subscribe/<targetId>；嵌入模式仅解码不展示；窗口模式用 VideoDisplayWidget 展示并自动开始接收。
+## src/MainWindow.h
+
+类：MainWindow：主程序主窗口；负责登录信令、UI/托盘、子进程管理、看门狗、配置读写与观看/对讲控制。
+
+成员：透明图片列表/NewUiWindow、VideoWindow、AvatarSettingsWindow、SystemSettingsWindow 等窗口指针。
+成员：CaptureProcess/PlayerProcess 的 QProcess，以及看门狗管道/心跳/重连相关状态。
+## src/capture/ScreenCapture.cpp
+
+函数名：ScreenCapture::initialize：选择目标屏幕（m_targetScreenIndex）并计算物理分辨率（DPR）；Windows 下尝试 initializeD3D11，否则回退 Qt 抓屏。
+函数名：ScreenCapture::captureScreen：优先 D3D11 捕获；遇到硬件错误自动切换到 Qt 捕获；无新帧可返回空数据。
+函数名：ScreenCapture::initializeD3D11：创建 DXGI Factory/Adapter/Device；按 Qt 屏幕 geometry+DPR 匹配 DXGI Output；建立 Desktop Duplication；创建 staging 纹理（CPU 读）。
+函数名：ScreenCapture::captureWithD3D11：AcquireNextFrame→CopyResource→Map→按行 memcpy 到 frameData（BGRA 内存布局直接复制）。
+函数名：ScreenCapture::captureWithQt：grabWindow→QImage(ARGB32)；按行去除 bytesPerLine padding，保证帧数据紧凑。
+
+变量名：m_useD3D11：是否走 Desktop Duplication 路径（失败自动降级）。
+变量名：m_screenSize：当前捕获分辨率（物理像素）。
+## src/capture/VP9Encoder.cpp
+
+函数名：VP9Encoder::initialize/cleanup：分配/释放 YUV 平面缓冲；初始化/销毁 libvpx 编码器。
+函数名：VP9Encoder::encode：静态检测（对比上一帧）并按需降码率/可选跳帧；ARGB→I420（含缩放）；编码输出并携带关键帧标志；缓存上一帧。
+函数名：VP9Encoder::forceKeyFrame：设置 m_forceNextKeyFrame，保证下一帧强制关键帧（避免“静止画面首帧黑屏”）。
+函数名：VP9Encoder::initializeEncoder：配置零延迟、VBR、线程数、tile/row-mt/aq 等；设置关键帧节奏（启动阶段更密集，随后降低频率）。
+函数名：VP9Encoder::convertRGBAToYUV420：用 libyuv 缩放与 ARGBToI420 转换；并对 U/V 做轻微校正以缓解色彩偏移。
+
+变量名：m_enableStaticDetection/m_staticThreshold/m_staticBitrateReduction：静态检测与省流参数。
+变量名：m_forceNextKeyFrame：下一帧强制关键帧标志。
+## src/capture/WebSocketClient.cpp
+
+函数名：WebSocketClient::setupWebSocket：创建 QWebSocket 并连接 connected/disconnected/error 信号。
+函数名：WebSocketClient::connectToServer/disconnectFromServer：维护 m_connected 与连接时长统计。
+函数名：WebSocketClient::sendFrame：发送二进制帧并累加 totalFrames/totalBytes；定时发 statsUpdated。
+函数名：WebSocketClient::updateStats：计算 averageFrameSize 并发射统计信号。
+## src/capture/WebSocketSender.cpp
+
+函数名：WebSocketSender::connectToServer/disconnectFromServer：连接 publisher 通道；断线后启动重连退避。
+函数名：WebSocketSender::enqueueFrame：维护帧队列与关键帧队列；按最大滞留时间与最大长度丢弃；触发 sendTimer 节流发送。
+函数名：WebSocketSender::sendFrame/sendTextMessage：直接发送二进制帧/文本控制消息并更新统计。
+函数名：WebSocketSender::onConnected：publisher 模式进入 Standby（等待 watch_request/start_streaming 等控制指令再 startStreaming）。
+函数名：WebSocketSender::onTextMessageReceived：解析控制面 JSON（watch_request、start/stop_streaming、request_keyframe、annotation/text/like、switch_screen、set_quality、audio_* 等）并发射对应信号。
+函数名：WebSocketSender::startStreaming/stopStreaming：维护 m_isStreaming 与队列状态；对音频-only 推流使用 m_audioOnlyStreaming。
+
+变量名：m_frameQueue/m_keyQueue：待发送帧缓存与关键帧标记队列。
+变量名：m_reconnectTimer/m_reconnectAttempts：断线自动重连状态。
+变量名：m_waitingForApproval/m_pendingViewerId/...：手动同意观看请求的挂起状态。
+## src/capture/AnnotationOverlay.cpp
+
+函数名：AnnotationOverlay::AnnotationOverlay：创建透明置顶 overlay；加载 cursor 资源与本机 user_name（用于区分显示）。
+函数名：AnnotationOverlay::onAnnotationEvent：处理画笔/撤销/清屏/关闭 overlay，以及矩形/圆/箭头/橡皮擦等工具事件，写入 strokes/ops。
+函数名：AnnotationOverlay::onTextAnnotation：记录文字标注（text/x/y/color/fontSize）。
+函数名：AnnotationOverlay::paintEvent：绘制笔迹/形状/文字与远端光标（含名字与颜色区分）。
+
+变量名：m_strokes/m_texts/m_ops：笔迹/文字/操作记录（undo 依据 ops 回退）。
+变量名：m_cursors/m_cursorColors：viewerId 对应的光标状态与颜色缓存。
+## src/capture/CursorOverlay.cpp
+
+函数名：CursorOverlay::onViewerCursor/onViewerNameUpdate/onViewerExited：维护 viewerId 光标位置与名字；退出时清理颜色缓存。
+函数名：CursorOverlay::paintEvent：绘制光标贴图（按 viewerId 着色）与名字标签。
+## src/capture/MouseCapture.cpp
+
+函数名：MouseCapture::startCapture/stopCapture：以 10ms 定时轮询并在坐标变化时发信号。
+函数名：MouseCapture::setScreenRect：设置源屏幕区域与目标编码尺寸，用于偏移与缩放映射。
+函数名：MouseCapture::getSystemMousePosition：Windows 下 GetCursorPos；按 sourceRect 偏移并按 targetSize 比例缩放（带 1px 容差避免抖动）。
+函数名：MouseCapture::createMousePositionMessage：生成 {type,x,y,timestamp} 的 JSON 文本。
+## src/capture/PerformanceMonitor.cpp
+
+函数名：PerformanceMonitor::startMonitoring/stopMonitoring：以定时器周期触发报告。
+函数名：PerformanceMonitor::generateReport/generateDetailedReport：收集 WebSocketSender 统计并输出摘要/详细报告（当前多为静默保留接口）。
+函数名：PerformanceMonitor::resetAllStats：重置 sender 与内部计数。
+函数名：PerformanceMonitor::formatBytes/formatTime/formatRate：格式化显示辅助方法。
+## src/player/DxvaVP9Decoder.cpp
+
+函数名：DxvaVP9Decoder::initialize：Windows 下尝试初始化硬件解码（当前实现返回 false），失败则 fallback 到 VP9Decoder 软件解码。
+函数名：DxvaVP9Decoder::decode：优先硬解；失败触发 fallbackToSoftware；最终输出 ARGB 帧并发射 frameDecoded。
+函数名：DxvaVP9Decoder::fallbackToSoftware：切换 decoderType 与 hardwareAccelerated 状态，并确保软件解码器初始化。
+
+状态：硬件解码骨架保留（initializeHardwareDecoder/decodeWithHardware/cleanupHardwareDecoder 等为占位）。
+## src/player/VP9Decoder.cpp
+
+函数名：VP9Decoder::setupDecoder：初始化 libvpx VP9 解码器并设置线程数（idealThreadCount）。
+函数名：VP9Decoder::decode：vpx_codec_decode 后取帧；把 vpx_image_t 转换为 ARGB 并发射 frameDecoded。
+函数名：VP9Decoder::convertYUVToRGB：根据 VP9 帧的色彩空间/范围（img->cs/img->range）选择 libyuv 转换（I420/J420/H420、I444/J444）。
+## src/player/VideoRenderer.cpp
+
+函数名：VideoRenderer::setupUI/setupStatusBar：创建窗口、QLabel 视频区域与状态栏。
+函数名：VideoRenderer::renderFrame：从 ARGB 数据构建 QImage/QPixmap；更新帧时间序列用于 FPS 统计。
+函数名：VideoRenderer::updateDisplay：按控件尺寸等比缩放并更新 QLabel。
+函数名：VideoRenderer::updateStats：计算平均 FPS 并刷新 statusBar 文本。
+函数名：VideoRenderer::closeEvent：关闭时发射 windowClosed。
+## src/player/WebSocketReceiver.cpp
+
+函数名：WebSocketReceiver::setupWebSocket：创建 QWebSocket 并绑定二进制/文本消息、连接状态与错误处理。
+函数名：WebSocketReceiver::connectToServer/disconnectFromServer：连接 /subscribe/<targetId>；维护重连退避与在线统计。
+函数名：WebSocketReceiver::onBinaryMessageReceived：区分视频帧与音频包等二进制消息，更新队列并触发上层处理。
+函数名：WebSocketReceiver::onTextMessageReceived：处理控制面 JSON（批注、切屏、审批、头像更新等）。
+音频：内置 Opus 解码与对讲采集/编码；通过定时器做抖动缓冲与 underrun 处理。
+
+---

@@ -15,6 +15,7 @@
 #endif
 #include "../common/ConsoleLogger.h"
 #include "../common/CrashGuard.h"
+#include "../common/AppConfig.h"
 
 int main(int argc, char *argv[])
 {
@@ -27,6 +28,7 @@ int main(int argc, char *argv[])
     ConsoleLogger::installQtMessageHandler();
 
     QApplication app(argc, argv); // 使用QApplication支持GUI窗口
+    AppConfig::applyApplicationInfo(app);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
     // 统一工具提示样式为黑底白字（播放器窗口也受益）
     app.setStyleSheet(
@@ -41,7 +43,7 @@ int main(int argc, char *argv[])
     
     // 检查命令行参数
     bool embeddedMode = false;
-    QString serverUrl = "ws://123.207.222.92:8765";
+    QString serverUrl = AppConfig::wsBaseUrl();
     QString targetDeviceId; // 目标设备ID
     
     for (int i = 1; i < argc; ++i) {
@@ -61,6 +63,8 @@ int main(int argc, char *argv[])
             
         }
     }
+
+    serverUrl = AppConfig::normalizeWsBaseUrl(serverUrl);
     
     // 检查是否提供了目标设备ID
     if (targetDeviceId.isEmpty()) {

@@ -197,6 +197,8 @@ private:
     QMap<QString, QTimer*> m_hiFpsPublisherTimers;
     QTimer *m_hiFpsWatchdogTimer = nullptr;
     qint64 m_hiFpsLastFrameAtMs = 0;
+    qint64 m_hiFpsLastRecoveryAtMs = 0;
+    bool m_keepAwakeRequested = false;
 
     // Layout constants
     int m_cardBaseWidth;

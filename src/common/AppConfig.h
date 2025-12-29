@@ -166,7 +166,26 @@ inline QStringList localLanBaseUrls()
         return (ip & 0xFFC00000u) == 0x64400000u;
     };
 
-    auto preferredOutboundIp = []() -> quint32 {
+    auto ipv4Score = [](quint32 ip) -> int {
+        if ((ip & 0xFFFF0000u) == 0xC0A80000u) return 300;
+        if ((ip & 0xFF000000u) == 0x0A000000u) return 200;
+        if ((ip & 0xFFF00000u) == 0xAC100000u) return 100;
+        return 0;
+    };
+
+    auto isLinkLocal = [](quint32 ip) -> bool {
+        return (ip & 0xFFFF0000u) == 0xA9FE0000u;
+    };
+
+    auto isBogusLanIp = [&](quint32 ip) -> bool {
+        if (ip == 0) return true;
+        if (isLinkLocal(ip)) return true;
+        if (isReservedTestNet(ip)) return true;
+        if (isCarrierNat(ip)) return true;
+        return false;
+    };
+
+    auto preferredOutboundIp = [&]() -> quint32 {
         const QString base = wsBaseUrl();
         QUrl u(base);
         QString host = u.host();
@@ -194,26 +213,11 @@ inline QStringList localLanBaseUrls()
         if (local.protocol() != QAbstractSocket::IPv4Protocol || local.isNull() || local.isLoopback()) {
             return 0;
         }
-        return local.toIPv4Address();
-    };
-
-    auto ipv4Score = [](quint32 ip) -> int {
-        if ((ip & 0xFFFF0000u) == 0xC0A80000u) return 300;
-        if ((ip & 0xFF000000u) == 0x0A000000u) return 200;
-        if ((ip & 0xFFF00000u) == 0xAC100000u) return 100;
-        return 0;
-    };
-
-    auto isLinkLocal = [](quint32 ip) -> bool {
-        return (ip & 0xFFFF0000u) == 0xA9FE0000u;
-    };
-
-    auto isBogusLanIp = [&](quint32 ip) -> bool {
-        if (ip == 0) return true;
-        if (isLinkLocal(ip)) return true;
-        if (isReservedTestNet(ip)) return true;
-        if (isCarrierNat(ip)) return true;
-        return false;
+        const quint32 ip4 = local.toIPv4Address();
+        if (isBogusLanIp(ip4)) {
+            return 0;
+        }
+        return ip4;
     };
 
     auto isLikelyVirtualSubnet = [](quint32 ip) -> bool {
@@ -256,7 +260,6 @@ inline QStringList localLanBaseUrls()
         if (iface.flags() & QNetworkInterface::IsLoopBack) continue;
         if (iface.flags() & QNetworkInterface::IsPointToPoint) continue;
         if (isBadInterfaceName(iface)) continue;
-        if (!(iface.flags() & QNetworkInterface::CanBroadcast)) continue;
 
         const auto entries = iface.addressEntries();
         for (const QNetworkAddressEntry &e : entries) {

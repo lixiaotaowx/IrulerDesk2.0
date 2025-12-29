@@ -472,8 +472,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             sendWatchAccepted(viewerId, targetId);
         }
     } else if (type == "start_streaming" || type == "start_streaming_request") {
-        if (isManualApprovalEnabled()) {
+        const bool manualApproval = isManualApprovalEnabled();
+        const bool isLanRelay = AppConfig::lanWsEnabled() && QUrl(m_serverUrl).port() == AppConfig::lanWsPort();
+        if (manualApproval && !isLanRelay) {
             return;
+        }
+        if (manualApproval && isLanRelay) {
+            qInfo().noquote() << "[KickDiag][Sender] start_streaming bypass_manual_approval_for_lan"
+                              << " url=" << m_serverUrl;
         }
         QString vid = obj.value("viewer_id").toString();
         if (vid.isEmpty()) vid = obj.value("sender_id").toString();
@@ -725,7 +731,7 @@ bool WebSocketSender::isManualApprovalEnabled() const
         QFile f(p);
         if (f.exists()) { configPath = p; break; }
     }
-    if (configPath.isEmpty()) return false;
+    if (configPath.isEmpty()) return true;
     QFile f(configPath);
     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&f);
@@ -738,8 +744,9 @@ bool WebSocketSender::isManualApprovalEnabled() const
             }
         }
         f.close();
+        return true;
     }
-    return false;
+    return true;
 }
 
 void WebSocketSender::sendApprovalRequired(const QString &viewerId, const QString &targetId)

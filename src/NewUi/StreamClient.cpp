@@ -62,8 +62,7 @@ static int ipv4LanScore(quint32 ip, const QVector<quint32> &locals)
     for (quint32 local : locals) {
         if (local == 0) continue;
         if (ip == local) {
-            score += 2000;
-            continue;
+            return -100000;
         }
         if ((ip & 0xFFFFFF00u) == (local & 0xFFFFFF00u)) {
             score += 1000;
@@ -97,6 +96,9 @@ static QUrl pickBestLanSubscribeUrl(const QStringList &bases, const QString &cha
             bestScore = s;
             best = u;
         }
+    }
+    if (bestScore < 1000) {
+        return QUrl();
     }
     return best;
 }
@@ -139,9 +141,71 @@ StreamClient::StreamClient(QObject *parent)
         const QUrl fallback = m_cloudFallbackUrl;
         m_lanSwitchInProgress = false;
         m_cloudFallbackUrl = QUrl();
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        m_lanSwitchDisabledUntilMs = nowMs + 60000;
         emit logMessage(scTag(this) + QStringLiteral("lan_fallback_timer fire: fallback_to_cloud url=%1")
                             .arg(fallback.toString()));
         connectToServer(fallback);
+    });
+
+    m_lanFirstFrameTimer = new QTimer(this);
+    m_lanFirstFrameTimer->setSingleShot(true);
+    connect(m_lanFirstFrameTimer, &QTimer::timeout, this, [this]() {
+        if (!m_lanAwaitingFirstFrame) {
+            return;
+        }
+        if (!isSubscribeUrl(m_lastUrl) || m_lastUrl.port() != AppConfig::lanWsPort()) {
+            m_lanAwaitingFirstFrame = false;
+            return;
+        }
+        if (!m_cloudFallbackUrl.isValid() || m_cloudFallbackUrl.isEmpty()) {
+            m_lanAwaitingFirstFrame = false;
+            m_lanSwitchInProgress = false;
+            return;
+        }
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        m_lanSwitchDisabledUntilMs = nowMs + 60000;
+        const QUrl fallback = m_cloudFallbackUrl;
+        m_cloudFallbackUrl = QUrl();
+        m_lanAwaitingFirstFrame = false;
+        m_lanSwitchInProgress = false;
+        emit logMessage(scTag(this) + QStringLiteral("lan_first_frame_timeout fallback_to_cloud url=%1").arg(fallback.toString()));
+        connectToServer(fallback);
+    });
+
+    m_lanOfferRetryTimer = new QTimer(this);
+    m_lanOfferRetryTimer->setSingleShot(true);
+    connect(m_lanOfferRetryTimer, &QTimer::timeout, this, [this]() {
+        if (!m_isConnected) {
+            return;
+        }
+        if (!AppConfig::lanWsEnabled()) {
+            return;
+        }
+        if (!isSubscribeUrl(m_lastUrl)) {
+            return;
+        }
+        if (m_lastUrl.port() == AppConfig::lanWsPort()) {
+            return;
+        }
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (m_lanSwitchDisabledUntilMs > 0 && nowMs < m_lanSwitchDisabledUntilMs) {
+            return;
+        }
+        if (m_lanSwitchInProgress) {
+            return;
+        }
+        if (m_lanOfferRetryCount >= 6) {
+            return;
+        }
+        if (m_lastLanOfferRequestAtMs == 0 || (nowMs - m_lastLanOfferRequestAtMs) >= 2500) {
+            requestLanOfferIfNeeded();
+            m_lastLanOfferRequestAtMs = nowMs;
+            m_lanOfferRetryCount++;
+        }
+        if (m_lanOfferRetryCount < 6) {
+            m_lanOfferRetryTimer->start(2500);
+        }
     });
 }
 
@@ -179,7 +243,18 @@ void StreamClient::connectToServer(const QUrl &url)
     if (m_reconnectTimer) {
         m_reconnectTimer->stop();
     }
+    if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
+        m_lanOfferRetryTimer->stop();
+    }
+    m_lanOfferRetryCount = 0;
+    m_lastLanOfferRequestAtMs = 0;
     stopLanFallbackTimer();
+    if (url.port() != AppConfig::lanWsPort()) {
+        if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
+            m_lanFirstFrameTimer->stop();
+        }
+        m_lanAwaitingFirstFrame = false;
+    }
     emit logMessage(scTag(this) + QStringLiteral("connect role=%1 route=%2 host=%3 port=%4 channel=%5 switching=%6 cloud_fallback=%7 url=%8")
                         .arg(wsRoleTagFromUrl(url))
                         .arg(wsRouteTagFromUrl(url))
@@ -216,7 +291,16 @@ void StreamClient::disconnectFromServer()
     if (m_reconnectTimer) {
         m_reconnectTimer->stop();
     }
+    if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
+        m_lanOfferRetryTimer->stop();
+    }
+    m_lanOfferRetryCount = 0;
+    m_lastLanOfferRequestAtMs = 0;
     stopLanFallbackTimer();
+    if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
+        m_lanFirstFrameTimer->stop();
+    }
+    m_lanAwaitingFirstFrame = false;
     m_cloudFallbackUrl = QUrl();
     m_lanSwitchInProgress = false;
     m_pendingOpenUrl = QUrl();
@@ -314,8 +398,23 @@ void StreamClient::onConnected()
     m_lastTxLogAtMs = 0;
     m_lastRxLogAtMs = 0;
     stopLanFallbackTimer();
-    m_lanSwitchInProgress = false;
-    m_cloudFallbackUrl = QUrl();
+    if (isSubscribeUrl(m_lastUrl) &&
+        m_lastUrl.port() == AppConfig::lanWsPort() &&
+        m_lanSwitchInProgress &&
+        m_cloudFallbackUrl.isValid() &&
+        !m_cloudFallbackUrl.isEmpty()) {
+        m_lanAwaitingFirstFrame = true;
+        if (m_lanFirstFrameTimer && !m_lanFirstFrameTimer->isActive()) {
+            m_lanFirstFrameTimer->start(4500);
+        }
+    } else {
+        if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
+            m_lanFirstFrameTimer->stop();
+        }
+        m_lanAwaitingFirstFrame = false;
+        m_lanSwitchInProgress = false;
+        m_cloudFallbackUrl = QUrl();
+    }
     emit logMessage(scTag(this) + QStringLiteral("connected role=%1 route=%2 host=%3 port=%4 channel=%5 url=%6")
                         .arg(wsRoleTagFromUrl(m_lastUrl))
                         .arg(wsRouteTagFromUrl(m_lastUrl))
@@ -325,7 +424,35 @@ void StreamClient::onConnected()
                         .arg(m_lastUrl.toString()));
     emit logMessage(QStringLiteral("[StreamClient] connected"));
     emit connected();
+    if (AppConfig::lanWsEnabled() &&
+        isSubscribeUrl(m_lastUrl) &&
+        m_lastUrl.port() != AppConfig::lanWsPort() &&
+        !m_lanSwitchInProgress) {
+        const QString roomId = roomIdFromUrl(m_lastUrl);
+        const QStringList bases = AppConfig::lanBaseUrlsForTarget(roomId);
+        const QUrl u = pickBestLanSubscribeUrl(bases, roomId, m_lastUrl);
+        if (u.isValid() && !u.isEmpty()) {
+            m_cloudFallbackUrl = m_lastUrl;
+            m_lanSwitchInProgress = true;
+            emit logMessage(scTag(this) + QStringLiteral("switch_to_lan_cached room=%1 base_urls=%2 from=%3 to=%4")
+                                .arg(roomId)
+                                .arg(bases.join(QStringLiteral(",")))
+                                .arg(m_cloudFallbackUrl.toString())
+                                .arg(u.toString()));
+            connectToServer(u);
+            startLanFallbackTimer();
+            return;
+        }
+    }
     requestLanOfferIfNeeded();
+    if (m_lanOfferRetryTimer &&
+        AppConfig::lanWsEnabled() &&
+        isSubscribeUrl(m_lastUrl) &&
+        m_lastUrl.port() != AppConfig::lanWsPort()) {
+        m_lanOfferRetryCount = 0;
+        m_lastLanOfferRequestAtMs = QDateTime::currentMSecsSinceEpoch();
+        m_lanOfferRetryTimer->start(2500);
+    }
 }
 
 void StreamClient::onDisconnected()
@@ -437,9 +564,19 @@ void StreamClient::onBinaryMessageReceived(const QByteArray &message)
     }
     QPixmap pixmap;
     if (pixmap.loadFromData(message)) {
+        pixmap.setDevicePixelRatio(1.0);
         m_lastReceivedBytes = message;
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
         m_rxFrames++;
+        if (m_lanAwaitingFirstFrame && isSubscribeUrl(m_lastUrl) && m_lastUrl.port() == AppConfig::lanWsPort()) {
+            m_lanAwaitingFirstFrame = false;
+            if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
+                m_lanFirstFrameTimer->stop();
+            }
+            m_lanSwitchInProgress = false;
+            m_cloudFallbackUrl = QUrl();
+            emit logMessage(scTag(this) + QStringLiteral("lan_first_frame_ok url=%1").arg(m_lastUrl.toString()));
+        }
         if (m_lastRxLogAtMs == 0 || (nowMs - m_lastRxLogAtMs) > 2000) {
             m_lastRxLogAtMs = nowMs;
             emit logMessage(scTag(this) + QStringLiteral("rx_jpg ok frames=%1 bytes=%2 size=%3x%4 route=%5 channel=%6 url=%7")
@@ -581,6 +718,13 @@ void StreamClient::handleLanOfferMessage(const QJsonObject &obj)
     if (m_lastUrl.port() == AppConfig::lanWsPort()) {
         return;
     }
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_lanSwitchDisabledUntilMs > 0 && nowMs < m_lanSwitchDisabledUntilMs) {
+        emit logMessage(scTag(this) + QStringLiteral("rx lan_offer ignored: lan_switch_cooldown left_ms=%1 url=%2")
+                            .arg(QString::number(m_lanSwitchDisabledUntilMs - nowMs))
+                            .arg(m_lastUrl.toString()));
+        return;
+    }
 
     const QString channelId = obj.value("channel_id").toString(roomIdFromUrl(m_lastUrl));
     const QJsonValue v = obj.value("base_urls");
@@ -594,9 +738,36 @@ void StreamClient::handleLanOfferMessage(const QJsonObject &obj)
 
     QStringList bases;
     bases.reserve(arr.size());
+    const QVector<quint32> locals = localIpv4sForLanPick();
+    auto isPrivateLanBase = [](const QString &base) -> bool {
+        const QUrl u(base);
+        if (!u.isValid() || u.isEmpty()) return false;
+        if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) return false;
+        if (u.port() != AppConfig::lanWsPort()) return false;
+        QHostAddress ha(u.host());
+        if (ha.protocol() != QAbstractSocket::IPv4Protocol) return false;
+        const quint32 ip = ha.toIPv4Address();
+        if (ip == 0) return false;
+        if ((ip & 0xFFFF0000u) == 0xA9FE0000u) return false;
+        if ((ip & 0xFFFF0000u) == 0xC0A80000u) return true;
+        if ((ip & 0xFF000000u) == 0x0A000000u) return true;
+        if ((ip & 0xFFF00000u) == 0xAC100000u) return true;
+        return false;
+    };
     for (const QJsonValue &it : arr) {
         const QString base = it.toString();
-        if (!base.isEmpty()) {
+        if (base.isEmpty()) {
+            continue;
+        }
+        const QUrl u(base);
+        QHostAddress ha(u.host());
+        if (ha.protocol() == QAbstractSocket::IPv4Protocol) {
+            const quint32 ip = ha.toIPv4Address();
+            if (locals.contains(ip)) {
+                continue;
+            }
+        }
+        if (isPrivateLanBase(base)) {
             bases.append(base);
         }
     }
@@ -620,6 +791,9 @@ void StreamClient::handleLanOfferMessage(const QJsonObject &obj)
                         .arg(bases.join(QStringLiteral(",")))
                         .arg(best.toString())
                         .arg(m_lastUrl.toString()));
+    if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
+        m_lanOfferRetryTimer->stop();
+    }
     connectToServer(best);
     startLanFallbackTimer();
 }

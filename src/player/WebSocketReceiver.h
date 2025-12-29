@@ -146,6 +146,13 @@ private:
     QString m_cloudFallbackUrl;
     bool m_lanSwitchInProgress = false;
     bool m_lanOfferRequested = false;
+    QTimer *m_lanFirstFrameTimer = nullptr;
+    bool m_lanAwaitingFirstFrame = false;
+    qint64 m_lanSwitchDisabledUntilMs = 0;
+    QTimer *m_lanOfferRetryTimer = nullptr;
+    int m_lanOfferRetryCount = 0;
+    qint64 m_lastLanOfferRequestAtMs = 0;
+    bool m_lanSwitchStartStreamingSent = false;
     
     // 统计信息
     ReceiverStats m_stats;

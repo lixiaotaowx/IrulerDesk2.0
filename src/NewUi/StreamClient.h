@@ -65,6 +65,12 @@ private:
     QTimer *m_lanFallbackTimer = nullptr;
     QUrl m_cloudFallbackUrl;
     bool m_lanSwitchInProgress = false;
+    QTimer *m_lanFirstFrameTimer = nullptr;
+    bool m_lanAwaitingFirstFrame = false;
+    qint64 m_lanSwitchDisabledUntilMs = 0;
+    QTimer *m_lanOfferRetryTimer = nullptr;
+    int m_lanOfferRetryCount = 0;
+    qint64 m_lastLanOfferRequestAtMs = 0;
 
     quint64 m_txFrames = 0;
     quint64 m_rxFrames = 0;

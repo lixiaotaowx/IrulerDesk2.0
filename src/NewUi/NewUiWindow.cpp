@@ -1172,7 +1172,8 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
                 QLabel *lbl = m_userLabels[id];
                 if (lbl) {
                     // Apply rounded corners and scaling exactly like local user
-                    QPixmap pixmap(m_imgWidth, m_imgHeight); 
+                    QPixmap pixmap(m_imgWidth, m_imgHeight);
+                    pixmap.setDevicePixelRatio(1.0);
                     pixmap.fill(Qt::transparent);
                     QPainter p(&pixmap);
                     p.setRenderHint(QPainter::Antialiasing);
@@ -2975,6 +2976,7 @@ void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
     const int y = (m_imgHeight - scaledPix.height()) / 2;
 
     QPixmap out(m_imgWidth, m_imgHeight);
+    out.setDevicePixelRatio(1.0);
     out.fill(Qt::transparent);
     QPainter p(&out);
     p.setRenderHint(QPainter::Antialiasing);
@@ -3010,7 +3012,7 @@ void NewUiWindow::publishLocalScreenFrameTriggered(const QString &reason, bool f
 
     const bool requestLike = reason.contains(QStringLiteral("request"), Qt::CaseInsensitive);
     if (requestLike) {
-        const qint64 minResendMs = 5000;
+        const qint64 minResendMs = 900;
         if (m_lastPreviewResendAtMs > 0 && (nowMs - m_lastPreviewResendAtMs) < minResendMs) {
             return;
         }
@@ -3018,7 +3020,8 @@ void NewUiWindow::publishLocalScreenFrameTriggered(const QString &reason, bool f
 
     const bool shouldCapture = (reason == QStringLiteral("timer"));
     const bool hasCache = (!m_lastPreviewFramePixmap.isNull() && !m_lastPreviewSendPixmap.isNull());
-    if ((shouldCapture || !hasCache) && allowCapture) {
+    const bool allowCaptureNow = (allowCapture || (!hasCache && forceSend));
+    if ((shouldCapture || !hasCache) && allowCaptureNow) {
         QPixmap previewPix;
         QPixmap sendPix;
         buildLocalScreenFrame(previewPix, sendPix);
@@ -3054,7 +3057,7 @@ void NewUiWindow::publishLocalScreenFrameTriggered(const QString &reason, bool f
         qInfo().noquote() << "[PreviewPub]"
                           << " reason=" << reason
                           << " force=" << forceSend
-                          << " captured=" << ((shouldCapture || !hasCache) && allowCapture)
+                          << " captured=" << ((shouldCapture || !hasCache) && allowCaptureNow)
                           << " age_ms=" << (m_lastPreviewCaptureAtMs > 0 ? (nowMs - m_lastPreviewCaptureAtMs) : -1)
                           << " sent=" << (sentAny ? "true" : "false");
     }
@@ -3099,6 +3102,7 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
     QPixmap srcPix = originalPixmap.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
 
     QPixmap pixmap(m_imgWidth, m_imgHeight);
+    pixmap.setDevicePixelRatio(1.0);
     pixmap.fill(Qt::transparent);
 
     QPainter p(&pixmap);
@@ -3138,6 +3142,7 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
     QPixmap decodedPix = QPixmap::fromImage(decoded);
     QPixmap scaledDecoded = decodedPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
     QPixmap finalPreview(m_imgWidth, m_imgHeight);
+    finalPreview.setDevicePixelRatio(1.0);
     finalPreview.fill(Qt::black);
     QPainter pp(&finalPreview);
     pp.setRenderHint(QPainter::Antialiasing);
@@ -3267,6 +3272,7 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
             return;
         }
         QPixmap pixmap(m_imgWidth, m_imgHeight);
+        pixmap.setDevicePixelRatio(1.0);
         pixmap.fill(Qt::transparent);
         QPainter p(&pixmap);
         p.setRenderHint(QPainter::Antialiasing);
@@ -3356,6 +3362,15 @@ void NewUiWindow::sendHiFpsControl(const QString &targetUserId, const QString &c
     StreamClient *pubSock = m_streamClient;
     StreamClient *pubSockLan = m_streamClientLan;
     bool sentAny = false;
+
+    if (m_hiFpsSubscriber && m_hiFpsSubscriber->isConnected() && channelId == m_hiFpsActiveChannelId) {
+        const qint64 sent = m_hiFpsSubscriber->sendTextMessage(payload);
+        qInfo().noquote() << "[HiFps] control sent"
+                          << " bytes=" << sent
+                          << " via=hfps_subscribe_socket"
+                          << " payload=" << payload;
+        sentAny = true;
+    }
 
     if (subSock && subSock->isConnected()) {
         const qint64 sent = subSock->sendTextMessage(payload);
@@ -3804,7 +3819,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
         if (m_userLabels.contains(userId)) {
              QLabel *label = m_userLabels[userId];
              
-             QPixmap pixmap(m_imgWidth, m_imgHeight); 
+             QPixmap pixmap(m_imgWidth, m_imgHeight);
+             pixmap.setDevicePixelRatio(1.0);
              pixmap.fill(Qt::transparent);
              QPainter p(&pixmap);
              p.setRenderHint(QPainter::Antialiasing);

@@ -499,11 +499,11 @@ endif()
 
 # 自定义目标：构建完成后生成带时间戳的ZIP包（仅限Release模式）
 # 包名格式：ReleaseMMddHHmm.zip，位置在 build/bin/ 目录下
-if(MSVC)
-    add_custom_target(ZipRelease ALL
-        DEPENDS ScreenStreamApp CaptureProcess PlayerProcess
-        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command 
-        "if ('$<CONFIG>' -eq 'Release') { $t = Get-Date -Format 'MMddHHmm'; $src = '${CMAKE_BINARY_DIR}/bin/Release'; $dst = '${CMAKE_BINARY_DIR}/bin/Release' + $t + '.zip'; Write-Host 'Zipping Release to ' $dst; if (Test-Path $dst) { Remove-Item $dst -Force }; Get-ChildItem -Path $src -Exclude '*.pdb' | Where-Object { $_.Name -ne 'config' } | Compress-Archive -DestinationPath $dst -Update }"
-        COMMENT "Generating Release timestamped ZIP..."
-    )
-endif()
+# if(MSVC)
+#     add_custom_target(ZipRelease ALL
+#         DEPENDS ScreenStreamApp CaptureProcess PlayerProcess
+#         COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command 
+#         "if ('$<CONFIG>' -eq 'Release') { $t = Get-Date -Format 'MMddHHmm'; $src = '${CMAKE_BINARY_DIR}/bin/Release'; $dst = '${CMAKE_BINARY_DIR}/bin/Release' + $t + '.zip'; Write-Host 'Zipping Release to ' $dst; if (Test-Path $dst) { Remove-Item $dst -Force }; Get-ChildItem -Path $src -Exclude '*.pdb' | Where-Object { $_.Name -ne 'config' } | Compress-Archive -DestinationPath $dst -Update }"
+#         COMMENT "Generating Release timestamped ZIP..."
+#     )
+# endif()

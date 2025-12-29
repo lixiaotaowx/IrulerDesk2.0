@@ -35,6 +35,12 @@
 #include <QUrl>
 #include <QNetworkProxy>
 #include <QNetworkProxyFactory>
+#include <QHostAddress>
+#include <QWebSocketServer>
+#include <QWebSocket>
+#include <QHash>
+#include <QPointer>
+#include <QThread>
 #include <opus/opus.h>
 #ifdef _WIN32
 #define NOMINMAX
@@ -50,6 +56,177 @@
 // 性能监控禁用：避免统计带来的额外开销
 #include "AnnotationOverlay.h"
 #include "CursorOverlay.h"
+
+namespace {
+class LanRelayServer final : public QObject
+{
+public:
+    explicit LanRelayServer(QObject *parent = nullptr)
+        : QObject(parent)
+    {
+    }
+
+    bool start(quint16 port)
+    {
+        if (m_server) {
+            return true;
+        }
+
+        m_server = new QWebSocketServer(QStringLiteral("IrulerDeskpro LAN Relay"), QWebSocketServer::NonSecureMode, this);
+        if (!m_server->listen(QHostAddress::AnyIPv4, port)) {
+            m_server->deleteLater();
+            m_server = nullptr;
+            return false;
+        }
+
+        connect(m_server, &QWebSocketServer::newConnection, this, &LanRelayServer::onNewConnection);
+        return true;
+    }
+
+    quint16 port() const
+    {
+        if (!m_server) return 0;
+        return static_cast<quint16>(m_server->serverPort());
+    }
+
+private:
+    struct Room {
+        QWebSocket *publisher = nullptr;
+        QSet<QWebSocket*> subscribers;
+        QVector<QString> pendingTextToPublisher;
+        QVector<QByteArray> pendingBinaryToPublisher;
+    };
+
+    QWebSocketServer *m_server = nullptr;
+    QHash<QString, Room> m_rooms;
+
+    void onNewConnection()
+    {
+        if (!m_server) return;
+        QWebSocket *sock = m_server->nextPendingConnection();
+        if (!sock) return;
+
+        const QString path = sock->requestUrl().path();
+        const QStringList parts = path.split('/', Qt::SkipEmptyParts);
+        if (parts.size() < 2) {
+            sock->close();
+            sock->deleteLater();
+            return;
+        }
+
+        const QString role = parts.value(0);
+        const QString roomId = parts.value(1);
+        if (roomId.isEmpty()) {
+            sock->close();
+            sock->deleteLater();
+            return;
+        }
+
+        if (role != QStringLiteral("publish") && role != QStringLiteral("subscribe")) {
+            sock->close();
+            sock->deleteLater();
+            return;
+        }
+
+        Room &room = m_rooms[roomId];
+
+        if (role == QStringLiteral("publish")) {
+            if (room.publisher && room.publisher != sock) {
+                room.publisher->close();
+                room.publisher->deleteLater();
+            }
+            room.publisher = sock;
+            if (!room.pendingTextToPublisher.isEmpty()) {
+                for (const QString &msg : room.pendingTextToPublisher) {
+                    if (sock->state() == QAbstractSocket::ConnectedState) {
+                        sock->sendTextMessage(msg);
+                    }
+                }
+                room.pendingTextToPublisher.clear();
+            }
+            if (!room.pendingBinaryToPublisher.isEmpty()) {
+                for (const QByteArray &msg : room.pendingBinaryToPublisher) {
+                    if (sock->state() == QAbstractSocket::ConnectedState) {
+                        sock->sendBinaryMessage(msg);
+                    }
+                }
+                room.pendingBinaryToPublisher.clear();
+            }
+
+            connect(sock, &QWebSocket::binaryMessageReceived, this, [this, roomId](const QByteArray &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                for (QWebSocket *rawSub : it->subscribers) {
+                    QPointer<QWebSocket> sub = rawSub;
+                    if (sub && sub->state() == QAbstractSocket::ConnectedState) {
+                        sub->sendBinaryMessage(msg);
+                    }
+                }
+            });
+
+            connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                for (QWebSocket *rawSub : it->subscribers) {
+                    QPointer<QWebSocket> sub = rawSub;
+                    if (sub && sub->state() == QAbstractSocket::ConnectedState) {
+                        sub->sendTextMessage(msg);
+                    }
+                }
+            });
+        } else {
+            room.subscribers.insert(sock);
+
+            connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                QPointer<QWebSocket> pub = it->publisher;
+                if (pub && pub->state() == QAbstractSocket::ConnectedState) {
+                    pub->sendTextMessage(msg);
+                } else {
+                    it->pendingTextToPublisher.append(msg);
+                    if (it->pendingTextToPublisher.size() > 12) {
+                        it->pendingTextToPublisher.remove(0, it->pendingTextToPublisher.size() - 12);
+                    }
+                }
+            });
+
+            connect(sock, &QWebSocket::binaryMessageReceived, this, [this, roomId](const QByteArray &msg) {
+                auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end()) return;
+                QPointer<QWebSocket> pub = it->publisher;
+                if (pub && pub->state() == QAbstractSocket::ConnectedState) {
+                    pub->sendBinaryMessage(msg);
+                } else {
+                    it->pendingBinaryToPublisher.append(msg);
+                    if (it->pendingBinaryToPublisher.size() > 6) {
+                        it->pendingBinaryToPublisher.remove(0, it->pendingBinaryToPublisher.size() - 6);
+                    }
+                }
+            });
+        }
+
+        connect(sock, &QWebSocket::disconnected, this, [this, sock, roomId]() {
+            auto it = m_rooms.find(roomId);
+            if (it == m_rooms.end()) {
+                sock->deleteLater();
+                return;
+            }
+
+            if (it->publisher == sock) {
+                it->publisher = nullptr;
+            }
+            it->subscribers.remove(sock);
+
+            if (!it->publisher && it->subscribers.isEmpty()) {
+                m_rooms.erase(it);
+            }
+
+            sock->deleteLater();
+        });
+    }
+};
+}
 
 
 // 新增：读取本地默认质量设置
@@ -368,6 +545,25 @@ int main(int argc, char *argv[])
     QNetworkProxyFactory::setUseSystemConfiguration(false);
     QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
+
+    LanRelayServer *lanRelay = nullptr;
+    QThread *lanThread = nullptr;
+    if (AppConfig::lanWsEnabled()) {
+        lanThread = new QThread(&app);
+        lanRelay = new LanRelayServer();
+        lanRelay->moveToThread(lanThread);
+        QObject::connect(lanThread, &QThread::finished, lanRelay, &QObject::deleteLater);
+        lanThread->start();
+        const quint16 port = static_cast<quint16>(AppConfig::lanWsPort());
+        QMetaObject::invokeMethod(lanRelay, [lanRelay, port]() {
+            lanRelay->start(port);
+        }, Qt::QueuedConnection);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [lanThread]() {
+            if (!lanThread) return;
+            lanThread->quit();
+            lanThread->wait(1500);
+        });
+    }
     
     // -------------------------------------------------------------------------
     // 启动看门狗客户端
@@ -449,7 +645,7 @@ int main(int argc, char *argv[])
     encoder->setEnableStaticDetection(true);        // 启用静态检测
     encoder->setStaticThreshold(0.005);             // 设置0.5%的变化阈值，非常敏感
     encoder->setStaticBitrateReduction(0.10);       // 静态内容码率减少到10%，极致压缩
-    encoder->setSkipStaticFrames(true);             // 启用静态帧跳过，画面静止时不发送数据
+    encoder->setSkipStaticFrames(false);
     // qDebug() << "[CaptureProcess] VP9静态检测优化配置完成";
     //     qDebug() << "[CaptureProcess] - 静态检测阈值: 5%";
     //     qDebug() << "[CaptureProcess] - 码率减少: 50%";
@@ -1093,8 +1289,7 @@ int main(int argc, char *argv[])
         staticMouseCapture->setScreenRect(qScreenRect, targetEncodeSize);
 
         // 按质量调整码率与静态内容降码策略
-        // 全局启用静态帧跳过以实现最低流量
-        staticEncoder->setSkipStaticFrames(true);
+        staticEncoder->setSkipStaticFrames(false);
 
         if (q == "low") {
             staticEncoder->setBitrate(200000);
@@ -1382,6 +1577,9 @@ int main(int argc, char *argv[])
         }
         if (!isCapturing) {
             if (!audioOnly) {
+                if (staticEncoder) {
+                    staticEncoder->resetStreamingState();
+                }
                 applyQualitySetting(currentQuality);
                 qDebug() << "[CaptureProcess] Quality applied on start. TargetEncodeSize:" << targetEncodeSize;
 
@@ -1431,6 +1629,9 @@ int main(int argc, char *argv[])
         if (mp3Decoder) { mp3Decoder->stop(); }
 
         if (softStop) {
+            if (staticEncoder) {
+                staticEncoder->resetStreamingState();
+            }
             return;
         }
 
@@ -1464,6 +1665,9 @@ int main(int argc, char *argv[])
             if (mp3Decoder) { mp3Decoder->stop(); }
 
             if (softStop) {
+                if (staticEncoder) {
+                    staticEncoder->resetStreamingState();
+                }
                 return;
             }
 

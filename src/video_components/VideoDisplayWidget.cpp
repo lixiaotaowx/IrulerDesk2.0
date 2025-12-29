@@ -305,12 +305,16 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
         m_receiver->stopAudio();
         // Disconnect audio signal to prevent processing any queued signals
         disconnect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived, this, nullptr);
+        disconnect(m_receiver.get(), &WebSocketReceiver::frameReceivedWithTimestamp, this, nullptr);
     }
 
     m_receiver->disconnectFromServer();
     
     // 清理解码器缓存，确保切换设备时没有残留状态
-    // 避免在停止时清理解码器，减少重开延迟；仅在析构时清理
+    if (m_decoder) {
+        m_decoder->cleanup();
+        m_decoderInitialized = false;
+    }
 
     // 停止并清理音频输出，避免残留状态影响下一次播放
     if (m_audioPlayer) {
@@ -1484,29 +1488,9 @@ void VideoDisplayWidget::recreateReceiver()
         emit avatarUpdateReceived(userId, iconId);
     });
 
-    connect(m_receiver.get(), &WebSocketReceiver::streamingStarted, this, [this]() {
-        if (m_receiver && m_receiver->isConnected()) {
-             m_receiver->sendRequestKeyFrame();
-        }
-    });
-    
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
             m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-            // m_receiver->sendRequestKeyFrame(); // REMOVED: Avoid race condition
-            
-            // -------------------------------------------------------------------------
-            // [Fix 6] 调整请求时序 (Request Timing Adjustment)
-            // -------------------------------------------------------------------------
-            // 移除立即发送关键帧请求，改为等待 streaming_ok 信号。
-            // 保留一个延迟回退机制，防止服务器未发送 streaming_ok 导致死等。
-            
-            QTimer::singleShot(500, this, [this]() {
-                if (m_receiver && m_receiver->isConnected() && m_stats.framesReceived == 0 && !m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
-                    // Fallback request
-                    m_receiver->sendRequestKeyFrame();
-                }
-            });
         }
     });
 

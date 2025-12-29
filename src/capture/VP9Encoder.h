@@ -25,7 +25,7 @@ public:
     QByteArray encode(const QByteArray &frameData, int inputWidth = -1, int inputHeight = -1);
     
     // 编码参数
-    void setBitrate(int bitrate) { m_bitrate = bitrate; }
+    void setBitrate(int bitrate) { m_bitrate = bitrate; m_originalBitrate = bitrate; }
     void setKeyFrameInterval(int interval) { m_keyFrameInterval = interval; }
     
     // 静态检测参数
@@ -53,6 +53,7 @@ signals:
 
 public slots:
     void forceKeyFrame(); // 强制生成关键帧
+    void resetStreamingState();
 
 private:
     bool initializeEncoder();

@@ -59,11 +59,15 @@ bool VP9Encoder::initialize(int width, int height, int fps)
         cleanup();
     }
     
-    
-    
     m_frameSize = QSize(width, height);
     m_frameRate = fps;
-    m_originalBitrate = m_bitrate;  // 保存原始码率
+    m_originalBitrate = m_bitrate;
+    m_previousFrameData.clear();
+    m_lastFrameWasStatic = false;
+    m_lastFrameDifference = 0.0;
+    m_staticFrameCount = 0;
+    m_forceNextKeyFrame = false;
+    m_lastWasKey = false;
     
     // 分配YUV缓冲区
     m_yPlaneSize = width * height;
@@ -95,15 +99,9 @@ void VP9Encoder::cleanup()
 {
     QMutexLocker locker(&m_mutex);
     
-    if (!m_initialized) {
-        return;
-    }
-    
-    
-    
-    // 销毁编码器
-    if (vpx_codec_destroy(&m_codec) != VPX_CODEC_OK) {
-        
+    if (m_initialized) {
+        if (vpx_codec_destroy(&m_codec) != VPX_CODEC_OK) {
+        }
     }
     
     // 释放YUV缓冲区
@@ -115,9 +113,19 @@ void VP9Encoder::cleanup()
     m_vPlane = nullptr;
     
     // 释放原始图像
-    vpx_img_free(&m_rawImage);
+    if (m_rawImage.img_data) {
+        vpx_img_free(&m_rawImage);
+    }
     
     m_initialized = false;
+    m_previousFrameData.clear();
+    m_lastFrameWasStatic = false;
+    m_lastFrameDifference = 0.0;
+    m_staticFrameCount = 0;
+    m_frameCount = 0;
+    m_forceNextKeyFrame = false;
+    m_lastWasKey = false;
+    m_bitrate = m_originalBitrate;
 }
 
 QByteArray VP9Encoder::encode(const QByteArray &frameData, int inputWidth, int inputHeight)
@@ -218,6 +226,24 @@ void VP9Encoder::forceKeyFrame()
     m_forceNextKeyFrame = true;
     // 移除关键帧请求日志以提升性能
     // qDebug() << "[VP9Encoder] [首帧策略] 收到强制关键帧请求，下一帧将强制为关键帧";
+}
+
+void VP9Encoder::resetStreamingState()
+{
+    QMutexLocker locker(&m_mutex);
+    m_previousFrameData.clear();
+    m_lastFrameWasStatic = false;
+    m_lastFrameDifference = 0.0;
+    m_staticFrameCount = 0;
+    m_frameCount = 0;
+    m_forceNextKeyFrame = true;
+    m_lastWasKey = false;
+
+    m_bitrate = m_originalBitrate;
+    if (m_initialized) {
+        m_config.rc_target_bitrate = m_bitrate / 1000;
+        vpx_codec_enc_config_set(&m_codec, &m_config);
+    }
 }
 
 bool VP9Encoder::initializeEncoder()

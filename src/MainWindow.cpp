@@ -992,6 +992,74 @@ void MainWindow::startProcesses()
             this, &MainWindow::onCaptureProcessFinished);
     // 将子进程标准输出/错误直接转发到当前终端
     m_captureProcess->setProcessChannelMode(QProcess::SeparateChannels);
+    m_captureProcess->setProperty("stdout_buf", QString());
+    m_captureProcess->setProperty("stderr_buf", QString());
+
+    auto forwardProcessOutput = [this](const QByteArray &chunk, const char *propName, bool isErr) {
+        if (!m_captureProcess) {
+            return;
+        }
+
+        QString buffer = m_captureProcess->property(propName).toString();
+        buffer += QString::fromUtf8(chunk);
+
+        while (true) {
+            const int newlinePos = buffer.indexOf('\n');
+            if (newlinePos < 0) {
+                break;
+            }
+            QString line = buffer.left(newlinePos);
+            buffer.remove(0, newlinePos + 1);
+            if (!line.isEmpty() && line.endsWith('\r')) {
+                line.chop(1);
+            }
+
+            if (line.isEmpty()) {
+                continue;
+            }
+
+            if (isErr) {
+                qWarning().noquote() << "[CaptureProcess]" << line;
+            } else {
+                const bool important =
+                    line.contains(QStringLiteral("[KickDiag]"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("lan_offer"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("lan "), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral(" lan_"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("[CaptureProcess]"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("VP9"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("subscribe"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("publish"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("ws://"), Qt::CaseInsensitive) ||
+                    line.contains(QStringLiteral("wss://"), Qt::CaseInsensitive);
+
+                if (important) {
+                    qInfo().noquote() << "[CaptureProcess]" << line;
+                }
+            }
+        }
+
+        m_captureProcess->setProperty(propName, buffer);
+    };
+
+    connect(m_captureProcess, &QProcess::readyReadStandardOutput, this, [this, forwardProcessOutput]() {
+        if (!m_captureProcess) {
+            return;
+        }
+        const QByteArray chunk = m_captureProcess->readAllStandardOutput();
+        if (!chunk.isEmpty()) {
+            forwardProcessOutput(chunk, "stdout_buf", false);
+        }
+    });
+    connect(m_captureProcess, &QProcess::readyReadStandardError, this, [this, forwardProcessOutput]() {
+        if (!m_captureProcess) {
+            return;
+        }
+        const QByteArray chunk = m_captureProcess->readAllStandardError();
+        if (!chunk.isEmpty()) {
+            forwardProcessOutput(chunk, "stderr_buf", true);
+        }
+    });
     
     // -------------------------------------------------------------------------
     // 看门狗设置 (Watchdog Setup)
@@ -1087,8 +1155,6 @@ void MainWindow::stopProcesses()
 
 void MainWindow::onCaptureProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
-    // 输出已通过 ForwardedChannels 直接转发到控制台，这里无需读取缓冲
-    
     if (m_isStreaming) {
         // 如果是正常退出（通常是用户点击停止），不做特殊处理，stopStreaming() 会处理状态
         // 但如果是 CrashExit（被看门狗杀死或崩溃），我们需要处理

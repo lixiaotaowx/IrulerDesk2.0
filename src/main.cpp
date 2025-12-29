@@ -22,6 +22,8 @@
 #include <QSet>
 #include <QPointer>
 #include <QHostAddress>
+#include <QNetworkProxy>
+#include <QNetworkProxyFactory>
 #include <QThread>
 #include <iostream>
 #include <atomic>
@@ -215,6 +217,8 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
+    QNetworkProxyFactory::setUseSystemConfiguration(false);
+    QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     
     {
         QLocalSocket probe;

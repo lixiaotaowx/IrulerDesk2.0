@@ -101,6 +101,10 @@ private:
     void publishLocalAvatarOnce();
     void publishLocalAvatarHint();
     void publishLocalScreenFrame(bool force);
+    void publishLocalScreenFrameTriggered(const QString &reason, bool forceSend, bool allowCapture);
+    void startSelfPreviewFast();
+    void stopSelfPreviewFast();
+    void buildLocalPreviewFrameFast(QPixmap &previewPix);
     void buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix);
     QString extractUserId(QObject *obj) const;
     QString makeHoverChannelId(const QString &targetUserId) const;
@@ -123,6 +127,7 @@ private:
 
     QListWidget *m_listWidget = nullptr;
     QTimer *m_timer = nullptr;
+    QTimer *m_selfPreviewFastTimer = nullptr;
     QLabel *m_videoLabel = nullptr; // Local preview label (Index 0)
     QLabel *m_logoLabel = nullptr;
     QWidget *m_farRightPanel = nullptr; // Far right panel (My Room)
@@ -217,4 +222,10 @@ private:
     int m_topAreaHeight;
     int m_marginTop;
     int m_captureScreenIndex = -1;
+
+    QPixmap m_lastPreviewFramePixmap;
+    QPixmap m_lastPreviewSendPixmap;
+    qint64 m_lastPreviewCaptureAtMs = 0;
+    qint64 m_lastPreviewResendAtMs = 0;
+    qint64 m_lastPreviewLogAtMs = 0;
 };

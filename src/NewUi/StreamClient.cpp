@@ -1,6 +1,7 @@
 #include "StreamClient.h"
 #include <QBuffer>
 #include <QDateTime>
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -33,6 +34,71 @@ static QString wsPortTag(const QUrl &url)
 static QString scTag(const StreamClient *self)
 {
     return QStringLiteral("[KickDiag][StreamClient][0x%1] ").arg(QString::number(reinterpret_cast<quintptr>(self), 16));
+}
+
+static QVector<quint32> localIpv4sForLanPick()
+{
+    QVector<quint32> out;
+    const QStringList bases = AppConfig::localLanBaseUrls();
+    out.reserve(bases.size());
+    for (const QString &b : bases) {
+        const QUrl u(b);
+        QHostAddress ha(u.host());
+        if (ha.protocol() != QAbstractSocket::IPv4Protocol) continue;
+        const quint32 ip = ha.toIPv4Address();
+        if (ip == 0) continue;
+        out.push_back(ip);
+    }
+    return out;
+}
+
+static int ipv4LanScore(quint32 ip, const QVector<quint32> &locals)
+{
+    int score = 0;
+    if ((ip & 0xFFFF0000u) == 0xC0A80000u) score += 300;
+    else if ((ip & 0xFF000000u) == 0x0A000000u) score += 200;
+    else if ((ip & 0xFFF00000u) == 0xAC100000u) score += 100;
+
+    for (quint32 local : locals) {
+        if (local == 0) continue;
+        if (ip == local) {
+            score += 2000;
+            continue;
+        }
+        if ((ip & 0xFFFFFF00u) == (local & 0xFFFFFF00u)) {
+            score += 1000;
+        }
+    }
+    return score;
+}
+
+static QUrl pickBestLanSubscribeUrl(const QStringList &bases, const QString &channelId, const QUrl &currentUrl)
+{
+    const QVector<quint32> locals = localIpv4sForLanPick();
+
+    QUrl best;
+    int bestScore = -1;
+    for (const QString &base : bases) {
+        if (base.isEmpty()) continue;
+        QUrl u(base);
+        if (!u.isValid() || u.isEmpty()) continue;
+        if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) continue;
+        QHostAddress ha(u.host());
+        int s = -1;
+        if (ha.protocol() == QAbstractSocket::IPv4Protocol) {
+            const quint32 ip = ha.toIPv4Address();
+            s = ipv4LanScore(ip, locals);
+        } else {
+            s = 0;
+        }
+        u.setPath(QStringLiteral("/subscribe/%1").arg(channelId));
+        if (u == currentUrl) continue;
+        if (s > bestScore) {
+            bestScore = s;
+            best = u;
+        }
+    }
+    return best;
 }
 
 StreamClient::StreamClient(QObject *parent)
@@ -415,17 +481,20 @@ void StreamClient::onError(QAbstractSocket::SocketError error)
         !m_lanSwitchInProgress) {
         const QString roomId = roomIdFromUrl(m_lastUrl);
         if (!roomId.isEmpty()) {
-            m_cloudFallbackUrl = m_lastUrl;
-            m_lanSwitchInProgress = true;
-            QUrl u(AppConfig::lanWsLoopbackBaseUrl());
-            u.setPath(QStringLiteral("/subscribe/%1").arg(roomId));
-            emit logMessage(scTag(this) + QStringLiteral("switch_to_lan_loopback room=%1 from=%2 to=%3")
-                                .arg(roomId)
-                                .arg(m_cloudFallbackUrl.toString())
-                                .arg(u.toString()));
-            connectToServer(u);
-            startLanFallbackTimer();
-            return;
+            const QStringList bases = AppConfig::lanBaseUrlsForTarget(roomId);
+            const QUrl u = pickBestLanSubscribeUrl(bases, roomId, m_lastUrl);
+            if (u.isValid() && !u.isEmpty()) {
+                m_cloudFallbackUrl = m_lastUrl;
+                m_lanSwitchInProgress = true;
+                emit logMessage(scTag(this) + QStringLiteral("switch_to_lan room=%1 base_urls=%2 from=%3 to=%4")
+                                    .arg(roomId)
+                                    .arg(bases.join(QStringLiteral(",")))
+                                    .arg(m_cloudFallbackUrl.toString())
+                                    .arg(u.toString()));
+                connectToServer(u);
+                startLanFallbackTimer();
+                return;
+            }
         }
     }
 
@@ -535,17 +604,7 @@ void StreamClient::handleLanOfferMessage(const QJsonObject &obj)
         AppConfig::setLanBaseUrlsForTarget(channelId, bases);
     }
 
-    QUrl best;
-    for (const QJsonValue &it : arr) {
-        const QString base = it.toString();
-        if (base.isEmpty()) continue;
-        QUrl u(base);
-        if (!u.isValid()) continue;
-        if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) continue;
-        u.setPath(QStringLiteral("/subscribe/%1").arg(channelId));
-        best = u;
-        break;
-    }
+    const QUrl best = pickBestLanSubscribeUrl(bases, channelId, m_lastUrl);
     if (!best.isValid() || best.isEmpty()) {
         return;
     }

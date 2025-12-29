@@ -33,6 +33,8 @@
 #include <QtMultimedia/QAudioSink>
 #include <QUrl>
 #include <QUrl>
+#include <QNetworkProxy>
+#include <QNetworkProxyFactory>
 #include <opus/opus.h>
 #ifdef _WIN32
 #define NOMINMAX
@@ -363,6 +365,8 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     AppConfig::applyApplicationInfo(app);
+    QNetworkProxyFactory::setUseSystemConfiguration(false);
+    QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
     
     // -------------------------------------------------------------------------
@@ -2182,7 +2186,13 @@ int main(int argc, char *argv[])
     QString serverUrl = QString("%1/publish/%2").arg(serverBaseUrl, deviceId);
     QString lanUrl;
     if (lanSender) {
-        lanUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), deviceId);
+        const QStringList bases = AppConfig::localLanBaseUrls();
+        const QString base = bases.value(0);
+        if (!base.isEmpty()) {
+            QUrl u(base);
+            u.setPath(QStringLiteral("/publish/%1").arg(deviceId));
+            lanUrl = u.toString();
+        }
     }
     
     // 显示设备ID

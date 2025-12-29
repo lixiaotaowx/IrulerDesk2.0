@@ -331,11 +331,7 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
         }
 
         QString serverUrl;
-        if (AppConfig::lanWsEnabled()) {
-            serverUrl = QString("%1/subscribe/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), targetDeviceId);
-        } else {
-            serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId);
-        }
+        serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId);
 
         int initialColorId = loadOrGenerateColorId();
         videoWidget->setAnnotationColorId(initialColorId);

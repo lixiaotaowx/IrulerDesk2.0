@@ -12,7 +12,11 @@
 #include <QHash>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QDateTime>
 #include <QNetworkInterface>
+#include <QUdpSocket>
+#include <QUrl>
+#include <algorithm>
 
 namespace AppConfig {
 
@@ -135,21 +139,124 @@ inline int lanWsPort()
     return p;
 }
 
-inline QString lanWsLoopbackBaseUrl()
-{
-    return QStringLiteral("ws://127.0.0.1:%1").arg(lanWsPort());
-}
-
 inline QStringList localLanBaseUrls()
 {
-    QStringList out;
     const int port = lanWsPort();
 
+    struct Cand {
+        QString url;
+        quint32 ip = 0;
+        int score = 0;
+        QString iface;
+    };
+
+    auto ipInCidr = [](quint32 ip, quint32 net, quint32 mask) -> bool {
+        return (ip & mask) == (net & mask);
+    };
+
+    auto isReservedTestNet = [](quint32 ip) -> bool {
+        if ((ip & 0xFFFF0000u) == 0xC0000200u) return true;
+        if ((ip & 0xFFFFFF00u) == 0xC6336400u) return true;
+        if ((ip & 0xFFFFFF00u) == 0xCB007100u) return true;
+        if ((ip & 0xFFFE0000u) == 0xC6120000u) return true;
+        return false;
+    };
+
+    auto isCarrierNat = [](quint32 ip) -> bool {
+        return (ip & 0xFFC00000u) == 0x64400000u;
+    };
+
+    auto preferredOutboundIp = []() -> quint32 {
+        const QString base = wsBaseUrl();
+        QUrl u(base);
+        QString host = u.host();
+        if (host.isEmpty()) {
+            host = base;
+            host.remove(QStringLiteral("ws://"), Qt::CaseInsensitive);
+            host.remove(QStringLiteral("wss://"), Qt::CaseInsensitive);
+            const int p = host.indexOf('/');
+            if (p >= 0) host = host.left(p);
+            const int c = host.indexOf(':');
+            if (c >= 0) host = host.left(c);
+        }
+
+        QHostAddress remote;
+        if (!host.isEmpty()) {
+            remote = QHostAddress(host);
+        }
+        if (remote.isNull() || remote.protocol() != QAbstractSocket::IPv4Protocol) {
+            remote = QHostAddress(QStringLiteral("8.8.8.8"));
+        }
+
+        QUdpSocket s;
+        s.connectToHost(remote, 53);
+        const QHostAddress local = s.localAddress();
+        if (local.protocol() != QAbstractSocket::IPv4Protocol || local.isNull() || local.isLoopback()) {
+            return 0;
+        }
+        return local.toIPv4Address();
+    };
+
+    auto ipv4Score = [](quint32 ip) -> int {
+        if ((ip & 0xFFFF0000u) == 0xC0A80000u) return 300;
+        if ((ip & 0xFF000000u) == 0x0A000000u) return 200;
+        if ((ip & 0xFFF00000u) == 0xAC100000u) return 100;
+        return 0;
+    };
+
+    auto isLinkLocal = [](quint32 ip) -> bool {
+        return (ip & 0xFFFF0000u) == 0xA9FE0000u;
+    };
+
+    auto isBogusLanIp = [&](quint32 ip) -> bool {
+        if (ip == 0) return true;
+        if (isLinkLocal(ip)) return true;
+        if (isReservedTestNet(ip)) return true;
+        if (isCarrierNat(ip)) return true;
+        return false;
+    };
+
+    auto isLikelyVirtualSubnet = [](quint32 ip) -> bool {
+        return (ip & 0xFFFFFF00u) == 0xC0A83800u;
+    };
+
+    auto isBadInterfaceName = [](const QNetworkInterface &iface) -> bool {
+        QString n = (iface.humanReadableName() + QStringLiteral(" ") + iface.name()).toLower();
+        if (n.contains(QStringLiteral("vmware"))) return true;
+        if (n.contains(QStringLiteral("virtualbox"))) return true;
+        if (n.contains(QStringLiteral("vbox"))) return true;
+        if (n.contains(QStringLiteral("host-only"))) return true;
+        if (n.contains(QStringLiteral("host only"))) return true;
+        if (n.contains(QStringLiteral("vmnet"))) return true;
+        if (n.contains(QStringLiteral("hyper-v"))) return true;
+        if (n.contains(QStringLiteral("vethernet"))) return true;
+        if (n.contains(QStringLiteral("wsl"))) return true;
+        if (n.contains(QStringLiteral("docker"))) return true;
+        if (n.contains(QStringLiteral("zerotier"))) return true;
+        if (n.contains(QStringLiteral("hamachi"))) return true;
+        if (n.contains(QStringLiteral("radmin"))) return true;
+        if (n.contains(QStringLiteral("tailscale"))) return true;
+        if (n.contains(QStringLiteral("wireguard"))) return true;
+        if (n.contains(QStringLiteral("openvpn"))) return true;
+        if (n.contains(QStringLiteral("wintun"))) return true;
+        if (n.contains(QStringLiteral("tap"))) return true;
+        if (n.contains(QStringLiteral("tun"))) return true;
+        if (n.contains(QStringLiteral("teredo"))) return true;
+        if (n.contains(QStringLiteral("npcap"))) return true;
+        return false;
+    };
+
+    QVector<Cand> cands;
+    const quint32 preferredIp = preferredOutboundIp();
     const auto ifaces = QNetworkInterface::allInterfaces();
     for (const QNetworkInterface &iface : ifaces) {
         if (!iface.isValid()) continue;
         if (!(iface.flags() & QNetworkInterface::IsUp)) continue;
+        if (!(iface.flags() & QNetworkInterface::IsRunning)) continue;
         if (iface.flags() & QNetworkInterface::IsLoopBack) continue;
+        if (iface.flags() & QNetworkInterface::IsPointToPoint) continue;
+        if (isBadInterfaceName(iface)) continue;
+        if (!(iface.flags() & QNetworkInterface::CanBroadcast)) continue;
 
         const auto entries = iface.addressEntries();
         for (const QNetworkAddressEntry &e : entries) {
@@ -158,11 +265,59 @@ inline QStringList localLanBaseUrls()
             if (ip.isNull() || ip.isLoopback()) continue;
             const QString ipStr = ip.toString();
             if (ipStr.isEmpty()) continue;
-            out.append(QStringLiteral("ws://%1:%2").arg(ipStr).arg(port));
+            const quint32 ip4 = ip.toIPv4Address();
+            if (isBogusLanIp(ip4)) continue;
+            Cand c;
+            c.ip = ip4;
+            c.score = ipv4Score(ip4);
+            c.iface = iface.humanReadableName();
+            if (isLikelyVirtualSubnet(ip4)) {
+                c.score -= 250;
+            }
+            if (preferredIp != 0) {
+                const QHostAddress nm = e.netmask();
+                quint32 mask = 0xFFFFFF00u;
+                if (!nm.isNull() && nm.protocol() == QAbstractSocket::IPv4Protocol) {
+                    const quint32 m = nm.toIPv4Address();
+                    if (m != 0) mask = m;
+                } else if (e.prefixLength() >= 0 && e.prefixLength() <= 32) {
+                    const int pl = e.prefixLength();
+                    mask = pl == 0 ? 0u : (0xFFFFFFFFu << (32 - pl));
+                }
+                if (mask != 0 && ipInCidr(ip4, preferredIp, mask)) {
+                    c.score += 1000;
+                }
+            }
+            c.url = QStringLiteral("ws://%1:%2").arg(ipStr).arg(port);
+            cands.push_back(c);
         }
     }
 
+    std::stable_sort(cands.begin(), cands.end(), [](const Cand &a, const Cand &b) {
+        if (a.score != b.score) return a.score > b.score;
+        return a.ip < b.ip;
+    });
+
+    QStringList out;
+    out.reserve(cands.size());
+    for (const Cand &c : cands) {
+        out.append(c.url);
+    }
     out.removeDuplicates();
+
+    static qint64 lastLogAtMs = 0;
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs - lastLogAtMs > 60000) {
+        lastLogAtMs = nowMs;
+        QStringList top;
+        for (int i = 0; i < cands.size() && i < 6; ++i) {
+            const Cand &c = cands[i];
+            top.append(QStringLiteral("%1 score=%2 iface=%3").arg(c.url).arg(c.score).arg(c.iface));
+        }
+        qInfo().noquote() << "[KickDiag][LanBase] preferred_ip="
+                          << (preferredIp == 0 ? QStringLiteral("-") : QHostAddress(preferredIp).toString())
+                          << " top=" << top.join(QStringLiteral(" | "));
+    }
     return out;
 }
 

@@ -154,6 +154,37 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_timer->start(60 * 1000);
     QTimer::singleShot(0, this, &NewUiWindow::onTimerTimeout);
 
+    m_selfPreviewFastTimer = new QTimer(this);
+    m_selfPreviewFastTimer->setInterval(100);
+    connect(m_selfPreviewFastTimer, &QTimer::timeout, this, [this]() {
+        if (!m_videoLabel) return;
+        if (QApplication::applicationState() != Qt::ApplicationActive) return;
+        if (!m_listWidget) return;
+        QListWidgetItem *current = m_listWidget->currentItem();
+        QString userId;
+        if (current) {
+            userId = current->data(Qt::UserRole).toString();
+            if (userId.isEmpty()) {
+                if (QWidget *iw = m_listWidget->itemWidget(current)) {
+                    if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                        userId = card->property("userId").toString();
+                    } else {
+                        userId = iw->property("userId").toString();
+                    }
+                }
+            }
+        }
+        if (userId.isEmpty() || userId != m_myStreamId) {
+            stopSelfPreviewFast();
+            return;
+        }
+        QPixmap preview;
+        buildLocalPreviewFrameFast(preview);
+        if (!preview.isNull()) {
+            m_videoLabel->setPixmap(preview);
+        }
+    });
+
     m_talkSpinnerTimer = new QTimer(this);
     connect(m_talkSpinnerTimer, &QTimer::timeout, this, &NewUiWindow::onTalkSpinnerTimeout);
 
@@ -161,24 +192,24 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_streamClient = new StreamClient(this);
     connect(m_streamClient, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
     connect(m_streamClient, &StreamClient::connected, this, [this]() {
-        publishLocalScreenFrame(true);
+        publishLocalScreenFrameTriggered(QStringLiteral("cloud_connected"), true, true);
     });
     connect(m_streamClient, &StreamClient::startStreamingRequested, this, [this]() {
-        publishLocalScreenFrame(true);
+        publishLocalScreenFrameTriggered(QStringLiteral("cloud_start_request"), true, false);
     });
 
     if (AppConfig::lanWsEnabled()) {
         m_streamClientLan = new StreamClient(this);
         connect(m_streamClientLan, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
         connect(m_streamClientLan, &StreamClient::connected, this, [this]() {
-            publishLocalScreenFrame(true);
+            publishLocalScreenFrameTriggered(QStringLiteral("lan_connected"), true, true);
         });
         connect(m_streamClientLan, &StreamClient::startStreamingRequested, this, [this]() {
-            publishLocalScreenFrame(true);
+            publishLocalScreenFrameTriggered(QStringLiteral("lan_start_request"), true, false);
         });
     }
 
-    connect(m_streamClient, &StreamClient::hoverStreamRequested, this, [this](const QString &targetId, const QString &channelId, int fps, bool enabled) {
+    auto onHoverStream = [this](const QString &targetId, const QString &channelId, int fps, bool enabled) {
         bool accept = true;
         if (!targetId.isEmpty() && !m_myStreamId.isEmpty() && targetId != m_myStreamId) {
             accept = false;
@@ -211,7 +242,11 @@ NewUiWindow::NewUiWindow(QWidget *parent)
         } else {
             stopHiFpsPublishing(channelId);
         }
-    });
+    };
+    connect(m_streamClient, &StreamClient::hoverStreamRequested, this, onHoverStream);
+    if (m_streamClientLan) {
+        connect(m_streamClientLan, &StreamClient::hoverStreamRequested, this, onHoverStream);
+    }
 
     m_avatarPublisher = new StreamClient(this);
     connect(m_avatarPublisher, &StreamClient::connected, this, &NewUiWindow::publishLocalAvatarOnce);
@@ -371,8 +406,13 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
     }
 
     if (m_streamClientLan) {
-        const QString lanUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), previewChannelId);
-        m_streamClientLan->connectToServer(QUrl(lanUrl));
+        const QStringList bases = AppConfig::localLanBaseUrls();
+        const QString base = bases.value(0);
+        if (!base.isEmpty()) {
+            QUrl u(base);
+            u.setPath(QStringLiteral("/publish/%1").arg(previewChannelId));
+            m_streamClientLan->connectToServer(u);
+        }
     }
 
     if (!m_myStreamId.isEmpty()) {
@@ -404,8 +444,13 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
 
         if (m_avatarPublisherLan) {
             const QString channelId = QString("avatar_%1").arg(m_myStreamId);
-            const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), channelId);
-            m_avatarPublisherLan->connectToServer(QUrl(pubUrl));
+            const QStringList bases = AppConfig::localLanBaseUrls();
+            const QString base = bases.value(0);
+            if (!base.isEmpty()) {
+                QUrl u(base);
+                u.setPath(QStringLiteral("/publish/%1").arg(channelId));
+                m_avatarPublisherLan->connectToServer(u);
+            }
         }
 
         ensureAvatarSubscription(m_myStreamId);
@@ -1735,11 +1780,19 @@ void NewUiWindow::setupUi()
                 }
             }
         }
-        if (userId.isEmpty() || userId == m_myStreamId) {
+        if (userId.isEmpty()) {
+            stopSelfPreviewFast();
             cancelHoverHiFps();
             resetSelectionAutoPause(QString());
             return;
         }
+        if (userId == m_myStreamId) {
+            cancelHoverHiFps();
+            resetSelectionAutoPause(QString());
+            startSelfPreviewFast();
+            return;
+        }
+        stopSelfPreviewFast();
         if (QApplication::applicationState() != Qt::ApplicationActive) {
             cancelHoverHiFps();
             resetSelectionAutoPause(QString());
@@ -2227,6 +2280,7 @@ bool NewUiWindow::event(QEvent *event)
     if (event && (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::WindowActivate)) {
         const bool active = (event->type() == QEvent::WindowActivate);
         if (!active) {
+            stopSelfPreviewFast();
             if (m_selectionAutoPauseTimer) {
                 m_selectionAutoPauseTimer->stop();
             }
@@ -2252,6 +2306,11 @@ bool NewUiWindow::event(QEvent *event)
                             }
                         }
                     }
+                }
+                if (!userId.isEmpty() && userId == m_myStreamId) {
+                    startSelfPreviewFast();
+                } else {
+                    stopSelfPreviewFast();
                 }
                 if (!userId.isEmpty() && userId != m_myStreamId) {
                     if (userId != m_autoPausedUserId) {
@@ -2856,33 +2915,148 @@ int NewUiWindow::getViewerCount() const
     return m_viewerItems.size();
 }
 
+void NewUiWindow::startSelfPreviewFast()
+{
+    if (!m_selfPreviewFastTimer) {
+        return;
+    }
+    if (!m_selfPreviewFastTimer->isActive()) {
+        m_selfPreviewFastTimer->start();
+    }
+}
+
+void NewUiWindow::stopSelfPreviewFast()
+{
+    if (!m_selfPreviewFastTimer) {
+        return;
+    }
+    if (m_selfPreviewFastTimer->isActive()) {
+        m_selfPreviewFastTimer->stop();
+    }
+}
+
+void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
+{
+    previewPix = QPixmap();
+
+    const auto screens = QGuiApplication::screens();
+    QScreen *preferred = nullptr;
+    if (m_captureScreenIndex >= 0 && m_captureScreenIndex < screens.size()) {
+        preferred = screens[m_captureScreenIndex];
+    }
+    QScreen *primary = QGuiApplication::primaryScreen();
+
+    QList<QScreen*> candidates;
+    if (preferred) {
+        candidates.append(preferred);
+    }
+    if (primary && primary != preferred) {
+        candidates.append(primary);
+    }
+    for (QScreen *s : screens) {
+        if (s && s != preferred && s != primary) {
+            candidates.append(s);
+        }
+    }
+
+    QPixmap originalPixmap;
+    for (QScreen *s : candidates) {
+        originalPixmap = s->grabWindow(0);
+        if (!originalPixmap.isNull()) {
+            break;
+        }
+    }
+    if (originalPixmap.isNull()) {
+        return;
+    }
+
+    QPixmap scaledPix = originalPixmap.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    const int x = (m_imgWidth - scaledPix.width()) / 2;
+    const int y = (m_imgHeight - scaledPix.height()) / 2;
+
+    QPixmap out(m_imgWidth, m_imgHeight);
+    out.fill(Qt::transparent);
+    QPainter p(&out);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    QPainterPath path;
+    path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
+    p.setClipPath(path);
+    p.drawPixmap(x, y, scaledPix);
+    p.end();
+
+    previewPix = out;
+}
+
 
 
 void NewUiWindow::onTimerTimeout()
 {
-    publishLocalScreenFrame(false);
+    publishLocalScreenFrameTriggered(QStringLiteral("timer"), false, true);
 }
 
 void NewUiWindow::publishLocalScreenFrame(bool force)
+{
+    publishLocalScreenFrameTriggered(QStringLiteral("legacy"), force, true);
+}
+
+void NewUiWindow::publishLocalScreenFrameTriggered(const QString &reason, bool forceSend, bool allowCapture)
 {
     if (!m_videoLabel) {
         return;
     }
 
-    QPixmap previewPix;
-    QPixmap sendPix;
-    buildLocalScreenFrame(previewPix, sendPix);
-    if (previewPix.isNull() || sendPix.isNull()) {
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+
+    const bool requestLike = reason.contains(QStringLiteral("request"), Qt::CaseInsensitive);
+    if (requestLike) {
+        const qint64 minResendMs = 5000;
+        if (m_lastPreviewResendAtMs > 0 && (nowMs - m_lastPreviewResendAtMs) < minResendMs) {
+            return;
+        }
+    }
+
+    const bool shouldCapture = (reason == QStringLiteral("timer"));
+    const bool hasCache = (!m_lastPreviewFramePixmap.isNull() && !m_lastPreviewSendPixmap.isNull());
+    if ((shouldCapture || !hasCache) && allowCapture) {
+        QPixmap previewPix;
+        QPixmap sendPix;
+        buildLocalScreenFrame(previewPix, sendPix);
+        if (!previewPix.isNull() && !sendPix.isNull()) {
+            m_lastPreviewFramePixmap = previewPix;
+            m_lastPreviewSendPixmap = sendPix;
+            m_lastPreviewCaptureAtMs = nowMs;
+        }
+    }
+
+    if (m_lastPreviewFramePixmap.isNull() || m_lastPreviewSendPixmap.isNull()) {
         return;
     }
 
-    m_videoLabel->setPixmap(previewPix);
+    m_videoLabel->setPixmap(m_lastPreviewFramePixmap);
 
+    bool sentAny = false;
     if (m_streamClient && m_streamClient->isConnected()) {
-        m_streamClient->sendFrame(sendPix, force);
+        m_streamClient->sendFrame(m_lastPreviewSendPixmap, forceSend);
+        sentAny = true;
     }
     if (m_streamClientLan && m_streamClientLan->isConnected()) {
-        m_streamClientLan->sendFrame(sendPix, force);
+        m_streamClientLan->sendFrame(m_lastPreviewSendPixmap, forceSend);
+        sentAny = true;
+    }
+
+    if (sentAny && requestLike) {
+        m_lastPreviewResendAtMs = nowMs;
+    }
+
+    if (m_lastPreviewLogAtMs == 0 || (nowMs - m_lastPreviewLogAtMs) >= 5000) {
+        m_lastPreviewLogAtMs = nowMs;
+        qInfo().noquote() << "[PreviewPub]"
+                          << " reason=" << reason
+                          << " force=" << forceSend
+                          << " captured=" << ((shouldCapture || !hasCache) && allowCapture)
+                          << " age_ms=" << (m_lastPreviewCaptureAtMs > 0 ? (nowMs - m_lastPreviewCaptureAtMs) : -1)
+                          << " sent=" << (sentAny ? "true" : "false");
     }
 }
 
@@ -3252,7 +3426,6 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
         return;
     }
     const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), channelId);
-    const QString pubLanUrl = QString("%1/publish/%2").arg(AppConfig::lanWsLoopbackBaseUrl(), channelId);
     StreamClient *pub = m_hiFpsPublishers.value(channelId, nullptr);
     if (!pub) {
         pub = new StreamClient(this);
@@ -3284,7 +3457,13 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
             });
         }
         if (!pubLan->isConnected()) {
-            pubLan->connectToServer(QUrl(pubLanUrl));
+            const QStringList bases = AppConfig::localLanBaseUrls();
+            const QString base = bases.value(0);
+            if (!base.isEmpty()) {
+                QUrl u(base);
+                u.setPath(QStringLiteral("/publish/%1").arg(channelId));
+                pubLan->connectToServer(u);
+            }
         }
     }
 

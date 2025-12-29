@@ -23,6 +23,7 @@
 #include <QtMultimedia/QMediaDevices>
 #include <QtMultimedia/QAudioFormat>
 #include <QVector>
+#include <QHostAddress>
 #include "../common/AppConfig.h"
 
 static QString roomIdFromWsUrlString(const QString &urlString)
@@ -39,6 +40,71 @@ static bool isSubscribeWsUrlString(const QString &urlString)
     const QStringList parts = url.path().split('/', Qt::SkipEmptyParts);
     if (parts.isEmpty()) return false;
     return parts.value(0) == QStringLiteral("subscribe");
+}
+
+static QVector<quint32> localIpv4sForLanPick()
+{
+    QVector<quint32> out;
+    const QStringList bases = AppConfig::localLanBaseUrls();
+    out.reserve(bases.size());
+    for (const QString &b : bases) {
+        const QUrl u(b);
+        QHostAddress ha(u.host());
+        if (ha.protocol() != QAbstractSocket::IPv4Protocol) continue;
+        const quint32 ip = ha.toIPv4Address();
+        if (ip == 0) continue;
+        out.push_back(ip);
+    }
+    return out;
+}
+
+static int ipv4LanScore(quint32 ip, const QVector<quint32> &locals)
+{
+    int score = 0;
+    if ((ip & 0xFFFF0000u) == 0xC0A80000u) score += 300;
+    else if ((ip & 0xFF000000u) == 0x0A000000u) score += 200;
+    else if ((ip & 0xFFF00000u) == 0xAC100000u) score += 100;
+
+    for (quint32 local : locals) {
+        if (local == 0) continue;
+        if (ip == local) {
+            score += 2000;
+            continue;
+        }
+        if ((ip & 0xFFFFFF00u) == (local & 0xFFFFFF00u)) {
+            score += 1000;
+        }
+    }
+    return score;
+}
+
+static QString pickBestLanSubscribeUrlString(const QStringList &bases, const QString &channelId, const QString &currentUrl)
+{
+    const QVector<quint32> locals = localIpv4sForLanPick();
+    const QUrl cur(currentUrl);
+
+    QUrl best;
+    int bestScore = -1;
+    for (const QString &base : bases) {
+        if (base.isEmpty()) continue;
+        QUrl u(base);
+        if (!u.isValid() || u.isEmpty()) continue;
+        if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) continue;
+
+        int s = 0;
+        QHostAddress ha(u.host());
+        if (ha.protocol() == QAbstractSocket::IPv4Protocol) {
+            s = ipv4LanScore(ha.toIPv4Address(), locals);
+        }
+
+        u.setPath(QStringLiteral("/subscribe/%1").arg(channelId));
+        if (cur.isValid() && u == cur) continue;
+        if (s > bestScore) {
+            bestScore = s;
+            best = u;
+        }
+    }
+    return best.isValid() ? best.toString() : QString();
 }
 
 static int pickBestOpusSampleRate(const QAudioDevice &inDev) {
@@ -823,21 +889,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 AppConfig::setLanBaseUrlsForTarget(channelId, bases);
             }
 
-            QUrl best;
-            for (const QJsonValue &it : arr) {
-                const QString base = it.toString();
-                if (base.isEmpty()) continue;
-                QUrl u(base);
-                if (!u.isValid()) continue;
-                if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) continue;
-                u.setPath(QStringLiteral("/subscribe/%1").arg(channelId));
-                best = u;
-                break;
-            }
-            if (!best.isValid() || best.isEmpty()) {
-                return;
-            }
-            const QString lanUrl = best.toString();
+            const QString lanUrl = pickBestLanSubscribeUrlString(bases, channelId, currentUrl);
             if (lanUrl.isEmpty() || lanUrl == currentUrl) {
                 return;
             }
@@ -1151,21 +1203,8 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
 
         if (!channelId.isEmpty()) {
             QStringList bases = AppConfig::lanBaseUrlsForTarget(channelId);
-            if (bases.isEmpty()) {
-                bases.append(AppConfig::lanWsLoopbackBaseUrl());
-            }
 
-            QString lanUrl;
-            for (const QString &base : bases) {
-                QUrl u(base);
-                if (!u.isValid()) continue;
-                if (u.scheme() != QStringLiteral("ws") && u.scheme() != QStringLiteral("wss")) continue;
-                u.setPath(QStringLiteral("/subscribe/%1").arg(channelId));
-                const QString s = u.toString();
-                if (s.isEmpty() || s == currentUrl) continue;
-                lanUrl = s;
-                break;
-            }
+            const QString lanUrl = pickBestLanSubscribeUrlString(bases, channelId, currentUrl);
 
             if (!lanUrl.isEmpty()) {
                 {

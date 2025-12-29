@@ -8,6 +8,8 @@
 #include <QTextStream>
 #include <QDateTime>
 #include <iostream>
+#include <QNetworkProxy>
+#include <QNetworkProxyFactory>
 #ifdef _WIN32
 #include <windows.h>
 #include <timeapi.h>
@@ -29,6 +31,8 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv); // 使用QApplication支持GUI窗口
     AppConfig::applyApplicationInfo(app);
+    QNetworkProxyFactory::setUseSystemConfiguration(false);
+    QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
     // 统一工具提示样式为黑底白字（播放器窗口也受益）
     app.setStyleSheet(

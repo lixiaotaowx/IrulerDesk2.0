@@ -128,6 +128,9 @@ private:
             return;
         }
 
+        // qInfo().noquote() << "[LanRelay] New connection:" << sock->peerAddress().toString() 
+        //                   << " role=" << role << " roomId=" << roomId;
+
         Room &room = m_rooms[roomId];
 
         if (role == QStringLiteral("publish")) {
@@ -136,7 +139,10 @@ private:
                 room.publisher->deleteLater();
             }
             room.publisher = sock;
+            qInfo().noquote() << "[LanRelay] Publisher connected for room:" << roomId;
+
             if (!room.pendingTextToPublisher.isEmpty()) {
+                qInfo().noquote() << "[LanRelay] Flushing " << room.pendingTextToPublisher.size() << " pending text messages to publisher";
                 for (const QString &msg : room.pendingTextToPublisher) {
                     if (sock->state() == QAbstractSocket::ConnectedState) {
                         sock->sendTextMessage(msg);
@@ -156,6 +162,8 @@ private:
             connect(sock, &QWebSocket::binaryMessageReceived, this, [this, roomId](const QByteArray &msg) {
                 auto it = m_rooms.find(roomId);
                 if (it == m_rooms.end()) return;
+                static int binLogCount = 0;
+                if (++binLogCount % 60 == 0) qInfo().noquote() << "[LanRelay] Fwd binary from pub to " << it->subscribers.size() << " subs. Size:" << msg.size();
                 for (QWebSocket *rawSub : it->subscribers) {
                     QPointer<QWebSocket> sub = rawSub;
                     if (sub && sub->state() == QAbstractSocket::ConnectedState) {
@@ -167,6 +175,7 @@ private:
             connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
                 auto it = m_rooms.find(roomId);
                 if (it == m_rooms.end()) return;
+                qInfo().noquote() << "[LanRelay] Fwd text from pub to " << it->subscribers.size() << " subs: " << msg.left(200);
                 for (QWebSocket *rawSub : it->subscribers) {
                     QPointer<QWebSocket> sub = rawSub;
                     if (sub && sub->state() == QAbstractSocket::ConnectedState) {
@@ -176,14 +185,17 @@ private:
             });
         } else {
             room.subscribers.insert(sock);
+            qInfo().noquote() << "[LanRelay] Subscriber connected for room:" << roomId;
 
             connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
                 auto it = m_rooms.find(roomId);
                 if (it == m_rooms.end()) return;
                 QPointer<QWebSocket> pub = it->publisher;
                 if (pub && pub->state() == QAbstractSocket::ConnectedState) {
+                    qInfo().noquote() << "[LanRelay] Fwd text from sub to pub: " << msg.left(200);
                     pub->sendTextMessage(msg);
                 } else {
+                    qInfo().noquote() << "[LanRelay] Buffering text from sub (no pub): " << msg.left(200);
                     it->pendingTextToPublisher.append(msg);
                     if (it->pendingTextToPublisher.size() > 12) {
                         it->pendingTextToPublisher.remove(0, it->pendingTextToPublisher.size() - 12);
@@ -337,27 +349,26 @@ QString getDeviceIdFromConfig()
     // }
     
     for (const QString& configFilePath : possiblePaths) {
-        QFile configFile(configFilePath);
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            // qDebug() << "[CaptureProcess] 找到配置文件:" << configFilePath;
-            QTextStream in(&configFile);
-            QString line;
+        QFile file(configFilePath);
+        if (file.exists() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&file);
             while (!in.atEnd()) {
-                line = in.readLine();
+                QString line = in.readLine().trimmed();
                 if (line.startsWith("random_id=")) {
-                    QString deviceId = line.mid(10); // 去掉"random_id="前缀
-                    configFile.close();
-                    // qDebug() << "[CaptureProcess] 从配置文件读取到设备ID:" << deviceId;
-                    return deviceId;
+                    QString id = line.mid(10).trimmed(); // "random_id=".length() == 10
+                    // qInfo().noquote() << "[KickDiag][AppConfig] Found Device ID in " << configFilePath << ": " << id;
+                    file.close();
+                    return id;
                 }
             }
-            configFile.close();
+            file.close();
         }
     }
     
-    // 如果读取失败，返回默认值
-    // qDebug() << "[CaptureProcess] 所有配置文件路径都无法读取，使用默认设备ID: 25561";
-    return "25561";
+    // 如果没有找到配置文件或random_id，使用时间戳生成一个临时的（仅用于测试）
+    QString tempId = QString::number(QDateTime::currentMSecsSinceEpoch() % 1000000);
+    qWarning().noquote() << "[KickDiag][AppConfig] Device ID not found in config! Using temp ID: " << tempId;
+    return tempId;
 }
 
 QString getServerAddressFromConfig()
@@ -498,31 +509,36 @@ private slots:
 
     void onDataReceived() {
         QByteArray data = m_socket->readAll();
+        // [Fix] Handle multiple messages in one packet (split by newline)
         QString str = QString::fromUtf8(data);
-        if (str.contains("CMD_APPROVE")) {
-            qDebug() << "[CaptureProcess] Received local approval command from MainWindow.";
-            emit approvalReceived();
-        } else if (str.contains("CMD_REJECT")) {
-            qDebug() << "[CaptureProcess] Received local rejection command from MainWindow.";
-            emit rejectionReceived();
-        } else if (str.contains("CMD_SOFT_STOP")) {
-            emit softStopRequested();
-        } else if (str.startsWith("CMD_SWITCH_SCREEN:")) {
-            bool ok;
-            int idx = str.mid(18).toInt(&ok);
-            if (ok) {
-                qDebug() << "[CaptureProcess] Received local switch screen command from MainWindow:" << idx;
-                emit switchScreenRequested(idx);
-            }
-        } else if (str.contains("CMD_AUDIO_TOGGLE:")) {
-            const QString prefix = QStringLiteral("CMD_AUDIO_TOGGLE:");
-            const int p = str.lastIndexOf(prefix);
-            if (p >= 0) {
-                const QString tail = str.mid(p + prefix.size()).trimmed();
-                bool ok = false;
-                const int v = tail.toInt(&ok);
+        QStringList lines = str.split('\n', Qt::SkipEmptyParts);
+        for (const QString &line : lines) {
+            QString cmd = line.trimmed();
+            if (cmd.contains("CMD_APPROVE")) {
+                qDebug() << "[CaptureProcess] Received local approval command from MainWindow.";
+                emit approvalReceived();
+            } else if (cmd.contains("CMD_REJECT")) {
+                qDebug() << "[CaptureProcess] Received local rejection command from MainWindow.";
+                emit rejectionReceived();
+            } else if (cmd.contains("CMD_SOFT_STOP")) {
+                emit softStopRequested();
+            } else if (cmd.startsWith("CMD_SWITCH_SCREEN:")) {
+                bool ok;
+                int idx = cmd.mid(18).toInt(&ok);
                 if (ok) {
-                    emit audioToggleRequested(v != 0);
+                    qDebug() << "[CaptureProcess] Received local switch screen command from MainWindow:" << idx;
+                    emit switchScreenRequested(idx);
+                }
+            } else if (cmd.contains("CMD_AUDIO_TOGGLE:")) {
+                const QString prefix = QStringLiteral("CMD_AUDIO_TOGGLE:");
+                const int p = cmd.lastIndexOf(prefix);
+                if (p >= 0) {
+                    const QString tail = cmd.mid(p + prefix.size()).trimmed();
+                    bool ok = false;
+                    const int v = tail.toInt(&ok);
+                    if (ok) {
+                        emit audioToggleRequested(v != 0);
+                    }
                 }
             }
         }
@@ -540,6 +556,8 @@ int main(int argc, char *argv[])
     ConsoleLogger::attachToParentConsole();
     ConsoleLogger::installQtMessageHandler();
 
+    qInfo() << "[CaptureProcess] VERSION: LAN_FIX_20251230_02_FORCE_UPDATE";
+
     QApplication app(argc, argv);
     AppConfig::applyApplicationInfo(app);
     QNetworkProxyFactory::setUseSystemConfiguration(false);
@@ -556,7 +574,14 @@ int main(int argc, char *argv[])
         lanThread->start();
         const quint16 port = static_cast<quint16>(AppConfig::lanWsPort());
         QMetaObject::invokeMethod(lanRelay, [lanRelay, port]() {
-            lanRelay->start(port);
+            const bool ok = lanRelay->start(port);
+            if (ok) {
+                qInfo().noquote() << "[LanRelay] started"
+                                  << " port=" << port;
+            } else {
+                qWarning().noquote() << "[LanRelay] start_failed"
+                                     << " port=" << port;
+            }
         }, Qt::QueuedConnection);
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [lanThread]() {
             if (!lanThread) return;
@@ -644,7 +669,7 @@ int main(int argc, char *argv[])
     // qDebug() << "[CaptureProcess] 配置VP9静态检测优化...";
     encoder->setEnableStaticDetection(true);        // 启用静态检测
     encoder->setStaticThreshold(0.005);             // 设置0.5%的变化阈值，非常敏感
-    encoder->setStaticBitrateReduction(0.10);       // 静态内容码率减少到10%，极致压缩
+    encoder->setStaticBitrateReduction(0.20);
     encoder->setSkipStaticFrames(false);
     // qDebug() << "[CaptureProcess] VP9静态检测优化配置完成";
     //     qDebug() << "[CaptureProcess] - 静态检测阈值: 5%";
@@ -1795,6 +1820,9 @@ int main(int argc, char *argv[])
             return;
         }
 
+        const QString sourceName = (src == lanSender) ? "LAN" : "CLOUD";
+        qInfo().noquote() << "[CaptureProcess] Handling watch request from " << sourceName << " viewer=" << viewerId;
+
         if (isManualApprovalEnabledFromConfig()) {
             qDebug() << "[CaptureProcess] Manual approval mode. Waiting for watch_request_accepted signal.";
             if (pendingLocalApproval) {
@@ -2390,22 +2418,28 @@ int main(int argc, char *argv[])
     QString serverUrl = QString("%1/publish/%2").arg(serverBaseUrl, deviceId);
     QString lanUrl;
     if (lanSender) {
-        const QStringList bases = AppConfig::localLanBaseUrls();
-        const QString base = bases.value(0);
-        if (!base.isEmpty()) {
-            QUrl u(base);
-            u.setPath(QStringLiteral("/publish/%1").arg(deviceId));
-            lanUrl = u.toString();
-        }
+        // 强制使用本地回环地址连接本地中继服务器，避免防火墙或网络接口问题导致发布者无法连接到中继
+        lanUrl = QStringLiteral("ws://127.0.0.1:%1/publish/%2").arg(AppConfig::lanWsPort()).arg(deviceId);
     }
     
     // 显示设备ID
-    qDebug() << "[CaptureProcess] Current Device ID:" << deviceId;
-    qDebug() << "[CaptureProcess] Target Server URL:" << serverUrl;
+    qWarning().noquote() << "[CaptureProcess] ==============================================";
+    qWarning().noquote() << "[CaptureProcess] Current Device ID:" << deviceId;
+    qWarning().noquote() << "[CaptureProcess] Target Server URL:" << serverUrl;
     if (!lanUrl.isEmpty()) {
-        qDebug() << "[CaptureProcess] Target LAN URL:" << lanUrl;
+        qWarning().noquote() << "[CaptureProcess] Target LAN URL:" << lanUrl;
     }
+    qWarning().noquote() << "[CaptureProcess] ==============================================";
     
+    // 定期输出状态日志，确保用户知道进程还在运行以及ID是什么
+    QTimer *aliveTimer = new QTimer(&app);
+    QObject::connect(aliveTimer, &QTimer::timeout, [deviceId, serverUrl, isManualApprovalEnabledFromConfig]() {
+        qInfo().noquote() << "[CaptureProcess] ALIVE DeviceID=" << deviceId 
+                          << " ManualApproval=" << isManualApprovalEnabledFromConfig()
+                          << " Server=" << serverUrl;
+    });
+    aliveTimer->start(5000);
+
     if (!sender->connectToServer(serverUrl)) {
         return -1;
     }

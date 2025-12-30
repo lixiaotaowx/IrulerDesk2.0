@@ -852,14 +852,45 @@ void MainWindow::setupUI()
     });
 
     connect(m_videoWindow, &VideoWindow::closeClicked, this, [this]() {
-        if (!m_transparentImageList) return;
+        auto sendViewerMicState = [this](const QString &toTargetId, bool on) {
+            if (toTargetId.isEmpty()) return;
+            if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) return;
+            QJsonObject msg;
+            msg["type"] = "viewer_mic_state";
+            msg["viewer_id"] = getDeviceId();
+            msg["target_id"] = toTargetId;
+            msg["enabled"] = on;
+            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+        };
+
         QSet<QString> ids;
         if (!m_pendingTalkTargetId.isEmpty()) ids.insert(m_pendingTalkTargetId);
         if (!m_audioOnlyTargetId.isEmpty()) ids.insert(m_audioOnlyTargetId);
         if (!m_currentTargetId.isEmpty()) ids.insert(m_currentTargetId);
         for (const QString &id : ids) {
-            m_transparentImageList->talkToggleRequested(id, false);
+            if (m_transparentImageList) {
+                m_transparentImageList->talkToggleRequested(id, false);
+            } else {
+                sendViewerMicState(id, false);
+            }
         }
+
+        if (m_videoWindow) {
+            m_videoWindow->setMicCheckedSilently(false);
+            if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+                vd->setTalkEnabled(false);
+                vd->setMicSendEnabled(false);
+                if (vd->isReceiving()) {
+                    vd->stopReceiving(false);
+                }
+            }
+        }
+
+        m_pendingTalkTargetId.clear();
+        m_pendingTalkEnabled = false;
+        m_audioOnlyTargetId.clear();
+        m_currentTargetId.clear();
     });
 
     connect(m_videoWindow, &VideoWindow::receivingStopped, this, [this](const QString &, const QString &targetId) {

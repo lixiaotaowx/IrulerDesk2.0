@@ -492,6 +492,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     connect(m_lanOfferRetryTimer, &QTimer::timeout, this, [this]() {
         QString currentUrl;
         int attemptNo = 0;
+        int nextDelayMs = 1200;
+        bool shouldScheduleNext = false;
+        bool shouldSend = false;
         {
             QMutexLocker locker(&m_mutex);
             if (!m_connected) {
@@ -517,14 +520,20 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             if (m_lanOfferRetryCount >= 6) {
                 return;
             }
-            if (m_lastLanOfferRequestAtMs != 0 && (nowMs - m_lastLanOfferRequestAtMs) < 2500) {
-                return;
+            const qint64 sinceLast = (m_lastLanOfferRequestAtMs == 0) ? 999999 : (nowMs - m_lastLanOfferRequestAtMs);
+            if (m_lastLanOfferRequestAtMs != 0 && sinceLast < 2500) {
+                nextDelayMs = static_cast<int>(qMax<qint64>(200, 2500 - sinceLast));
+                shouldScheduleNext = true;
+            } else {
+                m_lastLanOfferRequestAtMs = nowMs;
+                m_lanOfferRetryCount++;
+                attemptNo = m_lanOfferRetryCount;
+                shouldSend = true;
+                shouldScheduleNext = (m_lanOfferRetryCount < 6);
+                nextDelayMs = 1200;
             }
-            m_lastLanOfferRequestAtMs = nowMs;
-            m_lanOfferRetryCount++;
-            attemptNo = m_lanOfferRetryCount;
         }
-        if (m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        if (shouldSend && m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
             const QString channelId = roomIdFromWsUrlString(currentUrl);
             if (!channelId.isEmpty()) {
                 qInfo().noquote() << "[KickDiag][Receiver] tx lan_offer_request_retry"
@@ -539,8 +548,11 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         }
         {
             QMutexLocker locker(&m_mutex);
-            if (m_lanOfferRetryCount < 6 && m_lanOfferRetryTimer) {
-                m_lanOfferRetryTimer->start(1200);
+            if (!m_connected || m_lanSwitchInProgress) {
+                return;
+            }
+            if (shouldScheduleNext && m_lanOfferRetryTimer) {
+                m_lanOfferRetryTimer->start(nextDelayMs);
             }
         }
     });
@@ -586,6 +598,13 @@ void WebSocketReceiver::setupWebSocket()
             this, &WebSocketReceiver::onError);
     connect(m_webSocket, &QWebSocket::sslErrors, this, &WebSocketReceiver::onSslErrors);
     connect(m_webSocket, &QWebSocket::stateChanged, this, &WebSocketReceiver::onStateChanged);
+    
+    // [KickDiag] Log ALL messages for debugging
+    connect(m_webSocket, &QWebSocket::textMessageReceived, this, [](const QString &msg){
+         if (!msg.contains("mouse_position") && !msg.contains("audio_opus")) {
+             qInfo().noquote() << "[KickDiag][Receiver] RX MSG:" << msg.left(200);
+         }
+    });
 }
 
 bool WebSocketReceiver::connectToServer(const QString &url)
@@ -863,7 +882,12 @@ void WebSocketReceiver::onConnected()
                           << " url=" << lanUrlCopy;
         QJsonObject startStreamingMessage;
         startStreamingMessage["type"] = "start_streaming";
+        if (!viewerIdCopy.isEmpty()) startStreamingMessage["viewer_id"] = viewerIdCopy;
+        if (!targetIdCopy.isEmpty()) startStreamingMessage["target_id"] = targetIdCopy;
         m_webSocket->sendTextMessage(QJsonDocument(startStreamingMessage).toJson(QJsonDocument::Compact));
+        
+        // Ensure keyframe is requested immediately for LAN switch to avoid black screen
+        sendRequestKeyFrame();
     }
 
     QString serverUrlCopy;
@@ -1057,6 +1081,9 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             if (!AppConfig::lanWsEnabled()) {
                 return;
             }
+            // [KickDiag] Log receipt of lan_offer
+            qInfo().noquote() << "[KickDiag][Receiver] RX MSG: lan_offer received from " << m_serverUrl;
+
             const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
             {
                 QMutexLocker locker(&m_mutex);
@@ -1162,6 +1189,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                     }
                     m_cloudFallbackUrl = fromUrl;
                     m_lanSwitchInProgress = true;
+                    m_lanSwitchStartStreamingSent = false; // Reset streaming trigger for new switch
                 }
 
                 qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer switch_to_lan"
@@ -1700,6 +1728,10 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
     // 日志清理：移除观看请求打印
+    qInfo().noquote() << "[KickDiag][Receiver] tx watch_request"
+                      << " viewer_id=" << viewerId
+                      << " target_id=" << targetId
+                      << " url=" << m_serverUrl;
     
     m_webSocket->sendTextMessage(jsonString);
     

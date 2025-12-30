@@ -155,7 +155,7 @@ public:
     QQueue<QByteArray> m_frameQueue;
     QQueue<bool> m_keyQueue;
     QTimer *m_sendTimer = nullptr;
-    int m_maxQueueSize = 6;
+    int m_maxQueueSize = 12;
     int m_queueMaxAgeMs = 200;
     qint64 m_droppedFramesDueToQueue = 0;
     qint64 m_droppedFramesDueToAge = 0;

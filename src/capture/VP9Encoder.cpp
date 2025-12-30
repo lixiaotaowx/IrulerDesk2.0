@@ -25,7 +25,7 @@ VP9Encoder::VP9Encoder(QObject *parent)
     , m_enableStaticDetection(true)      // 启用静态检测
     , m_staticThreshold(0.01)            // 降低到1%变化阈值，更敏感
     , m_lowMotionThreshold(0.05)         // 低动态阈值初始化为5%
-    , m_staticBitrateReduction(0.15)     // 静态内容码率减少85%，更激进
+    , m_staticBitrateReduction(0.20)
     , m_skipStaticFrames(false)          // 不跳帧，只降码率
     , m_lastFrameWasStatic(false)
     , m_lastFrameDifference(0.0)
@@ -702,7 +702,7 @@ void VP9Encoder::adjustBitrateForStaticContent(bool isStatic)
     } else if (m_lastFrameDifference < m_lowMotionThreshold) {
         // 低动态内容（如光标闪烁、时钟跳动）：使用5%的码率 (更激进的降低)
         // 0.7Mbps对于微小变动确实太高了，通常100-200kbps足以清晰传输光标
-        targetBitrate = static_cast<int>(m_originalBitrate * 0.05); 
+        targetBitrate = static_cast<int>(m_originalBitrate * 0.15);
         // 确保至少有50kbps，避免画面糊成马赛克
         if (targetBitrate < 50000) targetBitrate = 50000;
         

@@ -74,6 +74,11 @@ int main(int argc, char *argv[])
     if (targetDeviceId.isEmpty()) {
         return -1;
     }
+
+    QString viewerId = AppConfig::readConfigValue(QStringLiteral("random_id")).trimmed();
+    if (viewerId.isEmpty()) {
+        viewerId = QStringLiteral("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
+    }
     
     if (embeddedMode) {
         // 嵌入模式：只提供功能，不显示窗口
@@ -108,13 +113,9 @@ int main(int argc, char *argv[])
         // 如果serverUrl不包含ws://，添加它 (这里假设serverUrl是完整的ws://...，如果不是需要处理)
         // 现有的serverUrl处理逻辑比较简单，这里假设serverUrl是 "ws://ip:port"
         
+        receiver.setSessionInfo(viewerId, targetDeviceId);
         receiver.connectToServer(subscribeUrl);
-        
-        // 移除观看请求发送，因为连接本身就是订阅请求
-        // QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
-        // receiver.sendWatchRequest(viewerId, targetDeviceId);
-        
-        
+
         
         int r = app.exec();
         #ifdef _WIN32
@@ -133,16 +134,12 @@ int main(int argc, char *argv[])
         
         // 自动开始接收 - 使用订阅URL
         QString subscribeUrl = QString("%1/subscribe/%2").arg(serverUrl).arg(targetDeviceId);
+
+        // 先设置会话信息，确保连接建立时能携带正确的 viewer_id
+        qInfo().noquote() << "[PlayerProcess] Initializing session info: viewerId=" << viewerId << " targetId=" << targetDeviceId;
+        videoWidget->setSessionInfo(viewerId, targetDeviceId);
+        
         videoWidget->startReceiving(subscribeUrl);
-        
-        // 移除观看请求发送
-        // QString viewerId = QString("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
-        // 延迟发送观看请求，确保连接已建立
-        // QTimer::singleShot(2000, [videoWidget, viewerId, targetDeviceId]() {
-        //     videoWidget->sendWatchRequest(viewerId, targetDeviceId);
-        //     
-        // });
-        
         
         
         int result = app.exec();

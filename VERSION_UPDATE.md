@@ -11,17 +11,34 @@
    - 修改 `CPACK_PACKAGE_VERSION` 变量
    - 例如：`set(CPACK_PACKAGE_VERSION "1.0.3")`
 
-3. **version.json** (部署到服务器)
+3. **download/version.json** (部署到 GitHub Releases 或服务器)
    - 修改 `version` 字段
    - 修改 `url` 字段指向新的安装包
    - 示例：
      ```json
      {
          "version": "1.0.3",
-         "url": "http://115.159.43.237/download/IrulerDeskPro-1.0.3-win64.exe",
+         "url": "https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/IrulerDeskPro-1.0.3-win64.exe",
          ...
      }
      ```
+
+## 推荐：使用 GitHub Releases 提供更新文件
+
+当用户侧网络环境（例如 Clash/代理）导致访问自建服务器不稳定时，优先把更新文件放到 GitHub Releases。
+
+### 1. 创建 Release 并上传文件
+1. 在仓库 https://github.com/lixiaotaowx/IrulerDesk2.0 创建一个 Release（建议 tag：`v1.0.3`）
+2. 不要勾选 Pre-release（否则 `releases/latest` 不一定会指向它）
+2. 在 Release 的 Assets 中上传两个文件：
+   - `download/version.json`
+   - `IrulerDeskPro-1.0.3-win64.exe`
+
+### 2. 客户端检查地址与下载地址
+- 检查更新（version.json）：
+  - `https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json`
+- 下载更新包（exe）：
+  - `https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/IrulerDeskPro-1.0.3-win64.exe`
 
 ## 服务器环境配置 (Nginx)
 
@@ -83,7 +100,7 @@ sudo yum install nginx
 3. 注意：`version.json` 是纯 JSON，字段值不要带反引号、空格或 Markdown 格式。例如：
    ```json
    {
-     "url": "http://115.159.43.237/download/IrulerDeskPro-1.0.3-win64.exe"
+     "url": "https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/IrulerDeskPro-1.0.3-win64.exe"
    }
    ```
 
@@ -107,7 +124,7 @@ sudo systemctl restart nginx
    ```
 2. 在外网机器验证（例如 Windows PowerShell）：
    ```powershell
-   curl.exe -i "http://115.159.43.237/download/version.json"
+   curl.exe -i "https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json"
    ```
 3. 说明：部分云服务器公网 IP 走 NAT，服务器本机访问自己的公网 IP 可能失败，这种情况下以 `127.0.0.1` 与外网机器访问结果为准。
 4. 如果外网访问仍失败，检查云安全组与防火墙放行 80/tcp：

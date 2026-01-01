@@ -3602,8 +3602,7 @@ void MainWindow::performUpdateCheck()
 {
     // 检查更新
     qInfo() << "[Update] Starting update check...";
-    // 假设服务器地址为 http://115.159.43.237
-    m_updater->checkUpdate("http://115.159.43.237/download/version.json");
+    m_updater->checkUpdate("https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json");
     
     // 连接错误信号（仅用于调试反馈）
     connect(m_updater, &AutoUpdater::errorOccurred, this, [this](const QString &err){

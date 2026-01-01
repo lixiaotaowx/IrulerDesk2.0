@@ -26,6 +26,7 @@
 #include <QSet>
 #include <QHash>
 #include <QUdpSocket>
+#include "common/AutoUpdater.h"
 
 // 前向声明
 class VideoWindow;
@@ -84,6 +85,11 @@ private slots:
     void onUserNameChanged(const QString &name);
     void onMicToggleRequested(bool enabled);
     void onSpeakerToggleRequested(bool enabled);
+    
+    // 自动更新槽函数
+    void onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force);
+    void onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+    void onUpdateError(const QString &error);
 
 private:
     void setupUI();
@@ -251,6 +257,9 @@ private:
 
     QUdpSocket *m_lanDiscoverySocket = nullptr;
     QHash<QString, QString> m_lanDiscoveredBaseByTarget;
+
+    AutoUpdater *m_autoUpdater = nullptr;
+    class QProgressDialog *m_updateProgressDialog = nullptr;
 };
 
 #endif // MAINWINDOW_H

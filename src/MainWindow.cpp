@@ -13,6 +13,7 @@
 #include <QMenu>
 #include <QIcon>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QDir>
 #include <QStandardPaths>
 #include <QFile>
@@ -132,6 +133,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     QTimer::singleShot(0, this, [this]() {
         if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
+    });
+
+    // 自动更新
+    m_autoUpdater = new AutoUpdater(this);
+    connect(m_autoUpdater, &AutoUpdater::updateAvailable, this, &MainWindow::onUpdateAvailable);
+    connect(m_autoUpdater, &AutoUpdater::downloadProgress, this, &MainWindow::onUpdateDownloadProgress);
+    connect(m_autoUpdater, &AutoUpdater::errorOccurred, this, &MainWindow::onUpdateError);
+    // 启动后延时检查更新
+    QTimer::singleShot(5000, this, [this](){
+         m_autoUpdater->checkUpdate("https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json");
     });
 
     // 初始化登录系统
@@ -3717,6 +3728,67 @@ void MainWindow::saveSpeakerEnabledToConfig(bool enabled)
         QTextStream out(&configFile);
         for (const QString &line : configLines) out << line << "\n";
         configFile.close();
+    }
+}
+
+void MainWindow::onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force)
+{
+    QString msg = QString("发现新版本: %1\n\n%2").arg(version, description);
+    
+    if (force) {
+        QMessageBox::information(this, "强制更新", msg + "\n\n该版本为强制更新，点击确定开始下载。");
+        m_autoUpdater->downloadAndInstall();
+        
+        m_updateProgressDialog = new QProgressDialog("正在下载更新...", "取消", 0, 100, this);
+        m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+        m_updateProgressDialog->setAutoClose(false);
+        m_updateProgressDialog->setAutoReset(false);
+        m_updateProgressDialog->setCancelButton(nullptr);
+        m_updateProgressDialog->show();
+    } else {
+        QMessageBox::StandardButton btn = QMessageBox::question(this, "发现新版本", msg + "\n\n是否立即更新？", QMessageBox::Yes | QMessageBox::No);
+        if (btn == QMessageBox::Yes) {
+            m_autoUpdater->downloadAndInstall();
+            
+            m_updateProgressDialog = new QProgressDialog("正在下载更新...", "取消", 0, 100, this);
+            m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+            m_updateProgressDialog->setAutoClose(false);
+            m_updateProgressDialog->setAutoReset(false);
+            connect(m_updateProgressDialog, &QProgressDialog::canceled, this, [this](){
+                if (m_updateProgressDialog) {
+                    m_updateProgressDialog->close();
+                }
+            });
+            m_updateProgressDialog->show();
+        }
+    }
+}
+
+void MainWindow::onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (m_updateProgressDialog && bytesTotal > 0) {
+        m_updateProgressDialog->setMaximum(100);
+        int percent = static_cast<int>((bytesReceived * 100) / bytesTotal);
+        m_updateProgressDialog->setValue(percent);
+    }
+}
+
+void MainWindow::onUpdateError(const QString &error)
+{
+    if (m_updateProgressDialog) {
+        m_updateProgressDialog->close();
+        m_updateProgressDialog->deleteLater();
+        m_updateProgressDialog = nullptr;
+        QMessageBox::warning(this, "更新失败", error);
+    } else {
+        qWarning() << "[AutoUpdater] Error:" << error;
+        // 如果是后台检查更新失败（通常是启动时），提示用户可能需要VPN
+        if (error.startsWith("检查更新失败")) {
+             QMessageBox::warning(this, "检查更新提示", 
+                "无法连接到 GitHub 更新服务器，无法检测新版本。\n\n"
+                "更新版本可能需要开启 VPN。\n"
+                "请开启 VPN 后重启软件重试。");
+        }
     }
 }
 

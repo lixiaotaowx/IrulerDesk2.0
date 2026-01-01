@@ -20,6 +20,7 @@ public:
     void sendFrame(const QPixmap &pixmap, bool force = false);
     qint64 sendTextMessage(const QString &message);
     bool isConnected() const;
+    bool isConnectedToLan() const;
 
 signals:
     void connected();

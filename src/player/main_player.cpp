@@ -10,12 +10,6 @@
 #include <iostream>
 #include <QNetworkProxy>
 #include <QNetworkProxyFactory>
-#include <QHash>
-#include <QUdpSocket>
-#include <QHostAddress>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
 #ifdef _WIN32
 #include <windows.h>
 #include <timeapi.h>
@@ -84,59 +78,6 @@ int main(int argc, char *argv[])
     QString viewerId = AppConfig::readConfigValue(QStringLiteral("random_id")).trimmed();
     if (viewerId.isEmpty()) {
         viewerId = QStringLiteral("viewer_%1").arg(QDateTime::currentMSecsSinceEpoch());
-    }
-
-    if (AppConfig::lanDiscoveryEnabled()) {
-        auto *sock = new QUdpSocket(&app);
-        const quint16 port = static_cast<quint16>(AppConfig::lanDiscoveryPort());
-        const bool ok = sock->bind(QHostAddress::AnyIPv4, port, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
-        if (!ok) {
-            qWarning().noquote() << "[KickDiag][LanDiscovery] bind_failed"
-                                 << " port=" << port
-                                 << " err=" << sock->errorString();
-            sock->deleteLater();
-        } else {
-            qInfo().noquote() << "[KickDiag][LanDiscovery] listening"
-                              << " port=" << port;
-            QObject::connect(sock, &QUdpSocket::readyRead, &app, [sock]() {
-                while (sock->hasPendingDatagrams()) {
-                    QHostAddress sender;
-                    quint16 senderPort = 0;
-                    QByteArray datagram;
-                    datagram.resize(static_cast<int>(sock->pendingDatagramSize()));
-                    const qint64 n = sock->readDatagram(datagram.data(), datagram.size(), &sender, &senderPort);
-                    if (n <= 0) continue;
-                    if (sender.protocol() != QAbstractSocket::IPv4Protocol) continue;
-
-                    QJsonParseError err;
-                    const QJsonDocument doc = QJsonDocument::fromJson(datagram, &err);
-                    if (err.error != QJsonParseError::NoError || !doc.isObject()) continue;
-                    const QJsonObject obj = doc.object();
-                    if (obj.value(QStringLiteral("type")).toString() != QStringLiteral("lan_announce")) continue;
-
-                    const QString targetId = obj.value(QStringLiteral("device_id")).toString().trimmed();
-                    if (targetId.isEmpty()) continue;
-
-                    int wsPort = obj.value(QStringLiteral("ws_port")).toInt(AppConfig::lanWsPort());
-                    if (wsPort <= 0 || wsPort > 65535) wsPort = AppConfig::lanWsPort();
-
-                    const QString base = QStringLiteral("ws://%1:%2").arg(sender.toString()).arg(wsPort);
-                    QStringList merged;
-                    merged.append(base);
-                    merged.removeDuplicates();
-                    AppConfig::setLanBaseUrlsForTarget(targetId, merged);
-
-                    static QHash<QString, QString> last;
-                    if (last.value(targetId) != base) {
-                        last.insert(targetId, base);
-                        qInfo().noquote() << "[KickDiag][LanDiscovery] discovered"
-                                          << " target_id=" << targetId
-                                          << " base=" << base
-                                          << " udp_port=" << senderPort;
-                    }
-                }
-            });
-        }
     }
     
     if (embeddedMode) {

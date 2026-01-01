@@ -48,6 +48,8 @@ set(MAIN_SOURCES
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
     src/common/CrashGuard.h               # 崩溃守护声明
     src/common/AppConfig.h                # 应用配置：应用信息与服务器地址
+    src/common/AutoUpdater.cpp            # 自动更新逻辑
+    src/common/AutoUpdater.h              # 自动更新逻辑声明
     src/video_components/VideoDisplayWidget.cpp # 视频显示控件实现：绘制视频帧与批注事件处理
     src/video_components/VideoDisplayWidget.h   # 视频显示控件声明：接口与状态
     src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件

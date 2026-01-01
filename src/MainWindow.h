@@ -24,8 +24,7 @@
 #include <QLocalServer>
 #include <QList>
 #include <QSet>
-#include <QHash>
-#include <QUdpSocket>
+#include "common/AutoUpdater.h"
 
 // 前向声明
 class VideoWindow;
@@ -151,7 +150,11 @@ private:
 
     // 显示更新日志
     void checkAndShowUpdateLog();
-    void startLanDiscoveryListener();
+    
+    // 自动更新相关
+    void performUpdateCheck();
+    void onUpdateAvailable(const QString &version, const QString &url, const QString &desc, bool force);
+
 private:
     void sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly);
     void sendWatchRequestWithVideo(const QString& targetDeviceId);
@@ -193,8 +196,6 @@ private:
     void onWatchdogNewConnection();
     void onWatchdogDataReady();
     void onWatchdogTimeout();
-    void scheduleNoViewerSoftStop();
-    QTimer *m_noViewerSoftStopTimer = nullptr;
     
     // 熔断机制相关
     QList<qint64> m_crashTimestamps; // 记录最近崩溃的时间戳
@@ -249,8 +250,8 @@ private:
     // 提示音
     QSoundEffect *m_alertSound = nullptr;
 
-    QUdpSocket *m_lanDiscoverySocket = nullptr;
-    QHash<QString, QString> m_lanDiscoveredBaseByTarget;
+    // 自动更新
+    AutoUpdater *m_updater = nullptr;
 };
 
 #endif // MAINWINDOW_H

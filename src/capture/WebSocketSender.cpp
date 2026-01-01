@@ -145,7 +145,7 @@ void WebSocketSender::enqueueFrame(const QByteArray &frameData, bool keyFrame)
     if (frameData.size() >= 8) {
         qint64 ts;
         memcpy(&ts, frameData.constData(), 8);
-        if (!keyFrame && nowMs - ts > m_queueMaxAgeMs) {
+        if (nowMs - ts > m_queueMaxAgeMs) {
             return;
         }
     }
@@ -158,9 +158,6 @@ void WebSocketSender::enqueueFrame(const QByteArray &frameData, bool keyFrame)
         qint64 ots;
         memcpy(&ots, first.constData(), 8);
         if (nowMs - ots > m_queueMaxAgeMs) {
-            if (!m_keyQueue.isEmpty() && m_keyQueue.head()) {
-                break;
-            }
             m_frameQueue.dequeue();
             if (!m_keyQueue.isEmpty()) {
                 m_keyQueue.dequeue();
@@ -367,43 +364,24 @@ void WebSocketSender::stopReconnectTimer()
 
 void WebSocketSender::startStreaming()
 {
-    bool didStart = false;
-    QString urlCopy;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (!m_isStreaming) {
-            m_isStreaming = true;
-            didStart = true;
-            urlCopy = m_serverUrl;
-        }
-    }
-    if (didStart) {
+    QMutexLocker locker(&m_mutex);
+    if (!m_isStreaming) {
+        m_isStreaming = true;
+        
         emit streamingStarted();
-        qInfo().noquote() << "[KickDiag][Sender] streaming_started"
-                          << " url=" << urlCopy;
     }
 }
 
 void WebSocketSender::stopStreaming(bool softStop)
 {
-    bool didStop = false;
-    QString urlCopy;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (m_isStreaming) {
-            m_isStreaming = false;
-            m_audioOnlyStreaming = false;
-            m_frameQueue.clear();
-            m_keyQueue.clear();
-            didStop = true;
-            urlCopy = m_serverUrl;
-        }
-    }
-    if (didStop) {
+    QMutexLocker locker(&m_mutex);
+    if (m_isStreaming) {
+        m_isStreaming = false;
+        m_audioOnlyStreaming = false;
+        m_frameQueue.clear();
+        m_keyQueue.clear();
+        
         emit streamingStopped(softStop);
-        qInfo().noquote() << "[KickDiag][Sender] streaming_stopped"
-                          << " softStop=" << (softStop ? "1" : "0")
-                          << " url=" << urlCopy;
     }
 }
 
@@ -427,13 +405,10 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     QJsonObject obj = doc.object();
     QString type = obj["type"].toString();
 
-    const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_ws_text")).trimmed();
-    const bool dumpWsText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
-    if (dumpWsText) {
-        if (type != QStringLiteral("mouse_position") && type != QStringLiteral("audio_opus") && type != QStringLiteral("viewer_audio_opus")) {
-            qInfo().noquote() << "[KickDiag][Sender] rx message type=" << type
-                              << " raw=" << message.left(200);
-        }
+    // [KickDiag] Log ALL received messages (except high-frequency ones)
+    if (type != "mouse_position" && type != "audio_opus" && type != "viewer_audio_opus") {
+        qInfo().noquote() << "[KickDiag][Sender] rx message type=" << type 
+                          << " raw=" << message.left(200);
     }
     
     if (type == "lan_offer_request") {
@@ -475,24 +450,6 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         offer["channel_id"] = roomId;
         offer["base_urls"] = arr;
         sendTextMessage(QJsonDocument(offer).toJson(QJsonDocument::Compact));
-        return;
-    }
-
-    if (type == "lan_hello") {
-        if (!AppConfig::lanWsEnabled()) {
-            return;
-        }
-        const QStringList pathParts = QUrl(m_serverUrl).path().split('/', Qt::SkipEmptyParts);
-        const QString roomId = pathParts.size() >= 2 ? pathParts.value(1) : QString();
-        if (roomId.isEmpty()) {
-            return;
-        }
-        QJsonObject ack;
-        ack["type"] = "lan_hello_ack";
-        ack["channel_id"] = roomId;
-        ack["device_id"] = roomId;
-        ack["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-        sendTextMessage(QJsonDocument(ack).toJson(QJsonDocument::Compact));
         return;
     }
 
@@ -547,12 +504,11 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     } else if (type == "start_streaming" || type == "start_streaming_request") {
         const bool manualApproval = isManualApprovalEnabled();
         const bool isLanRelay = AppConfig::lanWsEnabled() && QUrl(m_serverUrl).port() == AppConfig::lanWsPort();
-        const bool isStartRequest = (type == "start_streaming_request");
-        if (isStartRequest && manualApproval && !isLanRelay) {
+        if (manualApproval && !isLanRelay) {
             return;
         }
-        if (isStartRequest && manualApproval && isLanRelay) {
-            qInfo().noquote() << "[KickDiag][Sender] start_streaming_request bypass_manual_approval_for_lan"
+        if (manualApproval && isLanRelay) {
+            qInfo().noquote() << "[KickDiag][Sender] start_streaming bypass_manual_approval_for_lan"
                               << " url=" << m_serverUrl;
         }
         QString vid = obj.value("viewer_id").toString();
@@ -768,49 +724,31 @@ void WebSocketSender::resetSenderStats()
 
 void WebSocketSender::onSendTimer()
 {
-    bool shouldLog = false;
-    quint64 framesCopy = 0;
-    qint64 bytesCopy = 0;
-    QString urlCopy;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (!m_connected || !m_webSocket || !m_isStreaming) {
-            m_sendTimer->stop();
-            return;
-        }
-        if (m_audioOnlyStreaming) {
-            m_frameQueue.clear();
-            m_keyQueue.clear();
-            m_sendTimer->stop();
-            return;
-        }
-        int burst = (m_frameQueue.size() >= 4) ? 3 : 2;
-        while (burst-- > 0 && !m_frameQueue.isEmpty()) {
-            QByteArray data = m_frameQueue.dequeue();
-            bool key = m_keyQueue.dequeue();
-            Q_UNUSED(key);
-            qint64 bytesSent = m_webSocket->sendBinaryMessage(data);
-            if (bytesSent > 0) {
-                m_totalBytesSent += bytesSent;
-                m_totalFramesSent++;
-                emit frameSent(data.size());
-                if (m_totalFramesSent == 1 || (m_totalFramesSent % 50 == 0)) {
-                    shouldLog = true;
-                    framesCopy = m_totalFramesSent;
-                    bytesCopy = bytesSent;
-                    urlCopy = m_serverUrl;
-                }
-            }
-        }
-        if (m_frameQueue.isEmpty()) {
-            m_sendTimer->stop();
+    QMutexLocker locker(&m_mutex);
+    if (!m_connected || !m_webSocket || !m_isStreaming) {
+        m_sendTimer->stop();
+        return;
+    }
+    if (m_audioOnlyStreaming) {
+        m_frameQueue.clear();
+        m_keyQueue.clear();
+        m_sendTimer->stop();
+        return;
+    }
+    int burst = (m_frameQueue.size() >= 4) ? 3 : 2;
+    while (burst-- > 0 && !m_frameQueue.isEmpty()) {
+        QByteArray data = m_frameQueue.dequeue();
+        bool key = m_keyQueue.dequeue();
+        Q_UNUSED(key);
+        qint64 bytesSent = m_webSocket->sendBinaryMessage(data);
+        if (bytesSent > 0) {
+            m_totalBytesSent += bytesSent;
+            m_totalFramesSent++;
+            emit frameSent(data.size());
         }
     }
-    if (shouldLog) {
-        qInfo().noquote() << "[KickDiag][Sender] tx_vp9_frame ok"
-                          << " frames=" << QString::number(framesCopy)
-                          << " bytes=" << QString::number(bytesCopy)
-                          << " url=" << urlCopy;
+    if (m_frameQueue.isEmpty()) {
+        m_sendTimer->stop();
     }
 }
 bool WebSocketSender::isManualApprovalEnabled() const

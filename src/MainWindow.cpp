@@ -109,6 +109,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     
     setupStatusBar();
+    startLanDiscoveryListener();
 
     if (!m_trayIcon) {
         QString appDir = QCoreApplication::applicationDirPath();
@@ -141,6 +142,94 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 检查并显示更新日志
     QTimer::singleShot(500, this, &MainWindow::checkAndShowUpdateLog);
+}
+
+void MainWindow::startLanDiscoveryListener()
+{
+    if (!AppConfig::lanDiscoveryEnabled()) {
+        return;
+    }
+    if (m_lanDiscoverySocket) {
+        return;
+    }
+
+    m_lanDiscoverySocket = new QUdpSocket(this);
+    const quint16 port = static_cast<quint16>(AppConfig::lanDiscoveryPort());
+    const bool ok = m_lanDiscoverySocket->bind(QHostAddress::AnyIPv4, port,
+                                               QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+    if (!ok) {
+        qWarning().noquote() << "[KickDiag][LanDiscovery] bind_failed"
+                             << " port=" << port
+                             << " err=" << m_lanDiscoverySocket->errorString();
+        m_lanDiscoverySocket->deleteLater();
+        m_lanDiscoverySocket = nullptr;
+        return;
+    }
+
+    qInfo().noquote() << "[KickDiag][LanDiscovery] listening"
+                      << " port=" << port;
+
+    connect(m_lanDiscoverySocket, &QUdpSocket::readyRead, this, [this]() {
+        if (!m_lanDiscoverySocket) return;
+
+        while (m_lanDiscoverySocket->hasPendingDatagrams()) {
+            QHostAddress sender;
+            quint16 senderPort = 0;
+            QByteArray datagram;
+            datagram.resize(static_cast<int>(m_lanDiscoverySocket->pendingDatagramSize()));
+            const qint64 n = m_lanDiscoverySocket->readDatagram(datagram.data(), datagram.size(), &sender, &senderPort);
+            if (n <= 0) continue;
+
+            if (sender.protocol() != QAbstractSocket::IPv4Protocol) {
+                continue;
+            }
+
+            QJsonParseError err;
+            const QJsonDocument doc = QJsonDocument::fromJson(datagram, &err);
+            if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+                continue;
+            }
+
+            const QJsonObject obj = doc.object();
+            const QString type = obj.value(QStringLiteral("type")).toString();
+            if (type != QStringLiteral("lan_announce")) {
+                continue;
+            }
+
+            const QString targetId = obj.value(QStringLiteral("device_id")).toString().trimmed();
+            if (targetId.isEmpty() || targetId == getDeviceId()) {
+                continue;
+            }
+
+            int wsPort = obj.value(QStringLiteral("ws_port")).toInt(AppConfig::lanWsPort());
+            if (wsPort <= 0 || wsPort > 65535) {
+                wsPort = AppConfig::lanWsPort();
+            }
+
+            const QString base = QStringLiteral("ws://%1:%2").arg(sender.toString()).arg(wsPort);
+
+            if (m_lanDiscoveredBaseByTarget.value(targetId) != base) {
+                m_lanDiscoveredBaseByTarget.insert(targetId, base);
+                qInfo().noquote() << "[KickDiag][LanDiscovery] discovered"
+                                  << " target_id=" << targetId
+                                  << " base=" << base
+                                  << " udp_port=" << senderPort;
+            }
+
+            QStringList existing = AppConfig::lanBaseUrlsForTarget(targetId);
+            QStringList merged;
+            merged.reserve(existing.size() + 1);
+            merged.append(base);
+            for (const QString &it : existing) {
+                if (it.isEmpty()) continue;
+                if (it == base) continue;
+                merged.append(it);
+                if (merged.size() >= 4) break;
+            }
+            merged.removeDuplicates();
+            AppConfig::setLanBaseUrlsForTarget(targetId, merged);
+        }
+    });
 }
 
 void MainWindow::checkAndShowUpdateLog()
@@ -968,6 +1057,9 @@ void MainWindow::stopStreaming()
     }
 
     m_isStreaming = false;
+    if (m_noViewerSoftStopTimer) {
+        m_noViewerSoftStopTimer->stop();
+    }
     
     // [Fix] Do NOT force clear viewers here.
     // Let individual viewer_exit events handle removal.
@@ -997,6 +1089,50 @@ void MainWindow::stopStreaming()
         "    padding: 5px;"
         "}"
     );
+}
+
+void MainWindow::scheduleNoViewerSoftStop()
+{
+    if (!m_isStreaming) {
+        return;
+    }
+    if (!m_transparentImageList) {
+        return;
+    }
+
+    if (m_transparentImageList->getViewerCount() > 0) {
+        if (m_noViewerSoftStopTimer) {
+            m_noViewerSoftStopTimer->stop();
+        }
+        return;
+    }
+
+    constexpr int kDelayMs = 20000;
+    if (!m_noViewerSoftStopTimer) {
+        m_noViewerSoftStopTimer = new QTimer(this);
+        m_noViewerSoftStopTimer->setSingleShot(true);
+        connect(m_noViewerSoftStopTimer, &QTimer::timeout, this, [this]() {
+            if (!m_isStreaming) {
+                return;
+            }
+            if (!m_transparentImageList) {
+                return;
+            }
+            const int viewerCount = m_transparentImageList->getViewerCount();
+            if (viewerCount > 0) {
+                return;
+            }
+            qInfo().noquote() << "[NoViewerSoftStop] timeout fired, viewers=" << viewerCount;
+            if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                m_currentWatchdogSocket->write("CMD_SOFT_STOP");
+                m_currentWatchdogSocket->flush();
+            } else {
+                stopStreaming();
+            }
+        });
+    }
+    qInfo().noquote() << "[NoViewerSoftStop] scheduled in" << kDelayMs << "ms";
+    m_noViewerSoftStopTimer->start(kDelayMs);
 }
 
 void MainWindow::updateStatus()
@@ -1353,12 +1489,7 @@ void MainWindow::onWatchdogDataReady()
             if (!viewerId.isEmpty() && m_transparentImageList) {
                 m_transparentImageList->removeViewer(viewerId);
                 if (m_isStreaming && m_transparentImageList->getViewerCount() <= 0) {
-                    if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
-                        m_currentWatchdogSocket->write("CMD_SOFT_STOP");
-                        m_currentWatchdogSocket->flush();
-                    } else {
-                        stopStreaming();
-                    }
+                    scheduleNoViewerSoftStop();
                 }
             }
         } else if (line.startsWith(kViewerMicPrefix)) {
@@ -2577,6 +2708,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 // [Fix] Add to "My Room" list
                 if (m_transparentImageList) {
                     m_transparentImageList->addViewer(viewerId, viewerName);
+                    scheduleNoViewerSoftStop();
                 }
 
                 // [Local Control] 本地直接通知捕获进程开始推流
@@ -2656,6 +2788,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             // [Fix] Add to "My Room" list for auto-approve case
             if (m_transparentImageList) {
                 m_transparentImageList->addViewer(viewerId, viewerName);
+                scheduleNoViewerSoftStop();
             }
         }
     } else if (type == "watch_request_canceled") {
@@ -2833,12 +2966,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (m_transparentImageList) {
             m_transparentImageList->removeViewer(viewerId);
             if (m_isStreaming && m_transparentImageList->getViewerCount() <= 0) {
-                if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
-                    m_currentWatchdogSocket->write("CMD_SOFT_STOP");
-                    m_currentWatchdogSocket->flush();
-                } else {
-                    stopStreaming();
-                }
+                scheduleNoViewerSoftStop();
             }
         }
     } else if (type == "kick_viewer") {

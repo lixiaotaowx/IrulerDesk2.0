@@ -427,10 +427,13 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     QJsonObject obj = doc.object();
     QString type = obj["type"].toString();
 
-    // [KickDiag] Log ALL received messages (except high-frequency ones)
-    if (type != "mouse_position" && type != "audio_opus" && type != "viewer_audio_opus") {
-        qInfo().noquote() << "[KickDiag][Sender] rx message type=" << type 
-                          << " raw=" << message.left(200);
+    const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_ws_text")).trimmed();
+    const bool dumpWsText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
+    if (dumpWsText) {
+        if (type != QStringLiteral("mouse_position") && type != QStringLiteral("audio_opus") && type != QStringLiteral("viewer_audio_opus")) {
+            qInfo().noquote() << "[KickDiag][Sender] rx message type=" << type
+                              << " raw=" << message.left(200);
+        }
     }
     
     if (type == "lan_offer_request") {
@@ -472,6 +475,24 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         offer["channel_id"] = roomId;
         offer["base_urls"] = arr;
         sendTextMessage(QJsonDocument(offer).toJson(QJsonDocument::Compact));
+        return;
+    }
+
+    if (type == "lan_hello") {
+        if (!AppConfig::lanWsEnabled()) {
+            return;
+        }
+        const QStringList pathParts = QUrl(m_serverUrl).path().split('/', Qt::SkipEmptyParts);
+        const QString roomId = pathParts.size() >= 2 ? pathParts.value(1) : QString();
+        if (roomId.isEmpty()) {
+            return;
+        }
+        QJsonObject ack;
+        ack["type"] = "lan_hello_ack";
+        ack["channel_id"] = roomId;
+        ack["device_id"] = roomId;
+        ack["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+        sendTextMessage(QJsonDocument(ack).toJson(QJsonDocument::Compact));
         return;
     }
 

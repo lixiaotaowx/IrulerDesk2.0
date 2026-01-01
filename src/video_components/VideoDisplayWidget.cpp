@@ -277,9 +277,6 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
     if (!m_isReceiving) {
         if (!recreate && m_receiver) {
             // Force cleanup if destroying
-            if (m_receiver->isConnected()) {
-                m_receiver->sendViewerExit();
-            }
             m_receiver->setTalkEnabled(false);
             // Stop audio first to prevent log spam
             m_receiver->stopAudio();
@@ -294,11 +291,6 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
 
     if (m_receiver) {
         m_receiver->setTalkEnabled(false);
-    }
-
-    if (m_receiver && m_receiver->isConnected()) {
-        m_receiver->sendViewerExit();
-        m_receiver->sendStopStreaming();
     }
     
     if (m_receiver) {
@@ -1488,11 +1480,7 @@ void VideoDisplayWidget::recreateReceiver()
         emit avatarUpdateReceived(userId, iconId);
     });
 
-    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
-        if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
-            m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
-        }
-    });
+    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() { });
 
     connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
         this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
@@ -1543,7 +1531,7 @@ void VideoDisplayWidget::pauseReceiving()
     if (m_receiver && m_isReceiving) {
         m_receiver->setTalkEnabled(false);
         // [Fix] Ensure viewer_exit is sent so producer cleans up the user from list
-        if (m_receiver->isConnected()) {
+        if (m_receiver->isConnected() && !m_receiver->isLanSwitchInProgress()) {
              m_receiver->sendViewerExit();
              m_receiver->sendStopStreaming();
         }

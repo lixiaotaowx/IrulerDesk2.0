@@ -406,13 +406,9 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
     }
 
     if (m_streamClientLan) {
-        const QStringList bases = AppConfig::localLanBaseUrls();
-        const QString base = bases.value(0);
-        if (!base.isEmpty()) {
-            QUrl u(base);
-            u.setPath(QStringLiteral("/publish/%1").arg(previewChannelId));
-            m_streamClientLan->connectToServer(u);
-        }
+        QUrl u(QStringLiteral("ws://127.0.0.1:%1").arg(AppConfig::lanWsPort()));
+        u.setPath(QStringLiteral("/publish/%1").arg(previewChannelId));
+        m_streamClientLan->connectToServer(u);
     }
 
     if (!m_myStreamId.isEmpty()) {
@@ -444,13 +440,9 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
 
         if (m_avatarPublisherLan) {
             const QString channelId = QString("avatar_%1").arg(m_myStreamId);
-            const QStringList bases = AppConfig::localLanBaseUrls();
-            const QString base = bases.value(0);
-            if (!base.isEmpty()) {
-                QUrl u(base);
-                u.setPath(QStringLiteral("/publish/%1").arg(channelId));
-                m_avatarPublisherLan->connectToServer(u);
-            }
+            QUrl u(QStringLiteral("ws://127.0.0.1:%1").arg(AppConfig::lanWsPort()));
+            u.setPath(QStringLiteral("/publish/%1").arg(channelId));
+            m_avatarPublisherLan->connectToServer(u);
         }
 
         ensureAvatarSubscription(m_myStreamId);
@@ -3472,13 +3464,9 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
             });
         }
         if (!pubLan->isConnected()) {
-            const QStringList bases = AppConfig::localLanBaseUrls();
-            const QString base = bases.value(0);
-            if (!base.isEmpty()) {
-                QUrl u(base);
-                u.setPath(QStringLiteral("/publish/%1").arg(channelId));
-                pubLan->connectToServer(u);
-            }
+            QUrl u(QStringLiteral("ws://127.0.0.1:%1").arg(AppConfig::lanWsPort()));
+            u.setPath(QStringLiteral("/publish/%1").arg(channelId));
+            pubLan->connectToServer(u);
         }
     }
 

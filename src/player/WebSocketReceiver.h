@@ -77,8 +77,17 @@ public:
 
     // 检查连接状态
     bool isConnected() const;
+    bool isLanSwitchInProgress();
 
 private:
+    enum class LinkState {
+        CloudActive,
+        LanProbing,
+        LanActive
+    };
+
+    void startLanProbe(const QString &lanUrl, const QString &fromUrl);
+
     bool m_audioStopped = false; // 防止音频被意外重启的标志
     
     // 获取接收统计信息
@@ -133,9 +142,12 @@ private:
     void stopReconnectTimer();
     
     QWebSocket *m_webSocket;
+    QWebSocket *m_lanWebSocket = nullptr;
     QString m_serverUrl;
     bool m_connected;
     bool m_reconnectEnabled;
+    bool m_cloudConnected = false;
+    bool m_lanConnected = false;
     
     // 重连机制
     QTimer *m_reconnectTimer;
@@ -146,6 +158,8 @@ private:
     QString m_cloudFallbackUrl;
     bool m_lanSwitchInProgress = false;
     bool m_lanOfferRequested = false;
+    QTimer *m_lanHelloTimer = nullptr;
+    bool m_lanHelloAcked = false;
     QTimer *m_lanFirstFrameTimer = nullptr;
     bool m_lanAwaitingFirstFrame = false;
     qint64 m_lanSwitchDisabledUntilMs = 0;
@@ -153,6 +167,15 @@ private:
     int m_lanOfferRetryCount = 0;
     qint64 m_lastLanOfferRequestAtMs = 0;
     bool m_lanSwitchStartStreamingSent = false;
+    QTimer *m_videoStartRetryTimer = nullptr;
+    int m_videoStartRetryCount = 0;
+    bool m_hasAnyVideoFrame = false;
+    qint64 m_lastVideoFrameAtMs = 0;
+    qint64 m_lastVideoNudgeAtMs = 0;
+    int m_videoNudgeCount = 0;
+    LinkState m_linkState = LinkState::CloudActive;
+    QString m_pendingLanUrl;
+    QString m_pendingLanChannelId;
     
     // 统计信息
     ReceiverStats m_stats;

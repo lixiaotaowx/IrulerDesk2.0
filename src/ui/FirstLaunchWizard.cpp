@@ -1,6 +1,7 @@
 #include "FirstLaunchWizard.h"
 #include <QStyle>
 #include <QMessageBox>
+#include <QKeyEvent>
 
 FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
     : QDialog(parent)
@@ -167,4 +168,24 @@ void FirstLaunchWizard::closeEvent(QCloseEvent* e)
     } else {
         e->ignore();
     }
+}
+
+void FirstLaunchWizard::keyPressEvent(QKeyEvent* event)
+{
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        int i = m_stack->currentIndex();
+        bool last = (i + 1 == m_stack->count());
+        if (last) {
+            if (m_finishBtn && m_finishBtn->isVisible() && m_finishBtn->isEnabled()) {
+                m_finishBtn->click();
+            }
+        } else {
+            if (m_nextBtn && m_nextBtn->isVisible() && m_nextBtn->isEnabled()) {
+                m_nextBtn->click();
+            }
+        }
+        event->accept();
+        return;
+    }
+    QDialog::keyPressEvent(event);
 }

@@ -103,6 +103,8 @@ MainWindow::MainWindow(QWidget *parent)
                 QString n = w.userName().trimmed();
                 if (!n.isEmpty()) { saveUserNameToConfig(n); m_userName = n; }
                 int si = w.screenIndex(); if (si >= 0) saveScreenIndexToConfig(si);
+            } else {
+                std::exit(0);
             }
         }
     }

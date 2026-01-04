@@ -187,6 +187,13 @@ void SystemSettingsWindow::populateScreens()
     for (int i = 0; i < screens.size(); ++i) {
         QScreen* s = screens[i];
         QPixmap pix = s ? s->grabWindow(0) : QPixmap();
+        if (s && !pix.isNull() && s->devicePixelRatio() > 1.1) {
+            const int capturedW = static_cast<int>(pix.width() * pix.devicePixelRatio());
+            const int physW = static_cast<int>(s->size().width() * s->devicePixelRatio());
+            if (capturedW < physW * 0.9) {
+                pix = s->grabWindow(0, 0, 0, s->size().width(), s->size().height());
+            }
+        }
         if (pix.isNull()) {
             pix = QPixmap(200, 112);
             pix.fill(QColor(20, 20, 20));

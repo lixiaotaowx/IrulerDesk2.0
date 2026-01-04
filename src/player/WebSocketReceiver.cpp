@@ -2549,17 +2549,25 @@ void WebSocketReceiver::sendViewerCursor(int x, int y)
 
 void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, int colorId)
 {
-    if (!m_connected || !m_webSocket) {
-        return;
-    }
-
-    // 使用最近一次的viewer/target信息进行路由
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
+
     {
         QMutexLocker locker(&m_mutex);
+        // 优先使用LAN连接
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
+
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
+    }
+
+    if (!wsToUse) {
+        return;
     }
 
     if (viewerId.isEmpty() || targetId.isEmpty()) {
@@ -2584,22 +2592,30 @@ void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, 
         moveEventCount++;
     } else {
     }
-    m_webSocket->sendTextMessage(jsonString);
+    wsToUse->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, int colorId, int fontSize)
 {
-    if (!m_connected || !m_webSocket) {
-        return;
-    }
-
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        // 优先使用LAN连接
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }
+    
+    if (!wsToUse) {
+        return;
+    }
+
     if (viewerId.isEmpty() || targetId.isEmpty()) {
         return;
     }
@@ -2616,21 +2632,28 @@ void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, in
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
 
     QJsonDocument doc(message);
-    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    wsToUse->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendSwitchScreenNext()
 {
-    if (!m_connected || !m_webSocket) {
-        return;
-    }
-
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        // 优先使用LAN连接
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
+    }
+
+    if (!wsToUse) {
+        return;
     }
 
     if (viewerId.isEmpty() || targetId.isEmpty()) {
@@ -2646,20 +2669,27 @@ void WebSocketReceiver::sendSwitchScreenNext()
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
-    m_webSocket->sendTextMessage(jsonString);
+    wsToUse->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendLikeEvent()
 {
-    if (!m_connected || !m_webSocket) {
-        return;
-    }
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
+    }
+
+    if (!wsToUse) {
+        return;
     }
     if (viewerId.isEmpty() || targetId.isEmpty()) {
         return;
@@ -2670,21 +2700,27 @@ void WebSocketReceiver::sendLikeEvent()
     message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     QJsonDocument doc(message);
-    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    wsToUse->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendSwitchScreenIndex(int index)
 {
-    if (!m_connected || !m_webSocket) {
-        return;
-    }
-
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
+    }
+
+    if (!wsToUse) {
+        return;
     }
 
     if (viewerId.isEmpty() || targetId.isEmpty()) {
@@ -2701,7 +2737,7 @@ void WebSocketReceiver::sendSwitchScreenIndex(int index)
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
-    m_webSocket->sendTextMessage(jsonString);
+    wsToUse->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendStopStreaming()

@@ -136,6 +136,13 @@ void StreamingIslandWidget::setupUI()
     connect(m_toolbar, &AnnotationToolbar::cameraRequested, this, [this]() {
         if (m_targetScreen) {
             QPixmap pix = m_targetScreen->grabWindow(0);
+            if (!pix.isNull() && m_targetScreen->devicePixelRatio() > 1.1) {
+                 const int capturedW = static_cast<int>(pix.width() * pix.devicePixelRatio());
+                 const int physW = static_cast<int>(m_targetScreen->size().width() * m_targetScreen->devicePixelRatio());
+                 if (capturedW < physW * 0.9) {
+                     pix = m_targetScreen->grabWindow(0, 0, 0, m_targetScreen->size().width(), m_targetScreen->size().height());
+                 }
+            }
             QClipboard *cb = QGuiApplication::clipboard();
             if (cb) cb->setPixmap(pix);
             showClipboardToast();
@@ -144,6 +151,13 @@ void StreamingIslandWidget::setupUI()
              QScreen *s = QGuiApplication::primaryScreen();
              if (s) {
                  QPixmap pix = s->grabWindow(0);
+                 if (!pix.isNull() && s->devicePixelRatio() > 1.1) {
+                      const int capturedW = static_cast<int>(pix.width() * pix.devicePixelRatio());
+                      const int physW = static_cast<int>(s->size().width() * s->devicePixelRatio());
+                      if (capturedW < physW * 0.9) {
+                          pix = s->grabWindow(0, 0, 0, s->size().width(), s->size().height());
+                      }
+                 }
                  QClipboard *cb = QGuiApplication::clipboard();
                  if (cb) cb->setPixmap(pix);
                  showClipboardToast();
@@ -166,6 +180,13 @@ void StreamingIslandWidget::setupUI()
         // Paint each screen's content into the full pixmap
         for (QScreen *s : screens) {
             QPixmap sPix = s->grabWindow(0);
+            if (!sPix.isNull() && s->devicePixelRatio() > 1.1) {
+                 const int capturedW = static_cast<int>(sPix.width() * sPix.devicePixelRatio());
+                 const int physW = static_cast<int>(s->size().width() * s->devicePixelRatio());
+                 if (capturedW < physW * 0.9) {
+                     sPix = s->grabWindow(0, 0, 0, s->size().width(), s->size().height());
+                 }
+            }
             // Calculate position relative to the virtual desktop top-left
             QPoint pos = s->geometry().topLeft() - totalRect.topLeft();
             p.drawPixmap(pos, sPix);

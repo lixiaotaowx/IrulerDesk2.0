@@ -1683,6 +1683,65 @@ int main(int argc, char *argv[])
         }
     });
 
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::annotationEventReceived,
+                         [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
+            if (!lanSender->isStreaming() && phase != QStringLiteral("clear")) {
+                return;
+            }
+            // [Debug] Log annotation events to diagnose "cannot draw" issues
+            if (phase != "move") { 
+                 qDebug() << "[CaptureProcess] LAN Annotation received:" << phase << "from" << viewerId << "at" << x << "," << y;
+            }
+
+            int idx = currentScreenIndex;
+            if (phase == QStringLiteral("clear")) {
+                for (auto *ov : s_overlays) { if (ov) ov->clear(); }
+                for (auto *cv : s_cursorOverlays) { if (cv) cv->clear(); }
+                return;
+            }
+            if (idx >= 0 && idx < s_overlays.size()) {
+                QSize logicalSize = s_overlays[idx]->size();
+                QSize enc = targetEncodeSize;
+                
+                int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+                int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+                
+                s_overlays[idx]->onAnnotationEvent(phase, sx, sy, viewerId, colorId);
+                
+                // [Fix] Force overlay to top when drawing happens
+                s_overlays[idx]->raise();
+                s_overlays[idx]->show(); 
+            }
+        });
+        QObject::connect(lanSender, &WebSocketSender::textAnnotationReceived,
+                         [&](const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize) {
+            if (!lanSender->isStreaming()) {
+                return;
+            }
+            int idx = currentScreenIndex;
+            if (idx >= 0 && idx < s_overlays.size()) {
+                QSize logicalSize = s_overlays[idx]->size();
+                QSize enc = targetEncodeSize;
+                
+                int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+                int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+                
+                s_overlays[idx]->onTextAnnotation(text, sx, sy, viewerId, colorId, fontSize);
+            }
+        });
+        QObject::connect(lanSender, &WebSocketSender::likeRequested,
+                         [&](const QString &viewerId) {
+            if (!lanSender->isStreaming()) {
+                return;
+            }
+            int idx = currentScreenIndex;
+            if (idx >= 0 && idx < s_overlays.size()) {
+                s_overlays[idx]->onLikeRequested(viewerId);
+            }
+        });
+    }
+
     
     const auto screens = QApplication::screens();
     int screenIndex = getScreenIndexFromConfig();
@@ -1929,6 +1988,7 @@ int main(int argc, char *argv[])
             s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
         }
     });
+
     if (lanSender) {
         QObject::connect(lanSender, &WebSocketSender::viewerNameUpdateReceived,
                          [&](const QString &viewerId, const QString &viewerName) {

@@ -203,6 +203,18 @@ bool ScreenCapture::initializeD3D11()
     }
     
     // 创建暂存纹理
+    // [Fix] Ensure staging texture matches the desktop texture description
+    // m_screenSize might be derived from logical size * dpr, which might be slightly off or misinterpreted.
+    // Better to use the description from the output duplication if possible, but we don't have it yet.
+    // However, we rely on m_screenSize being correct. If m_screenSize is logical (small) but desktop is physical (large),
+    // creating a small staging texture and copying a large desktop texture into it will fail or crop?
+    // CopyResource requires same dimensions. If dimensions differ, the call is ignored or invalid.
+    // If CopyResource fails, we fallback to Qt.
+    // But if m_screenSize IS physical, then it should work.
+    
+    // Let's ensure m_screenSize is updated to physical size if we can detect it better here?
+    // Actually, let's just use m_screenSize as calculated. If CopyResource fails later, we know why.
+    
     D3D11_TEXTURE2D_DESC stagingDesc = {};
     stagingDesc.Width = m_screenSize.width();
     stagingDesc.Height = m_screenSize.height();
@@ -251,6 +263,37 @@ ScreenCapture::CaptureResult ScreenCapture::captureWithD3D11(QByteArray &frameDa
     if (FAILED(hr)) {
         m_dxgiOutputDuplication->ReleaseFrame();
         return HardwareError;
+    }
+
+    // [Fix] Verify texture dimensions match staging texture
+    D3D11_TEXTURE2D_DESC desc;
+    desktopTexture->GetDesc(&desc);
+    if (desc.Width != m_screenSize.width() || desc.Height != m_screenSize.height()) {
+        // Dimensions mismatch (e.g. D3D returned physical 3840, but we expected logical 1920)
+        // We must recreate the staging texture to match the actual source.
+        // qDebug() << "Texture size mismatch! Source:" << desc.Width << "x" << desc.Height << " Expected:" << m_screenSize.width() << "x" << m_screenSize.height();
+        
+        m_screenSize.setWidth(desc.Width);
+        m_screenSize.setHeight(desc.Height);
+        
+        // Release old staging
+        m_stagingTexture.Reset();
+        
+        D3D11_TEXTURE2D_DESC stagingDesc = {};
+        stagingDesc.Width = desc.Width;
+        stagingDesc.Height = desc.Height;
+        stagingDesc.MipLevels = 1;
+        stagingDesc.ArraySize = 1;
+        stagingDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        stagingDesc.SampleDesc.Count = 1;
+        stagingDesc.Usage = D3D11_USAGE_STAGING;
+        stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        
+        hr = m_d3dDevice->CreateTexture2D(&stagingDesc, nullptr, m_stagingTexture.GetAddressOf());
+        if (FAILED(hr)) {
+            m_dxgiOutputDuplication->ReleaseFrame();
+            return HardwareError;
+        }
     }
     
     // 复制到暂存纹理
@@ -301,10 +344,22 @@ QByteArray ScreenCapture::captureWithQt()
     }
     
     // 使用Qt进行屏幕截图
-    QPixmap screenshot = m_primaryScreen->grabWindow(0);
+    QPixmap screenshot;
+    
+    // [Fix] Use explicit logical coordinates for capture.
+    // Passing physical coordinates causes Qt to capture an area larger than the screen (zoom out).
+    screenshot = m_primaryScreen->grabWindow(0, 
+        m_primaryScreen->geometry().x(), 
+        m_primaryScreen->geometry().y(), 
+        m_primaryScreen->size().width(), 
+        m_primaryScreen->size().height());
+
     if (screenshot.isNull()) {
         return QByteArray();
     }
+    
+    // [Fix] Force devicePixelRatio to 1.0 to ensure consistent pixel dimensions
+    screenshot.setDevicePixelRatio(1.0);
     
     // 转换为QImage
     QImage image = screenshot.toImage();

@@ -431,6 +431,8 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/Release/
     PATTERN "*.lib" EXCLUDE
     PATTERN "*.exp" EXCLUDE
     PATTERN "*.ilk" EXCLUDE
+    PATTERN "config" EXCLUDE
+    PATTERN "cache" EXCLUDE
 )
 
 # 移除旧的 install(CODE) 尝试

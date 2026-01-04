@@ -113,7 +113,16 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 {
     // --- GLOBAL SIZE CONTROL (ONE VALUE TO RULE THEM ALL) ---
     // [User Setting] 只要修改这个数值，所有尺寸自动计算
-    m_cardBaseWidth = 300; // 卡片可见区域的宽度 (Changed to 300 as requested)
+    // [Dynamic Setting] Based on primary screen resolution to fix 4K display issues
+    QScreen *primary = QGuiApplication::primaryScreen();
+    // 300 is the base for 1080p, scale up for 4K (e.g. 3840 -> 600)
+    // Formula: width / 6.4 (3840/6.4 = 600, 1920/6.4 = 300)
+    // We clamp it to reasonable values
+    int calculatedWidth = 300;
+    if (primary) {
+        calculatedWidth = static_cast<int>(primary->size().width() / 6.4);
+    }
+    m_cardBaseWidth = qBound(300, calculatedWidth, 800); 
     
     // [Advanced Setting] 底部按钮区域的高度
     m_bottomAreaHeight = 45; 
@@ -1908,7 +1917,15 @@ void NewUiWindow::setupUi()
         QScreen *screen = QGuiApplication::primaryScreen();
         QPixmap srcPix;
         if (screen) {
-             QPixmap original = screen->grabWindow(0);
+             // [Fix] Use explicit logical coordinates with geometry position.
+             QPixmap original = screen->grabWindow(0, 
+                 screen->geometry().x(), 
+                 screen->geometry().y(), 
+                 screen->size().width(), 
+                 screen->size().height());
+             if (!original.isNull()) {
+                 original.setDevicePixelRatio(1.0);
+             }
              srcPix = original.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
         } else {
              srcPix = QPixmap(m_cardBaseWidth, (int)(m_cardBaseWidth/1.77));
@@ -2954,8 +2971,18 @@ void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
 
     QPixmap originalPixmap;
     for (QScreen *s : candidates) {
-        originalPixmap = s->grabWindow(0);
+        // [Fix] Use explicit logical coordinates with geometry position.
+        // Using geometry() ensures we capture the correct screen area even on multi-monitor setups.
+        originalPixmap = s->grabWindow(0, 
+            s->geometry().x(), 
+            s->geometry().y(), 
+            s->size().width(), 
+            s->size().height());
+
         if (!originalPixmap.isNull()) {
+            // [Fix] Force devicePixelRatio to 1.0 to ensure we treat the image as raw pixels.
+            // This prevents Qt from auto-scaling based on DPR, which can cause 1/4 size issues on High DPI screens.
+            originalPixmap.setDevicePixelRatio(1.0);
             break;
         }
     }
@@ -3082,8 +3109,17 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
 
     QPixmap originalPixmap;
     for (QScreen *s : candidates) {
-        originalPixmap = s->grabWindow(0);
+        // [Fix] Use explicit logical coordinates with geometry position.
+        // Using geometry() ensures we capture the correct screen area even on multi-monitor setups.
+        originalPixmap = s->grabWindow(0, 
+            s->geometry().x(), 
+            s->geometry().y(), 
+            s->size().width(), 
+            s->size().height());
+
         if (!originalPixmap.isNull()) {
+            // [Fix] Force devicePixelRatio to 1.0 to ensure we treat the image as raw pixels.
+            originalPixmap.setDevicePixelRatio(1.0);
             break;
         }
     }

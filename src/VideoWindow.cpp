@@ -484,6 +484,14 @@ void VideoWindow::setupCustomTitleBar()
          QScreen *screen = this->screen();
          if (screen) {
              QPixmap fullPix = screen->grabWindow(0);
+             // [Fix] Handle High DPI capture issues
+             if (!fullPix.isNull() && screen->devicePixelRatio() > 1.1) {
+                 const int capturedW = static_cast<int>(fullPix.width() * fullPix.devicePixelRatio());
+                 const int physW = static_cast<int>(screen->size().width() * screen->devicePixelRatio());
+                 if (capturedW < physW * 0.9) {
+                     fullPix = screen->grabWindow(0, 0, 0, screen->size().width(), screen->size().height());
+                 }
+             }
              SnippetOverlay *overlay = new SnippetOverlay(fullPix);
              overlay->setGeometry(screen->geometry());
              overlay->show();

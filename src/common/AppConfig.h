@@ -27,7 +27,7 @@ inline QString applicationName()
 
 inline QString applicationVersion()
 {
-    return QStringLiteral("1.0.2");
+    return QStringLiteral("1.0.4");
 }
 
 inline QString organizationName()
@@ -128,16 +128,6 @@ inline bool lanWsEnabled()
     return v.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0 || v == QStringLiteral("1");
 }
 
-inline bool lanOnlyEnabled()
-{
-    QString v = readConfigValue(QStringLiteral("lan_only")).trimmed();
-    if (v.isEmpty()) {
-        v = readConfigValue(QStringLiteral("lan_only_enabled")).trimmed();
-    }
-    if (v.isEmpty()) return false;
-    return v.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0 || v == QStringLiteral("1");
-}
-
 inline int lanWsPort()
 {
     const QString v = readConfigValue(QStringLiteral("lan_ws_port")).trimmed();
@@ -145,24 +135,6 @@ inline int lanWsPort()
     int p = v.toInt(&ok);
     if (!ok || p <= 0 || p > 65535) {
         p = 8766;
-    }
-    return p;
-}
-
-inline bool lanDiscoveryEnabled()
-{
-    const QString v = readConfigValue(QStringLiteral("lan_discovery_enabled")).trimmed();
-    if (v.isEmpty()) return true;
-    return v.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0 || v == QStringLiteral("1");
-}
-
-inline int lanDiscoveryPort()
-{
-    const QString v = readConfigValue(QStringLiteral("lan_discovery_port")).trimmed();
-    bool ok = false;
-    int p = v.toInt(&ok);
-    if (!ok || p <= 0 || p > 65535) {
-        p = 37666;
     }
     return p;
 }
@@ -369,13 +341,6 @@ inline void setLanBaseUrlsForTarget(const QString &targetId, const QStringList &
     if (targetId.isEmpty() || baseUrls.isEmpty()) return;
     QMutexLocker locker(&lanBaseUrlMutex());
     lanBaseUrlsByTarget().insert(targetId, baseUrls);
-}
-
-inline void removeLanBaseUrlsForTarget(const QString &targetId)
-{
-    if (targetId.isEmpty()) return;
-    QMutexLocker locker(&lanBaseUrlMutex());
-    lanBaseUrlsByTarget().remove(targetId);
 }
 
 inline QStringList lanBaseUrlsForTarget(const QString &targetId)

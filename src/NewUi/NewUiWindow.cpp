@@ -160,7 +160,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Timer for screenshot
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
-    m_timer->start(60 * 1000);
+    m_timer->start(10 * 1000); // 10s interval (will be rate-limited for Cloud)
     QTimer::singleShot(0, this, &NewUiWindow::onTimerTimeout);
 
     m_selfPreviewFastTimer = new QTimer(this);
@@ -415,9 +415,13 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
     }
 
     if (m_streamClientLan) {
-        QUrl u(QStringLiteral("ws://127.0.0.1:%1").arg(AppConfig::lanWsPort()));
-        u.setPath(QStringLiteral("/publish/%1").arg(previewChannelId));
-        m_streamClientLan->connectToServer(u);
+        const QStringList bases = AppConfig::localLanBaseUrls();
+        const QString base = bases.value(0);
+        if (!base.isEmpty()) {
+            QUrl u(base);
+            u.setPath(QStringLiteral("/publish/%1").arg(previewChannelId));
+            m_streamClientLan->connectToServer(u);
+        }
     }
 
     if (!m_myStreamId.isEmpty()) {
@@ -449,9 +453,13 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
 
         if (m_avatarPublisherLan) {
             const QString channelId = QString("avatar_%1").arg(m_myStreamId);
-            QUrl u(QStringLiteral("ws://127.0.0.1:%1").arg(AppConfig::lanWsPort()));
-            u.setPath(QStringLiteral("/publish/%1").arg(channelId));
-            m_avatarPublisherLan->connectToServer(u);
+            const QStringList bases = AppConfig::localLanBaseUrls();
+            const QString base = bases.value(0);
+            if (!base.isEmpty()) {
+                QUrl u(base);
+                u.setPath(QStringLiteral("/publish/%1").arg(channelId));
+                m_avatarPublisherLan->connectToServer(u);
+            }
         }
 
         ensureAvatarSubscription(m_myStreamId);
@@ -3059,8 +3067,26 @@ void NewUiWindow::publishLocalScreenFrameTriggered(const QString &reason, bool f
 
     bool sentAny = false;
     if (m_streamClient && m_streamClient->isConnected()) {
-        m_streamClient->sendFrame(m_lastPreviewSendPixmap, forceSend);
-        sentAny = true;
+        bool allowSend = forceSend;
+        if (!allowSend) {
+            // Check if this specific client connection is LAN
+            if (m_streamClient->isConnectedToLan()) {
+                allowSend = true;
+            } else {
+                // Cloud: Rate limit to 60s to prevent traffic leakage
+                if (nowMs - m_lastCloudSlowFrameSentAtMs >= 60000) {
+                    allowSend = true;
+                }
+            }
+        }
+        
+        if (allowSend) {
+            m_streamClient->sendFrame(m_lastPreviewSendPixmap, forceSend);
+            sentAny = true;
+            if (!m_streamClient->isConnectedToLan() && !forceSend) {
+                m_lastCloudSlowFrameSentAtMs = nowMs;
+            }
+        }
     }
     if (m_streamClientLan && m_streamClientLan->isConnected()) {
         m_streamClientLan->sendFrame(m_lastPreviewSendPixmap, forceSend);
@@ -3500,9 +3526,13 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
             });
         }
         if (!pubLan->isConnected()) {
-            QUrl u(QStringLiteral("ws://127.0.0.1:%1").arg(AppConfig::lanWsPort()));
-            u.setPath(QStringLiteral("/publish/%1").arg(channelId));
-            pubLan->connectToServer(u);
+            const QStringList bases = AppConfig::localLanBaseUrls();
+            const QString base = bases.value(0);
+            if (!base.isEmpty()) {
+                QUrl u(base);
+                u.setPath(QStringLiteral("/publish/%1").arg(channelId));
+                pubLan->connectToServer(u);
+            }
         }
     }
 

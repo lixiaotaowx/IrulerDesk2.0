@@ -387,6 +387,12 @@ bool StreamClient::isConnected() const
     return m_isConnected;
 }
 
+bool StreamClient::isConnectedToLan() const
+{
+    if (!m_isConnected) return false;
+    return m_lastUrl.port() == AppConfig::lanWsPort();
+}
+
 void StreamClient::onConnected()
 {
     m_isConnected = true;

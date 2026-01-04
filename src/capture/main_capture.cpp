@@ -36,14 +36,11 @@
 #include <QNetworkProxy>
 #include <QNetworkProxyFactory>
 #include <QHostAddress>
-#include <QNetworkInterface>
-#include <QUdpSocket>
 #include <QWebSocketServer>
 #include <QWebSocket>
 #include <QHash>
 #include <QPointer>
 #include <QThread>
-#include <QRandomGenerator>
 #include <opus/opus.h>
 #ifdef _WIN32
 #define NOMINMAX
@@ -178,11 +175,7 @@ private:
             connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
                 auto it = m_rooms.find(roomId);
                 if (it == m_rooms.end()) return;
-                const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_lanrelay_text")).trimmed();
-                const bool dumpLanRelayText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
-                if (dumpLanRelayText) {
-                    qInfo().noquote() << "[LanRelay] Fwd text from pub to " << it->subscribers.size() << " subs: " << msg.left(200);
-                }
+                qInfo().noquote() << "[LanRelay] Fwd text from pub to " << it->subscribers.size() << " subs: " << msg.left(200);
                 for (QWebSocket *rawSub : it->subscribers) {
                     QPointer<QWebSocket> sub = rawSub;
                     if (sub && sub->state() == QAbstractSocket::ConnectedState) {
@@ -199,18 +192,10 @@ private:
                 if (it == m_rooms.end()) return;
                 QPointer<QWebSocket> pub = it->publisher;
                 if (pub && pub->state() == QAbstractSocket::ConnectedState) {
-                    const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_lanrelay_text")).trimmed();
-                    const bool dumpLanRelayText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
-                    if (dumpLanRelayText) {
-                        qInfo().noquote() << "[LanRelay] Fwd text from sub to pub: " << msg.left(200);
-                    }
+                    qInfo().noquote() << "[LanRelay] Fwd text from sub to pub: " << msg.left(200);
                     pub->sendTextMessage(msg);
                 } else {
-                    const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_lanrelay_text")).trimmed();
-                    const bool dumpLanRelayText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
-                    if (dumpLanRelayText) {
-                        qInfo().noquote() << "[LanRelay] Buffering text from sub (no pub): " << msg.left(200);
-                    }
+                    qInfo().noquote() << "[LanRelay] Buffering text from sub (no pub): " << msg.left(200);
                     it->pendingTextToPublisher.append(msg);
                     if (it->pendingTextToPublisher.size() > 12) {
                         it->pendingTextToPublisher.remove(0, it->pendingTextToPublisher.size() - 12);
@@ -251,105 +236,6 @@ private:
 
             sock->deleteLater();
         });
-    }
-};
-
-class LanDiscoveryBroadcaster final : public QObject
-{
-public:
-    explicit LanDiscoveryBroadcaster(const QString &deviceId, QObject *parent = nullptr)
-        : QObject(parent)
-        , m_deviceId(deviceId)
-    {
-        m_socket = new QUdpSocket(this);
-        m_timer = new QTimer(this);
-        m_timer->setSingleShot(true);
-        connect(m_timer, &QTimer::timeout, this, &LanDiscoveryBroadcaster::sendOnce);
-    }
-
-    void start()
-    {
-        scheduleNext(200);
-    }
-
-private:
-    QUdpSocket *m_socket = nullptr;
-    QTimer *m_timer = nullptr;
-    QString m_deviceId;
-    qint64 m_lastLogAtMs = 0;
-
-    void scheduleNext(int minDelayMs = 0)
-    {
-        if (!m_timer) return;
-        int d = minDelayMs;
-        if (d <= 0) {
-            d = 2000 + static_cast<int>(QRandomGenerator::global()->bounded(3000));
-        }
-        m_timer->start(d);
-    }
-
-    void sendOnce()
-    {
-        if (!AppConfig::lanDiscoveryEnabled()) {
-            scheduleNext();
-            return;
-        }
-        if (m_deviceId.isEmpty()) {
-            scheduleNext();
-            return;
-        }
-
-        const quint16 udpPort = static_cast<quint16>(AppConfig::lanDiscoveryPort());
-        const quint16 wsPort = static_cast<quint16>(AppConfig::lanWsPort());
-
-        QJsonObject obj;
-        obj["type"] = QStringLiteral("lan_announce");
-        obj["device_id"] = m_deviceId;
-        obj["ws_port"] = static_cast<int>(wsPort);
-        obj["ts"] = QDateTime::currentMSecsSinceEpoch();
-        obj["nonce"] = QString::number(QRandomGenerator::global()->generate64(), 16);
-        const QByteArray payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-
-        QList<QHostAddress> broadcasts;
-        broadcasts.append(QHostAddress::Broadcast);
-
-        const auto ifaces = QNetworkInterface::allInterfaces();
-        for (const QNetworkInterface &iface : ifaces) {
-            if (!iface.isValid()) continue;
-            if (!(iface.flags() & QNetworkInterface::IsUp)) continue;
-            if (!(iface.flags() & QNetworkInterface::IsRunning)) continue;
-            if (iface.flags() & QNetworkInterface::IsLoopBack) continue;
-            if (iface.flags() & QNetworkInterface::IsPointToPoint) continue;
-
-            const auto entries = iface.addressEntries();
-            for (const QNetworkAddressEntry &e : entries) {
-                if (e.ip().protocol() != QAbstractSocket::IPv4Protocol) continue;
-                const QHostAddress b = e.broadcast();
-                if (b.isNull() || b.protocol() != QAbstractSocket::IPv4Protocol) continue;
-                broadcasts.append(b);
-            }
-        }
-        std::sort(broadcasts.begin(), broadcasts.end(), [](const QHostAddress &a, const QHostAddress &b) {
-            return a.toString() < b.toString();
-        });
-        broadcasts.erase(std::unique(broadcasts.begin(), broadcasts.end(), [](const QHostAddress &a, const QHostAddress &b) {
-            return a == b;
-        }), broadcasts.end());
-
-        for (const QHostAddress &b : broadcasts) {
-            if (!m_socket) break;
-            m_socket->writeDatagram(payload, b, udpPort);
-        }
-
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (nowMs - m_lastLogAtMs > 60000) {
-            m_lastLogAtMs = nowMs;
-            qInfo().noquote() << "[KickDiag][LanDiscovery] broadcast"
-                              << " device_id=" << m_deviceId
-                              << " ws_port=" << wsPort
-                              << " udp_port=" << udpPort;
-        }
-        scheduleNext();
     }
 };
 }
@@ -688,14 +574,7 @@ int main(int argc, char *argv[])
         lanThread->start();
         const quint16 port = static_cast<quint16>(AppConfig::lanWsPort());
         QMetaObject::invokeMethod(lanRelay, [lanRelay, port]() {
-            const bool ok = lanRelay->start(port);
-            if (ok) {
-                qInfo().noquote() << "[LanRelay] started"
-                                  << " port=" << port;
-            } else {
-                qWarning().noquote() << "[LanRelay] start_failed"
-                                     << " port=" << port;
-            }
+            lanRelay->start(port);
         }, Qt::QueuedConnection);
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [lanThread]() {
             if (!lanThread) return;
@@ -931,10 +810,10 @@ int main(int argc, char *argv[])
         QSize newSize = staticCapture->getScreenSize();
         QSize encodeSize = newSize;
 
-        // 限制最大长边为 1920，超过则等比缩放 (适用于超宽屏或竖屏)
-        if (encodeSize.width() > 1920 || encodeSize.height() > 1920) {
-            double ratioW = 1920.0 / encodeSize.width();
-            double ratioH = 1920.0 / encodeSize.height();
+        // 限制最大长边为 3840 (支持4K)，超过则等比缩放 (适用于超宽屏或竖屏)
+        if (encodeSize.width() > 3840 || encodeSize.height() > 3840) {
+            double ratioW = 3840.0 / encodeSize.width();
+            double ratioH = 3840.0 / encodeSize.height();
             double ratio = std::min(ratioW, ratioH);
             
             encodeSize.setWidth(qRound(encodeSize.width() * ratio));
@@ -1760,44 +1639,8 @@ int main(int argc, char *argv[])
     }
 
     // 连接推流控制信号
-    static QSet<QString> cloudViewerIds;
-    static QSet<QString> lanViewerIds;
+    static QSet<QString> activeViewerIds;
     static bool pendingLocalApproval = false;
-    static QTimer *noViewerStopTimer = nullptr;
-    if (!noViewerStopTimer) {
-        noViewerStopTimer = new QTimer(QCoreApplication::instance());
-        noViewerStopTimer->setSingleShot(true);
-        QObject::connect(noViewerStopTimer, &QTimer::timeout, QCoreApplication::instance(), [&]() {
-            if (!cloudViewerIds.isEmpty() || !lanViewerIds.isEmpty()) {
-                return;
-            }
-            if (sender && sender->isStreaming()) {
-                sender->stopStreaming(true);
-            }
-            if (lanSender && lanSender->isStreaming()) {
-                lanSender->stopStreaming(true);
-            }
-        });
-    }
-    auto hasAnyViewer = [&]() -> bool {
-        return !cloudViewerIds.isEmpty() || !lanViewerIds.isEmpty();
-    };
-    auto isViewerPresent = [&](const QString &viewerId) -> bool {
-        if (viewerId.isEmpty()) return false;
-        return cloudViewerIds.contains(viewerId) || lanViewerIds.contains(viewerId);
-    };
-    auto stopNoViewerStopTimer = [&]() {
-        if (noViewerStopTimer && noViewerStopTimer->isActive()) {
-            noViewerStopTimer->stop();
-        }
-    };
-    auto maybeStartNoViewerStopTimer = [&]() {
-        if (!hasAnyViewer()) {
-            if (noViewerStopTimer) {
-                noViewerStopTimer->start(20000);
-            }
-        }
-    };
     auto handleStreamingStarted = [&, startAudio, applyQualitySetting](WebSocketSender *src) {
         if (!src) {
             return;
@@ -1845,8 +1688,7 @@ int main(int argc, char *argv[])
     }
     
     QObject::connect(sender, &WebSocketSender::streamingStopped, [&](bool softStop) {
-        cloudViewerIds.clear();
-        stopNoViewerStopTimer();
+        activeViewerIds.clear();
         if (isAnyStreaming()) {
             return;
         }
@@ -1882,11 +1724,10 @@ int main(int argc, char *argv[])
     });
     if (lanSender) {
         QObject::connect(lanSender, &WebSocketSender::streamingStopped, [&](bool softStop) {
-            lanViewerIds.clear();
-            stopNoViewerStopTimer();
             if (isAnyStreaming()) {
                 return;
             }
+            activeViewerIds.clear();
             if (isCapturing) {
                 isCapturing = false;
                 captureTimer->stop();
@@ -2047,13 +1888,8 @@ int main(int argc, char *argv[])
         }
 
         if (!viewerId.isEmpty()) {
-            if (src == lanSender) {
-                lanViewerIds.insert(viewerId);
-            } else {
-                cloudViewerIds.insert(viewerId);
-            }
+            activeViewerIds.insert(viewerId);
         }
-        stopNoViewerStopTimer();
     };
 
     QObject::connect(sender, &WebSocketSender::watchRequestReceived,
@@ -2069,33 +1905,19 @@ int main(int argc, char *argv[])
 
     QObject::connect(sender, &WebSocketSender::viewerJoined, [&](const QString &viewerId) {
         if (!viewerId.isEmpty()) {
-            cloudViewerIds.insert(viewerId);
+            activeViewerIds.insert(viewerId);
         }
-        stopNoViewerStopTimer();
     });
     if (lanSender) {
         QObject::connect(lanSender, &WebSocketSender::viewerJoined, [&](const QString &viewerId) {
             if (!viewerId.isEmpty()) {
-                lanViewerIds.insert(viewerId);
+                activeViewerIds.insert(viewerId);
             }
-            stopNoViewerStopTimer();
         });
     }
 
-    auto handleViewerExited = [&](WebSocketSender *src, const QString &viewerId) {
-        if (viewerId.isEmpty()) {
-            return;
-        }
-        if (!viewerId.isEmpty()) {
-            if (src == lanSender) {
-                lanViewerIds.remove(viewerId);
-            } else {
-                cloudViewerIds.remove(viewerId);
-            }
-        }
-        if (isViewerPresent(viewerId)) {
-            return;
-        }
+    QObject::connect(sender, &WebSocketSender::viewerExited,
+                     [&](const QString &viewerId) {
         for (auto *cv : s_cursorOverlays) {
             if (cv) cv->onViewerExited(viewerId);
         }
@@ -2107,7 +1929,17 @@ int main(int argc, char *argv[])
             watchdog->notifyViewerExited(viewerId);
         }
 
-        maybeStartNoViewerStopTimer();
+        if (!viewerId.isEmpty()) {
+            activeViewerIds.remove(viewerId);
+        }
+        if (activeViewerIds.isEmpty()) {
+            if (sender && sender->isStreaming()) {
+                sender->stopStreaming(true);
+            }
+            if (lanSender && lanSender->isStreaming()) {
+                lanSender->stopStreaming(true);
+            }
+        }
 
         {
             QMutexLocker locker(&mixMutex);
@@ -2125,18 +1957,7 @@ int main(int argc, char *argv[])
                 opus_decoder_destroy(dec);
             }
         }
-    };
-
-    QObject::connect(sender, &WebSocketSender::viewerExited,
-                     [&](const QString &viewerId) {
-        handleViewerExited(sender, viewerId);
     });
-    if (lanSender) {
-        QObject::connect(lanSender, &WebSocketSender::viewerExited,
-                         [&](const QString &viewerId) {
-            handleViewerExited(lanSender, viewerId);
-        });
-    }
 
     QObject::connect(staticMouseCapture, &MouseCapture::mousePositionChanged, sender,
                      [&, sendTextAll, isAnyVideoStreaming](const QPoint &globalPos) {
@@ -2662,12 +2483,7 @@ int main(int argc, char *argv[])
         qWarning().noquote() << "[CaptureProcess] Target LAN URL:" << lanUrl;
     }
     qWarning().noquote() << "[CaptureProcess] ==============================================";
-
-    if (AppConfig::lanWsEnabled() && AppConfig::lanDiscoveryEnabled()) {
-        auto *b = new LanDiscoveryBroadcaster(deviceId, &app);
-        b->start();
-    }
-
+    
     // 定期输出状态日志，确保用户知道进程还在运行以及ID是什么
     QTimer *aliveTimer = new QTimer(&app);
     QObject::connect(aliveTimer, &QTimer::timeout, [deviceId, serverUrl, isManualApprovalEnabledFromConfig]() {

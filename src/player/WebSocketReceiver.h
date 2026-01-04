@@ -158,8 +158,6 @@ private:
     QString m_cloudFallbackUrl;
     bool m_lanSwitchInProgress = false;
     bool m_lanOfferRequested = false;
-    QTimer *m_lanHelloTimer = nullptr;
-    bool m_lanHelloAcked = false;
     QTimer *m_lanFirstFrameTimer = nullptr;
     bool m_lanAwaitingFirstFrame = false;
     qint64 m_lanSwitchDisabledUntilMs = 0;
@@ -175,7 +173,6 @@ private:
     int m_videoNudgeCount = 0;
     LinkState m_linkState = LinkState::CloudActive;
     QString m_pendingLanUrl;
-    QString m_pendingLanChannelId;
     
     // 统计信息
     ReceiverStats m_stats;

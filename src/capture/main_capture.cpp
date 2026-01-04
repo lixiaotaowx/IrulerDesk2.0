@@ -640,10 +640,10 @@ int main(int argc, char *argv[])
     QSize actualScreenSize = capture->getScreenSize();
     QSize initEncodeSize = actualScreenSize;
 
-    // 限制最大宽度为 1920，超过则等比缩放
-    if (initEncodeSize.width() > 1920) {
-        double ratio = 1920.0 / initEncodeSize.width();
-        initEncodeSize.setWidth(1920);
+    // 限制最大宽度为 3840 (支持4K)，超过则等比缩放
+    if (initEncodeSize.width() > 3840) {
+        double ratio = 3840.0 / initEncodeSize.width();
+        initEncodeSize.setWidth(3840);
         initEncodeSize.setHeight(qRound(initEncodeSize.height() * ratio));
         // 确保宽高是偶数（某些编码器要求）
         if (initEncodeSize.width() % 2 != 0) initEncodeSize.setWidth(initEncodeSize.width() - 1);

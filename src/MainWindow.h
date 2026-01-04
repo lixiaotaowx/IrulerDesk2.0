@@ -158,9 +158,7 @@ private:
     // 显示更新日志
     void checkAndShowUpdateLog();
     
-    // 自动更新相关
-    void performUpdateCheck();
-    void onUpdateAvailable(const QString &version, const QString &url, const QString &desc, bool force);
+
 
 private:
     void sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly);

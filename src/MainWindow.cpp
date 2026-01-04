@@ -92,9 +92,6 @@ MainWindow::MainWindow(QWidget *parent)
 {
     
     
-    m_updater = new AutoUpdater(this);
-    connect(m_updater, &AutoUpdater::updateAvailable, this, &MainWindow::onUpdateAvailable);
-    QTimer::singleShot(5000, this, &MainWindow::performUpdateCheck);
     
     // 初始化随机数种子
     srand(static_cast<unsigned int>(time(nullptr)));
@@ -3668,53 +3665,7 @@ void MainWindow::onUpdateError(const QString &error)
                 "更新版本可能需要开启 VPN。\n"
                 "请开启 VPN 后重启软件重试。");
         }
-=======
-// 自动更新相关实现
-void MainWindow::performUpdateCheck()
-{
-    // 检查更新
-    qInfo() << "[Update] Starting update check...";
-    m_updater->checkUpdate("https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json");
-    
-    // 连接错误信号（仅用于调试反馈）
-    connect(m_updater, &AutoUpdater::errorOccurred, this, [this](const QString &err){
-        qWarning() << "[Update] Error:" << err;
-        QMessageBox::warning(this, "更新检查失败", err); // 强制弹窗显示错误
-    });
-}
 
-void MainWindow::onUpdateAvailable(const QString &version, const QString &url, const QString &desc, bool force)
-{
-    QString msg = QString("发现新版本 v%1\n\n%2\n\n是否立即更新？").arg(version, desc);
-    
-    QMessageBox::StandardButton btn = QMessageBox::question(this, "软件更新", msg, 
-                                                            QMessageBox::Yes | QMessageBox::No);
-    
-    if (btn == QMessageBox::Yes) {
-        QProgressDialog *progress = new QProgressDialog("正在下载更新...", "取消", 0, 100, this);
-        progress->setWindowModality(Qt::WindowModal);
-        progress->setMinimumDuration(0); // 立即显示
-        progress->setAutoClose(false);
-        progress->show();
-        
-        connect(m_updater, &AutoUpdater::downloadProgress, progress, [progress](qint64 recv, qint64 total){
-            if (total > 0) {
-                progress->setValue(static_cast<int>((recv * 100) / total));
-            }
-        });
-        
-        connect(progress, &QProgressDialog::canceled, [progress](){
-            progress->close();
-        });
-        
-        connect(m_updater, &AutoUpdater::errorOccurred, this, [this, progress](const QString &err){
-            progress->close();
-            QMessageBox::warning(this, "更新失败", err);
-            progress->deleteLater();
-        });
-
-        m_updater->downloadAndInstall();
->>>>>>> 28cbb7835ce9938cb383e0d9a299dfd42e5a8643
     }
 }
 

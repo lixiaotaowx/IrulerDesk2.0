@@ -33,6 +33,7 @@ class NewUiWindow;
 class AvatarSettingsWindow;
 class QSoundEffect;
 class QCloseEvent;
+class AutoUpdater;
 
 class MainWindow : public QMainWindow
 {
@@ -152,6 +153,13 @@ private:
     // 显示更新日志
     void checkAndShowUpdateLog();
     void startLanDiscoveryListener();
+
+    // 在线更新相关
+    void checkForUpdates();
+    void onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force);
+    void onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+    void onUpdateError(const QString &error);
+
 private:
     void sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly);
     void sendWatchRequestWithVideo(const QString& targetDeviceId);
@@ -251,6 +259,10 @@ private:
 
     QUdpSocket *m_lanDiscoverySocket = nullptr;
     QHash<QString, QString> m_lanDiscoveredBaseByTarget;
+
+    // 自动更新
+    AutoUpdater *m_autoUpdater = nullptr;
+    class QProgressDialog *m_updateProgressDialog = nullptr;
 };
 
 #endif // MAINWINDOW_H

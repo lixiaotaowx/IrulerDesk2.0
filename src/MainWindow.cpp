@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <ctime>
 #include "common/AppConfig.h"
+#include "common/AutoUpdater.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -142,6 +143,96 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 检查并显示更新日志
     QTimer::singleShot(500, this, &MainWindow::checkAndShowUpdateLog);
+
+    // 自动更新初始化
+    m_autoUpdater = new AutoUpdater(this);
+    connect(m_autoUpdater, &AutoUpdater::updateAvailable, this, &MainWindow::onUpdateAvailable);
+    connect(m_autoUpdater, &AutoUpdater::downloadProgress, this, &MainWindow::onUpdateDownloadProgress);
+    connect(m_autoUpdater, &AutoUpdater::errorOccurred, this, &MainWindow::onUpdateError);
+
+    // 启动后延时检查更新
+    QTimer::singleShot(3000, this, &MainWindow::checkForUpdates);
+}
+
+void MainWindow::checkForUpdates()
+{
+    // 这里使用 GitHub raw 地址获取 version.json
+    // 如果有国内镜像源也可以替换为镜像源地址
+    const QString updateUrl = "https://raw.githubusercontent.com/lixiaotaowx/IrulerDesk2.0/main/version.json";
+    qInfo() << "[Update] Checking for updates from:" << updateUrl;
+    if (m_autoUpdater) {
+        m_autoUpdater->checkUpdate(updateUrl);
+    }
+}
+
+void MainWindow::onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force)
+{
+    QString msg = QStringLiteral("发现新版本: %1\n\n%2\n\n是否立即更新？").arg(version, description);
+    
+    if (force) {
+        QMessageBox::warning(this, QStringLiteral("强制更新"), QStringLiteral("发现重要版本 %1，必须更新后才能继续使用。\n\n%2").arg(version, description));
+        m_autoUpdater->downloadAndInstall();
+        
+        // 创建进度对话框
+        m_updateProgressDialog = new QProgressDialog(QStringLiteral("正在下载更新..."), QStringLiteral("取消"), 0, 100, this);
+        m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+        m_updateProgressDialog->setAutoClose(false); // 下载完不要自动关闭，等待安装
+        m_updateProgressDialog->setAutoReset(false);
+        m_updateProgressDialog->setMinimumDuration(0);
+        // 强制更新不允许取消
+        m_updateProgressDialog->setCancelButton(nullptr); 
+        m_updateProgressDialog->show();
+    } else {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, QStringLiteral("发现新版本"), msg, QMessageBox::Yes | QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            m_autoUpdater->downloadAndInstall();
+
+            // 创建进度对话框
+            m_updateProgressDialog = new QProgressDialog(QStringLiteral("正在下载更新..."), QStringLiteral("取消"), 0, 100, this);
+            m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+            m_updateProgressDialog->setAutoClose(false);
+            m_updateProgressDialog->setAutoReset(false);
+            m_updateProgressDialog->setMinimumDuration(0);
+            
+            // 支持取消下载
+            connect(m_updateProgressDialog, &QProgressDialog::canceled, this, [this]() {
+                if (m_autoUpdater) {
+                    m_autoUpdater->cancel();
+                }
+                m_updateProgressDialog = nullptr;
+            });
+            m_updateProgressDialog->show();
+        }
+    }
+}
+
+void MainWindow::onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (m_updateProgressDialog && bytesTotal > 0) {
+        m_updateProgressDialog->setMaximum(100);
+        m_updateProgressDialog->setValue(static_cast<int>(bytesReceived * 100 / bytesTotal));
+        
+        double receivedMB = bytesReceived / 1024.0 / 1024.0;
+        double totalMB = bytesTotal / 1024.0 / 1024.0;
+        m_updateProgressDialog->setLabelText(QStringLiteral("正在下载更新... %1 MB / %2 MB").arg(QString::number(receivedMB, 'f', 2), QString::number(totalMB, 'f', 2)));
+    }
+}
+
+void MainWindow::onUpdateError(const QString &error)
+{
+    qWarning() << "[Update] Error:" << error;
+    
+    // 只有在显示了进度条（意味着用户同意更新或强制更新中）时才弹窗报错
+    if (m_updateProgressDialog) {
+        m_updateProgressDialog->close();
+        m_updateProgressDialog->deleteLater();
+        m_updateProgressDialog = nullptr;
+        
+        // 如果是取消操作导致的错误（虽然我们在 AutoUpdater 过滤了 OperationCanceledError，但双重保险），不弹窗
+        // 但由于过滤了，这里收到的一定是真错误
+        QMessageBox::warning(this, QStringLiteral("更新失败"), QStringLiteral("更新过程中发生错误：\n%1").arg(error));
+    }
 }
 
 void MainWindow::startLanDiscoveryListener()

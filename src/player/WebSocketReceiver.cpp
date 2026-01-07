@@ -430,216 +430,61 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     m_lanFallbackTimer = new QTimer(this);
     m_lanFallbackTimer->setSingleShot(true);
     connect(m_lanFallbackTimer, &QTimer::timeout, this, [this]() {
-        const bool lanOnly = AppConfig::lanOnlyEnabled();
-        QPointer<QWebSocket> lanWsToClose;
-        QString retryLanUrl;
-        QString retryFromUrl;
-        bool shouldRetry = false;
+        QString fallbackUrl;
         {
             QMutexLocker locker(&m_mutex);
-            if (m_linkState != LinkState::LanProbing) {
+            if (!m_lanSwitchInProgress) {
                 return;
             }
-            if (m_lanConnected) {
+            if (m_connected) {
+                m_lanSwitchInProgress = false;
                 return;
             }
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_connect_timeout; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
-            if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
-                retryLanUrl = m_pendingLanUrl;
-                retryFromUrl = m_cloudFallbackUrl;
-                shouldRetry = true;
+            if (m_cloudFallbackUrl.isEmpty()) {
+                m_lanSwitchInProgress = false;
+                return;
             }
-            if (m_lanWebSocket) {
-                lanWsToClose = m_lanWebSocket;
-                m_lanWebSocket = nullptr;
-            }
-            m_linkState = LinkState::CloudActive;
+            fallbackUrl = m_cloudFallbackUrl;
             m_lanSwitchInProgress = false;
-            m_lanAwaitingFirstFrame = false;
-            if (lanOnly) {
-                m_lanSwitchDisabledUntilMs = 0;
-            } else {
-                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                m_lanSwitchDisabledUntilMs = nowMs + 15000;
-            }
+            m_cloudFallbackUrl.clear();
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            m_lanSwitchDisabledUntilMs = nowMs + 60000;
         }
-        if (lanWsToClose) {
-            lanWsToClose->disconnect(this);
-            lanWsToClose->abort();
-            lanWsToClose->deleteLater();
-        }
-        if (shouldRetry) {
-            QTimer::singleShot(600, this, [this, retryLanUrl, retryFromUrl]() {
-                if (!AppConfig::lanOnlyEnabled()) return;
-                startLanProbe(retryLanUrl, retryFromUrl);
-            });
-        }
-    });
-
-    m_lanHelloTimer = new QTimer(this);
-    m_lanHelloTimer->setSingleShot(true);
-    connect(m_lanHelloTimer, &QTimer::timeout, this, [this]() {
-        const bool lanOnly = AppConfig::lanOnlyEnabled();
-        QPointer<QWebSocket> lanWsToClose;
-        QString retryLanUrl;
-        QString retryFromUrl;
-        bool shouldRetry = false;
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_linkState != LinkState::LanProbing) {
-                return;
-            }
-            if (!m_lanConnected) {
-                return;
-            }
-            if (m_lanHelloAcked) {
-                return;
-            }
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_hello_timeout; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
-            if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
-                retryLanUrl = m_pendingLanUrl;
-                retryFromUrl = m_cloudFallbackUrl;
-                shouldRetry = true;
-            }
-            if (m_lanWebSocket) {
-                lanWsToClose = m_lanWebSocket;
-                m_lanWebSocket = nullptr;
-            }
-            m_lanHelloAcked = false;
-            m_lanAwaitingFirstFrame = false;
-            m_lanSwitchInProgress = false;
-            m_linkState = LinkState::CloudActive;
-            if (lanOnly) {
-                m_lanSwitchDisabledUntilMs = 0;
-            } else {
-                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                m_lanSwitchDisabledUntilMs = nowMs + 15000;
-            }
-        }
-        if (lanWsToClose) {
-            lanWsToClose->disconnect(this);
-            lanWsToClose->abort();
-            lanWsToClose->deleteLater();
-        }
-        if (shouldRetry) {
-            QTimer::singleShot(600, this, [this, retryLanUrl, retryFromUrl]() {
-                if (!AppConfig::lanOnlyEnabled()) return;
-                startLanProbe(retryLanUrl, retryFromUrl);
-            });
-        }
+        qInfo().noquote() << "[KickDiag][Receiver] lan_fallback_timer fallback_to_cloud"
+                          << " url=" << fallbackUrl;
+        stopReconnectTimer();
+        connectToServer(fallbackUrl);
     });
 
     m_lanFirstFrameTimer = new QTimer(this);
     m_lanFirstFrameTimer->setSingleShot(true);
     connect(m_lanFirstFrameTimer, &QTimer::timeout, this, [this]() {
-        const bool lanOnly = AppConfig::lanOnlyEnabled();
-        QPointer<QWebSocket> lanWsToClose;
-        QString retryLanUrl;
-        QString retryFromUrl;
-        bool shouldRetry = false;
+        QString fallbackUrl;
         {
             QMutexLocker locker(&m_mutex);
-            if (m_linkState != LinkState::LanProbing || !m_lanAwaitingFirstFrame) {
+            if (!m_lanAwaitingFirstFrame) {
                 return;
             }
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_first_frame_timeout; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
-            if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
-                retryLanUrl = m_pendingLanUrl;
-                retryFromUrl = m_cloudFallbackUrl;
-                shouldRetry = true;
+            if (QUrl(m_serverUrl).port() != AppConfig::lanWsPort()) {
+                m_lanAwaitingFirstFrame = false;
+                return;
             }
-            if (m_lanWebSocket) {
-                lanWsToClose = m_lanWebSocket;
-                m_lanWebSocket = nullptr;
+            if (m_cloudFallbackUrl.isEmpty()) {
+                m_lanAwaitingFirstFrame = false;
+                m_lanSwitchInProgress = false;
+                return;
             }
+            fallbackUrl = m_cloudFallbackUrl;
+            m_cloudFallbackUrl.clear();
             m_lanAwaitingFirstFrame = false;
             m_lanSwitchInProgress = false;
-            m_linkState = LinkState::CloudActive;
-            if (lanOnly) {
-                m_lanSwitchDisabledUntilMs = 0;
-            } else {
-                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                m_lanSwitchDisabledUntilMs = nowMs + 15000;
-            }
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            m_lanSwitchDisabledUntilMs = nowMs + 60000;
         }
-        if (lanWsToClose) {
-            lanWsToClose->disconnect(this);
-            lanWsToClose->abort();
-            lanWsToClose->deleteLater();
-        }
-        if (shouldRetry) {
-            QTimer::singleShot(600, this, [this, retryLanUrl, retryFromUrl]() {
-                if (!AppConfig::lanOnlyEnabled()) return;
-                startLanProbe(retryLanUrl, retryFromUrl);
-            });
-        }
-    });
-
-    m_videoStartRetryTimer = new QTimer(this);
-    m_videoStartRetryTimer->setSingleShot(true);
-    connect(m_videoStartRetryTimer, &QTimer::timeout, this, [this]() {
-        QString viewerId;
-        QString targetId;
-        QString url;
-        bool shouldRetry = false;
-        int attempt = 0;
-        {
-            QMutexLocker locker(&m_mutex);
-            if (!m_connected) {
-                return;
-            }
-            if (m_hasAnyVideoFrame) {
-                return;
-            }
-            if (m_videoStartRetryCount >= 3) {
-                return;
-            }
-            viewerId = m_lastViewerId;
-            targetId = m_lastTargetId;
-            url = m_serverUrl;
-            m_videoStartRetryCount++;
-            attempt = m_videoStartRetryCount;
-            shouldRetry = !viewerId.isEmpty() && !targetId.isEmpty();
-        }
-        if (!shouldRetry || !m_webSocket || m_webSocket->state() != QAbstractSocket::ConnectedState) {
-            return;
-        }
-        qInfo().noquote() << "[KickDiag][Receiver] video_start_retry"
-                          << " attempt=" << attempt
-                          << " url=" << url;
-        QJsonObject startStreamingMessage;
-        startStreamingMessage["type"] = "start_streaming";
-        startStreamingMessage["viewer_id"] = viewerId;
-        startStreamingMessage["target_id"] = targetId;
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_lastWatchAudioOnly) {
-                startStreamingMessage["audio_only"] = true;
-                startStreamingMessage["action"] = "audio_only";
-            }
-        }
-        m_webSocket->sendTextMessage(QJsonDocument(startStreamingMessage).toJson(QJsonDocument::Compact));
-        sendRequestKeyFrame();
-
-        int nextDelayMs = 0;
-        if (attempt == 1) nextDelayMs = 1500;
-        else if (attempt == 2) nextDelayMs = 2500;
-        else nextDelayMs = 4000;
-        {
-            QMutexLocker locker(&m_mutex);
-            if (!m_connected || m_hasAnyVideoFrame) {
-                return;
-            }
-            if (m_videoStartRetryTimer) {
-                m_videoStartRetryTimer->start(nextDelayMs);
-            }
-        }
+        qInfo().noquote() << "[KickDiag][Receiver] lan_first_frame_timeout fallback_to_cloud"
+                          << " url=" << fallbackUrl;
+        stopReconnectTimer();
+        connectToServer(fallbackUrl);
     });
 
     m_lanOfferRetryTimer = new QTimer(this);
@@ -647,9 +492,6 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
     connect(m_lanOfferRetryTimer, &QTimer::timeout, this, [this]() {
         QString currentUrl;
         int attemptNo = 0;
-        int nextDelayMs = 1200;
-        bool shouldScheduleNext = false;
-        bool shouldSend = false;
         {
             QMutexLocker locker(&m_mutex);
             if (!m_connected) {
@@ -667,34 +509,22 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             return;
         }
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        const bool lanOnly = AppConfig::lanOnlyEnabled();
-        const int maxAttempts = lanOnly ? 60 : 6;
         {
             QMutexLocker locker(&m_mutex);
             if (m_lanSwitchDisabledUntilMs > 0 && nowMs < m_lanSwitchDisabledUntilMs) {
                 return;
             }
-            if (m_lanOfferRetryCount >= maxAttempts) {
+            if (m_lanOfferRetryCount >= 6) {
                 return;
             }
-            const qint64 sinceLast = (m_lastLanOfferRequestAtMs == 0) ? 999999 : (nowMs - m_lastLanOfferRequestAtMs);
-            if (m_lastLanOfferRequestAtMs != 0 && sinceLast < 2500) {
-                nextDelayMs = static_cast<int>(qMax<qint64>(200, 2500 - sinceLast));
-                shouldScheduleNext = true;
-            } else {
-                m_lastLanOfferRequestAtMs = nowMs;
-                m_lanOfferRetryCount++;
-                attemptNo = m_lanOfferRetryCount;
-                shouldSend = true;
-                shouldScheduleNext = (m_lanOfferRetryCount < maxAttempts);
-                if (lanOnly && attemptNo > 6) {
-                    nextDelayMs = 3500;
-                } else {
-                    nextDelayMs = 1200;
-                }
+            if (m_lastLanOfferRequestAtMs != 0 && (nowMs - m_lastLanOfferRequestAtMs) < 2500) {
+                return;
             }
+            m_lastLanOfferRequestAtMs = nowMs;
+            m_lanOfferRetryCount++;
+            attemptNo = m_lanOfferRetryCount;
         }
-        if (shouldSend && m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        if (m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
             const QString channelId = roomIdFromWsUrlString(currentUrl);
             if (!channelId.isEmpty()) {
                 qInfo().noquote() << "[KickDiag][Receiver] tx lan_offer_request_retry"
@@ -709,11 +539,8 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         }
         {
             QMutexLocker locker(&m_mutex);
-            if (!m_connected || m_lanSwitchInProgress) {
-                return;
-            }
-            if (shouldScheduleNext && m_lanOfferRetryTimer) {
-                m_lanOfferRetryTimer->start(nextDelayMs);
+            if (m_lanOfferRetryCount < 6 && m_lanOfferRetryTimer) {
+                m_lanOfferRetryTimer->start(1200);
             }
         }
     });
@@ -749,7 +576,6 @@ void WebSocketReceiver::setupWebSocket()
     }
     
     m_webSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
-    m_webSocket->setProperty("kick_link", QStringLiteral("active"));
     
     // 连接信号
     connect(m_webSocket, &QWebSocket::connected, this, &WebSocketReceiver::onConnected);
@@ -760,93 +586,17 @@ void WebSocketReceiver::setupWebSocket()
             this, &WebSocketReceiver::onError);
     connect(m_webSocket, &QWebSocket::sslErrors, this, &WebSocketReceiver::onSslErrors);
     connect(m_webSocket, &QWebSocket::stateChanged, this, &WebSocketReceiver::onStateChanged);
-
-    const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_ws_text")).trimmed();
-    const bool dumpWsText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
-    if (dumpWsText) {
-        connect(m_webSocket, &QWebSocket::textMessageReceived, this, [](const QString &msg) {
-            if (!msg.contains(QStringLiteral("mouse_position")) && !msg.contains(QStringLiteral("audio_opus"))) {
-                qInfo().noquote() << "[KickDiag][Receiver] RX MSG:" << msg.left(200);
-            }
-        });
-    }
-}
-
-void WebSocketReceiver::startLanProbe(const QString &lanUrl, const QString &fromUrl)
-{
-    qInfo().noquote() << "[KickDiag][Receiver] start_lan_probe"
-                      << " from=" << fromUrl
-                      << " to=" << lanUrl;
-    QPointer<QWebSocket> oldLanWs;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (m_linkState != LinkState::CloudActive) {
-            return;
-        }
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (m_lanSwitchDisabledUntilMs > 0 && nowMs < m_lanSwitchDisabledUntilMs) {
-            return;
-        }
-        if (m_lanWebSocket) {
-            oldLanWs = m_lanWebSocket;
-            m_lanWebSocket = nullptr;
-        }
-        m_cloudFallbackUrl = fromUrl;
-        m_linkState = LinkState::LanProbing;
-        m_lanSwitchInProgress = true;
-        m_lanOfferRequested = true;
-        m_lanSwitchStartStreamingSent = false;
-        m_pendingLanUrl = lanUrl;
-        m_pendingLanChannelId = roomIdFromWsUrlString(lanUrl);
-        m_lanAwaitingFirstFrame = false;
-        m_lanHelloAcked = false;
-        if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
-            m_lanFallbackTimer->stop();
-        }
-        if (m_lanHelloTimer && m_lanHelloTimer->isActive()) {
-            m_lanHelloTimer->stop();
-        }
-        if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
-            m_lanFirstFrameTimer->stop();
-        }
-    }
-
-    if (oldLanWs) {
-        oldLanWs->disconnect(this);
-        oldLanWs->abort();
-        oldLanWs->deleteLater();
-    }
-
-    QWebSocket *ws = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
-    ws->setProperty("kick_link", QStringLiteral("lan"));
-    connect(ws, &QWebSocket::connected, this, &WebSocketReceiver::onConnected);
-    connect(ws, &QWebSocket::disconnected, this, &WebSocketReceiver::onDisconnected);
-    connect(ws, &QWebSocket::binaryMessageReceived, this, &WebSocketReceiver::onBinaryMessageReceived);
-    connect(ws, &QWebSocket::textMessageReceived, this, &WebSocketReceiver::onTextMessageReceived);
-    connect(ws, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
-            this, &WebSocketReceiver::onError);
-    connect(ws, &QWebSocket::sslErrors, this, &WebSocketReceiver::onSslErrors);
-    connect(ws, &QWebSocket::stateChanged, this, &WebSocketReceiver::onStateChanged);
-
-    {
-        QMutexLocker locker(&m_mutex);
-        m_lanWebSocket = ws;
-        m_lanConnected = false;
-    }
-
-    ws->open(QUrl(lanUrl));
-
-    if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
-        m_lanFallbackTimer->start(4500);
-    }
+    
+    // [KickDiag] Log ALL messages for debugging
+    connect(m_webSocket, &QWebSocket::textMessageReceived, this, [](const QString &msg){
+         if (!msg.contains("mouse_position") && !msg.contains("audio_opus")) {
+             qInfo().noquote() << "[KickDiag][Receiver] RX MSG:" << msg.left(200);
+         }
+    });
 }
 
 bool WebSocketReceiver::connectToServer(const QString &url)
 {
-    QString lanProbeUrl;
-    QString lanProbeFromUrl;
-    bool shouldStartLanProbe = false;
-
     QMutexLocker locker(&m_mutex);
     
     // 如果已经连接到相同的URL，则不需要重新连接
@@ -866,16 +616,6 @@ bool WebSocketReceiver::connectToServer(const QString &url)
         }
         m_connected = false;
     }
-
-    if (m_lanWebSocket) {
-        QPointer<QWebSocket> old = m_lanWebSocket;
-        m_lanWebSocket = nullptr;
-        locker.unlock();
-        old->disconnect(this);
-        old->abort();
-        old->deleteLater();
-        locker.relock();
-    }
     
     // 清理缓存数据，确保切换设备时没有残留
     memset(&m_stats, 0, sizeof(m_stats));
@@ -890,8 +630,6 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     m_lanOfferRetryCount = 0;
     m_lastLanOfferRequestAtMs = 0;
     m_lanSwitchStartStreamingSent = false;
-    m_videoStartRetryCount = 0;
-    m_hasAnyVideoFrame = false;
     if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
         m_lanOfferRetryTimer->stop();
     }
@@ -901,55 +639,14 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
         m_lanFirstFrameTimer->stop();
     }
-    if (m_lanHelloTimer && m_lanHelloTimer->isActive()) {
-        m_lanHelloTimer->stop();
-    }
-    if (m_videoStartRetryTimer && m_videoStartRetryTimer->isActive()) {
-        m_videoStartRetryTimer->stop();
-    }
     m_lanAwaitingFirstFrame = false;
-    m_lanHelloAcked = false;
     if (QUrl(url).port() != AppConfig::lanWsPort()) {
-        m_cloudFallbackUrl = url;
-        m_linkState = LinkState::CloudActive;
+        m_cloudFallbackUrl.clear();
         m_lanSwitchInProgress = false;
-    } else {
-        m_linkState = LinkState::LanActive;
     }
 
     // qDebug() << "[Receiver] Connecting to URL:" << url;
-    if (m_webSocket) {
-        m_webSocket->setProperty("kick_link", QUrl(url).port() == AppConfig::lanWsPort() ? QStringLiteral("lan") : QStringLiteral("cloud"));
-    }
     m_webSocket->open(QUrl(url));
-
-    if (AppConfig::lanWsEnabled() &&
-        isSubscribeWsUrlString(url) &&
-        QUrl(url).port() != AppConfig::lanWsPort()) {
-        const qint64 nowMs2 = QDateTime::currentMSecsSinceEpoch();
-        const bool cooldownOk = (m_lanSwitchDisabledUntilMs == 0 || nowMs2 >= m_lanSwitchDisabledUntilMs);
-        if (!cooldownOk) {
-            locker.unlock();
-            return true;
-        }
-        const QString channelId = roomIdFromWsUrlString(url);
-        if (!channelId.isEmpty()) {
-            const QStringList bases = AppConfig::lanBaseUrlsForTarget(channelId);
-            const QString picked = pickBestLanSubscribeUrlString(bases, channelId, url);
-            if (!picked.isEmpty() && picked != url) {
-                shouldStartLanProbe = true;
-                lanProbeUrl = picked;
-                lanProbeFromUrl = url;
-            }
-        }
-    }
-    locker.unlock();
-    if (shouldStartLanProbe) {
-        qInfo().noquote() << "[KickDiag][Receiver] cached_switch_to_lan"
-                          << " to=" << lanProbeUrl
-                          << " from=" << lanProbeFromUrl;
-        startLanProbe(lanProbeUrl, lanProbeFromUrl);
-    }
     return true;
 }
 
@@ -984,7 +681,6 @@ void WebSocketReceiver::disconnectFromServer()
     stopAudio();
 
     QPointer<QWebSocket> wsPtr;
-    QPointer<QWebSocket> lanWsPtr;
     QByteArray exitData;
     QByteArray stopData;
     bool shouldSendExitAndStop = false;
@@ -995,38 +691,27 @@ void WebSocketReceiver::disconnectFromServer()
     stopReconnectTimer();
     
     if (m_webSocket && m_connected) {
+        QString viewerId = m_lastViewerId;
+        QString targetId = m_lastTargetId;
+
+        QJsonObject exitMsg;
+        exitMsg["type"] = "viewer_exit";
+        if (!viewerId.isEmpty()) exitMsg["viewer_id"] = viewerId;
+        if (!targetId.isEmpty()) exitMsg["target_id"] = targetId;
+        exitMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+        QJsonDocument exitDoc(exitMsg);
+
+        QJsonObject stopMsg;
+        stopMsg["type"] = "stop_streaming";
+        if (!viewerId.isEmpty()) stopMsg["viewer_id"] = viewerId;
+        if (!targetId.isEmpty()) stopMsg["target_id"] = targetId;
+        stopMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+        QJsonDocument stopDoc(stopMsg);
+
         wsPtr = m_webSocket;
-        if (!m_lanSwitchInProgress) {
-            QString viewerId = m_lastViewerId;
-            QString targetId = m_lastTargetId;
-
-            QJsonObject exitMsg;
-            exitMsg["type"] = "viewer_exit";
-            if (!viewerId.isEmpty()) exitMsg["viewer_id"] = viewerId;
-            if (!targetId.isEmpty()) exitMsg["target_id"] = targetId;
-            exitMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            QJsonDocument exitDoc(exitMsg);
-
-            QJsonObject stopMsg;
-            stopMsg["type"] = "stop_streaming";
-            if (!viewerId.isEmpty()) stopMsg["viewer_id"] = viewerId;
-            if (!targetId.isEmpty()) stopMsg["target_id"] = targetId;
-            stopMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            QJsonDocument stopDoc(stopMsg);
-
-            exitData = exitDoc.toJson(QJsonDocument::Compact);
-            stopData = stopDoc.toJson(QJsonDocument::Compact);
-            shouldSendExitAndStop = true;
-        } else {
-            qInfo().noquote() << "[KickDiag][Receiver] disconnect suppress_exit_stop (lan_switch)"
-                              << " url=" << m_serverUrl;
-        }
-    }
-
-    if (m_lanWebSocket) {
-        lanWsPtr = m_lanWebSocket;
-        m_lanWebSocket = nullptr;
-        m_lanConnected = false;
+        exitData = exitDoc.toJson(QJsonDocument::Compact);
+        stopData = stopDoc.toJson(QJsonDocument::Compact);
+        shouldSendExitAndStop = true;
     }
     
     // 停止音频定时器与清空音频队列，销毁解码器，避免断开后仍有PLC输出
@@ -1050,28 +735,15 @@ void WebSocketReceiver::disconnectFromServer()
     if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
         m_lanFallbackTimer->stop();
     }
-    if (m_lanHelloTimer && m_lanHelloTimer->isActive()) {
-        m_lanHelloTimer->stop();
-    }
     if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
         m_lanFirstFrameTimer->stop();
     }
     m_lanAwaitingFirstFrame = false;
-    m_lanHelloAcked = false;
     m_cloudFallbackUrl.clear();
     m_lanSwitchInProgress = false;
     m_lanOfferRequested = false;
-    m_linkState = LinkState::CloudActive;
-    m_pendingLanUrl.clear();
-    m_pendingLanChannelId.clear();
 
     locker.unlock();
-
-    if (lanWsPtr) {
-        lanWsPtr->disconnect(this);
-        lanWsPtr->abort();
-        lanWsPtr->deleteLater();
-    }
 
     if (wsPtr) {
         if (shouldSendExitAndStop && wsPtr->state() == QAbstractSocket::ConnectedState) {
@@ -1097,61 +769,8 @@ bool WebSocketReceiver::isConnected() const
     return m_connected;
 }
 
-bool WebSocketReceiver::isLanSwitchInProgress()
-{
-    QMutexLocker locker(&m_mutex);
-    return m_lanSwitchInProgress;
-}
-
 void WebSocketReceiver::onConnected()
 {
-    QWebSocket *connectedWs = qobject_cast<QWebSocket *>(sender());
-    if (!connectedWs) {
-        return;
-    }
-
-    {
-        QMutexLocker locker(&m_mutex);
-        if (connectedWs != m_webSocket && connectedWs != m_lanWebSocket) {
-            return;
-        }
-    }
-
-    if (connectedWs == m_lanWebSocket) {
-        QString viewerIdCopy;
-        QString targetIdCopy;
-        bool audioOnlyCopy = false;
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_linkState != LinkState::LanProbing || m_pendingLanUrl.isEmpty()) {
-                return;
-            }
-            m_lanConnected = true;
-            if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
-                m_lanFallbackTimer->stop();
-            }
-            viewerIdCopy = m_lastViewerId;
-            targetIdCopy = m_lastTargetId;
-            audioOnlyCopy = m_lastWatchAudioOnly;
-            m_lanAwaitingFirstFrame = false;
-            m_lanHelloAcked = false;
-        }
-
-        if (connectedWs->state() == QAbstractSocket::ConnectedState) {
-            QJsonObject hello;
-            hello["type"] = "lan_hello";
-            hello["viewer_id"] = viewerIdCopy;
-            hello["target_id"] = targetIdCopy;
-            connectedWs->sendTextMessage(QJsonDocument(hello).toJson(QJsonDocument::Compact));
-        }
-
-        if (m_lanHelloTimer && !m_lanHelloTimer->isActive()) {
-            m_lanHelloTimer->start(1800);
-        }
-
-        return;
-    }
-
     // 先在互斥保护下更新内部状态并抓取最近的viewer/target副本，然后释放锁
     QString viewerIdCopy;
     QString targetIdCopy;
@@ -1232,18 +851,37 @@ void WebSocketReceiver::onConnected()
         }
     }
 
+    bool shouldSendStartStreamingForLanSwitch = false;
+    QString lanUrlCopy;
     {
         QMutexLocker locker(&m_mutex);
-        m_videoStartRetryCount = 0;
-        m_hasAnyVideoFrame = false;
+        if (!m_lanSwitchStartStreamingSent &&
+            m_lanSwitchInProgress &&
+            QUrl(m_serverUrl).port() == AppConfig::lanWsPort() &&
+            !m_cloudFallbackUrl.isEmpty()) {
+            m_lanSwitchStartStreamingSent = true;
+            shouldSendStartStreamingForLanSwitch = true;
+            lanUrlCopy = m_serverUrl;
+        }
     }
-    if (m_videoStartRetryTimer && !m_videoStartRetryTimer->isActive()) {
-        m_videoStartRetryTimer->start(1500);
+    if (shouldSendStartStreamingForLanSwitch && m_webSocket &&
+        m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        qInfo().noquote() << "[KickDiag][Receiver] lan_switch tx start_streaming"
+                          << " url=" << lanUrlCopy;
+        QJsonObject startStreamingMessage;
+        startStreamingMessage["type"] = "start_streaming";
+        if (!viewerIdCopy.isEmpty()) startStreamingMessage["viewer_id"] = viewerIdCopy;
+        if (!targetIdCopy.isEmpty()) startStreamingMessage["target_id"] = targetIdCopy;
+        m_webSocket->sendTextMessage(QJsonDocument(startStreamingMessage).toJson(QJsonDocument::Compact));
+        
+        // Ensure keyframe is requested immediately for LAN switch to avoid black screen
+        sendRequestKeyFrame();
     }
 
     QString serverUrlCopy;
     bool needLanOffer = false;
     QString channelId;
+    bool shouldStartLanFirstFrameWait = false;
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     {
         QMutexLocker locker(&m_mutex);
@@ -1251,12 +889,17 @@ void WebSocketReceiver::onConnected()
         if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
             m_lanFallbackTimer->stop();
         }
-        if (m_linkState != LinkState::LanProbing) {
+        if (m_lanSwitchInProgress &&
+            QUrl(serverUrlCopy).port() == AppConfig::lanWsPort() &&
+            !m_cloudFallbackUrl.isEmpty()) {
+            m_lanAwaitingFirstFrame = true;
+            shouldStartLanFirstFrameWait = true;
+        } else {
             m_lanAwaitingFirstFrame = false;
+            m_cloudFallbackUrl.clear();
             m_lanSwitchInProgress = false;
         }
-        if (m_linkState == LinkState::CloudActive &&
-            AppConfig::lanWsEnabled() &&
+        if (AppConfig::lanWsEnabled() &&
             isSubscribeWsUrlString(serverUrlCopy) &&
             QUrl(serverUrlCopy).port() != AppConfig::lanWsPort() &&
             (m_lanSwitchDisabledUntilMs == 0 || nowMs >= m_lanSwitchDisabledUntilMs) &&
@@ -1277,8 +920,11 @@ void WebSocketReceiver::onConnected()
         req["channel_id"] = channelId;
         m_webSocket->sendTextMessage(QJsonDocument(req).toJson(QJsonDocument::Compact));
     }
-    if (m_linkState == LinkState::CloudActive &&
-        AppConfig::lanWsEnabled() &&
+    if (shouldStartLanFirstFrameWait && m_lanFirstFrameTimer && !m_lanFirstFrameTimer->isActive()) {
+        sendRequestKeyFrame();
+        m_lanFirstFrameTimer->start(6000);
+    }
+    if (AppConfig::lanWsEnabled() &&
         isSubscribeWsUrlString(serverUrlCopy) &&
         QUrl(serverUrlCopy).port() != AppConfig::lanWsPort() &&
         (m_lanSwitchDisabledUntilMs == 0 || nowMs >= m_lanSwitchDisabledUntilMs) &&
@@ -1294,72 +940,7 @@ void WebSocketReceiver::onConnected()
 
 void WebSocketReceiver::onDisconnected()
 {
-    QWebSocket *disconnectedWs = qobject_cast<QWebSocket *>(sender());
-    if (!disconnectedWs) {
-        return;
-    }
-
-    QPointer<QWebSocket> lanWsToDelete;
-    QString fallbackToCloudUrl;
-
     QMutexLocker locker(&m_mutex);
-
-    if (disconnectedWs == m_lanWebSocket) {
-        m_lanConnected = false;
-        if (m_linkState == LinkState::LanProbing) {
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_disconnected; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
-            const bool lanOnly = AppConfig::lanOnlyEnabled();
-            QString retryLanUrl;
-            QString retryFromUrl;
-            bool shouldRetry = false;
-            if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
-                retryLanUrl = m_pendingLanUrl;
-                retryFromUrl = m_cloudFallbackUrl;
-                shouldRetry = true;
-            }
-            lanWsToDelete = m_lanWebSocket;
-            m_lanWebSocket = nullptr;
-            m_linkState = LinkState::CloudActive;
-            m_lanSwitchInProgress = false;
-            m_lanAwaitingFirstFrame = false;
-            if (lanOnly) {
-                m_lanSwitchDisabledUntilMs = 0;
-            } else {
-                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                m_lanSwitchDisabledUntilMs = nowMs + 15000;
-            }
-            if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
-                m_lanFallbackTimer->stop();
-            }
-            if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
-                m_lanFirstFrameTimer->stop();
-            }
-            locker.unlock();
-            if (shouldRetry) {
-                QTimer::singleShot(600, this, [this, retryLanUrl, retryFromUrl]() {
-                    if (!AppConfig::lanOnlyEnabled()) return;
-                    startLanProbe(retryLanUrl, retryFromUrl);
-                });
-            }
-            if (lanWsToDelete) {
-                lanWsToDelete->disconnect(this);
-                lanWsToDelete->deleteLater();
-            }
-            return;
-        }
-        locker.unlock();
-        if (lanWsToDelete) {
-            lanWsToDelete->disconnect(this);
-            lanWsToDelete->deleteLater();
-        }
-        return;
-    }
-
-    if (disconnectedWs != m_webSocket) {
-        return;
-    }
     
     // 断开后确保音频完全停止
     if (m_audioTimer && m_audioTimer->isActive()) {
@@ -1385,11 +966,6 @@ void WebSocketReceiver::onDisconnected()
 
     bool wasConnected = m_connected;
     m_connected = false;
-    m_videoStartRetryCount = 0;
-    m_hasAnyVideoFrame = false;
-    m_lastVideoFrameAtMs = 0;
-    m_lastVideoNudgeAtMs = 0;
-    m_videoNudgeCount = 0;
     
     // 性能监控：记录断线开始时间
     if (wasConnected) {
@@ -1405,45 +981,20 @@ void WebSocketReceiver::onDisconnected()
         emit connectionStatusChanged("已断开");
     }
     
-    if (m_linkState == LinkState::LanActive && !m_cloudFallbackUrl.isEmpty()) {
-        const bool lanOnly = AppConfig::lanOnlyEnabled();
-        if (!lanOnly) {
-            fallbackToCloudUrl = m_cloudFallbackUrl;
-        }
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (lanOnly) {
-            m_lanSwitchDisabledUntilMs = 0;
-        } else {
-            m_lanSwitchDisabledUntilMs = nowMs + 15000;
-        }
-        m_linkState = LinkState::CloudActive;
-    }
-
     // 如果启用了重连，开始重连尝试
-    if (fallbackToCloudUrl.isEmpty() && m_reconnectEnabled && m_reconnectAttempts < m_maxReconnectAttempts) {
+    if (m_reconnectEnabled && m_reconnectAttempts < m_maxReconnectAttempts) {
+            if (QUrl(m_serverUrl).port() == AppConfig::lanWsPort() && !m_cloudFallbackUrl.isEmpty()) {
+                m_lanSwitchInProgress = true;
+                if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                    m_lanFallbackTimer->start(4500);
+                }
+            }
         startReconnectTimer();
-    }
-
-    locker.unlock();
-    if (!fallbackToCloudUrl.isEmpty()) {
-        connectToServer(fallbackToCloudUrl);
     }
 }
 
 void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
 {
-    QWebSocket *rxWs = qobject_cast<QWebSocket *>(sender());
-    if (!rxWs) {
-        return;
-    }
-
-    {
-        QMutexLocker locker(&m_mutex);
-        if (rxWs != m_webSocket && rxWs != m_lanWebSocket) {
-            return;
-        }
-    }
-
     if (message.isEmpty() || message.size() < 8) {
         return;
     }
@@ -1476,66 +1027,18 @@ void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
         frameData = message.mid(8);
     }
 
-    bool shouldEmitFrame = true;
-    QPointer<QWebSocket> cloudWsToClose;
-    bool shouldPromoteLan = false;
-    QString promoteLanUrl;
-    auto isVp9KeyFrame = [](const QByteArray &data) -> bool {
-        if (data.isEmpty()) {
-            return false;
-        }
-        const quint8 b0 = static_cast<quint8>(data.at(0));
-        const quint8 frameMarker = (b0 >> 6) & 0x03;
-        if (frameMarker != 0x02) {
-            return false;
-        }
-        const quint8 showExistingFrame = (b0 >> 3) & 0x01;
-        if (showExistingFrame) {
-            return false;
-        }
-        const quint8 frameType = (b0 >> 2) & 0x01;
-        return frameType == 0;
-    };
     {
         QMutexLocker locker(&m_mutex);
-        m_hasAnyVideoFrame = true;
-        m_lastVideoFrameAtMs = QDateTime::currentMSecsSinceEpoch();
-        m_videoNudgeCount = 0;
-        if (m_videoStartRetryTimer && m_videoStartRetryTimer->isActive()) {
-            m_videoStartRetryTimer->stop();
-        }
-
-        if (m_linkState == LinkState::LanProbing && rxWs == m_lanWebSocket) {
-            shouldEmitFrame = false;
-        }
-
-        if (m_linkState == LinkState::LanProbing &&
-            m_lanAwaitingFirstFrame &&
-            rxWs == m_lanWebSocket &&
-            m_lanWebSocket &&
-            m_webSocket &&
-            !m_pendingLanUrl.isEmpty() &&
-            isVp9KeyFrame(frameData)) {
-            shouldPromoteLan = true;
-            promoteLanUrl = m_pendingLanUrl;
-            cloudWsToClose = m_webSocket;
-
-            m_webSocket = m_lanWebSocket;
-            m_lanWebSocket = nullptr;
-            m_serverUrl = promoteLanUrl;
-            m_linkState = LinkState::LanActive;
-            m_lanSwitchInProgress = false;
+        if (m_lanAwaitingFirstFrame &&
+            QUrl(m_serverUrl).port() == AppConfig::lanWsPort()) {
             m_lanAwaitingFirstFrame = false;
-            m_lanConnected = true;
             if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
                 m_lanFirstFrameTimer->stop();
             }
-            if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
-                m_lanFallbackTimer->stop();
-            }
-            m_pendingLanUrl.clear();
-
-            shouldEmitFrame = true;
+            m_cloudFallbackUrl.clear();
+            m_lanSwitchInProgress = false;
+            qInfo().noquote() << "[KickDiag][Receiver] lan_first_frame_ok"
+                              << " url=" << m_serverUrl;
         }
         m_stats.totalFrames++;
         m_stats.totalBytes += frameData.size();
@@ -1545,18 +1048,7 @@ void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
         }
     }
 
-    if (shouldPromoteLan && cloudWsToClose) {
-        qInfo().noquote() << "[KickDiag][Receiver] promote_to_lan on keyframe"
-                          << " url=" << promoteLanUrl;
-        cloudWsToClose->disconnect(this);
-        cloudWsToClose->close();
-        cloudWsToClose->deleteLater();
-        sendRequestKeyFrame();
-    }
-
-    if (shouldEmitFrame) {
-        emit frameReceivedWithTimestamp(frameData, captureTimestamp > 0 ? captureTimestamp : QDateTime::currentMSecsSinceEpoch());
-    }
+    emit frameReceivedWithTimestamp(frameData, captureTimestamp > 0 ? captureTimestamp : QDateTime::currentMSecsSinceEpoch());
 }
 
 void WebSocketReceiver::onTextMessageReceived(const QString &message)
@@ -1572,110 +1064,6 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
         QJsonObject obj = doc.object();
         QString type = obj["type"].toString();
         // 日志清理：不再输出文本消息类型
-
-        if (type == QStringLiteral("lan_hello_ack")) {
-            if (!AppConfig::lanWsEnabled()) {
-                return;
-            }
-            QWebSocket *rxWs = qobject_cast<QWebSocket *>(sender());
-            if (!rxWs) {
-                return;
-            }
-            QWebSocket *cloudWsToClose = nullptr;
-            bool shouldStart = false;
-            QString viewerIdCopy;
-            QString targetIdCopy;
-            bool audioOnlyCopy = false;
-            {
-                QMutexLocker locker(&m_mutex);
-                if (m_linkState != LinkState::LanProbing) {
-                    return;
-                }
-                if (rxWs != m_lanWebSocket) {
-                    return;
-                }
-                const QString ackChannel = obj.value(QStringLiteral("channel_id")).toString();
-                if (!m_pendingLanChannelId.isEmpty() && !ackChannel.isEmpty() && ackChannel != m_pendingLanChannelId) {
-                    return;
-                }
-                m_lanHelloAcked = true;
-                if (m_lanHelloTimer && m_lanHelloTimer->isActive()) {
-                    m_lanHelloTimer->stop();
-                }
-                viewerIdCopy = m_lastViewerId;
-                targetIdCopy = m_lastTargetId;
-                audioOnlyCopy = m_lastWatchAudioOnly;
-                m_lanAwaitingFirstFrame = true;
-                shouldStart = !viewerIdCopy.isEmpty() && !targetIdCopy.isEmpty();
-                if (m_webSocket) {
-                    cloudWsToClose = m_webSocket;
-                }
-            }
-
-            if (shouldStart && rxWs->state() == QAbstractSocket::ConnectedState) {
-                QJsonObject startStreamingMessage;
-                startStreamingMessage["type"] = "start_streaming";
-                startStreamingMessage["viewer_id"] = viewerIdCopy;
-                startStreamingMessage["target_id"] = targetIdCopy;
-                if (audioOnlyCopy) {
-                    startStreamingMessage["audio_only"] = true;
-                    startStreamingMessage["action"] = "audio_only";
-                }
-                rxWs->sendTextMessage(QJsonDocument(startStreamingMessage).toJson(QJsonDocument::Compact));
-                QJsonObject kf;
-                kf["type"] = "request_keyframe";
-                rxWs->sendTextMessage(QJsonDocument(kf).toJson(QJsonDocument::Compact));
-            }
-
-            if (m_lanFirstFrameTimer && !m_lanFirstFrameTimer->isActive()) {
-                m_lanFirstFrameTimer->start(8000);
-            }
-
-            QTimer::singleShot(1200, this, [this]() {
-                QWebSocket *ws = nullptr;
-                QString viewerIdCopy;
-                QString targetIdCopy;
-                bool audioOnlyCopy = false;
-                {
-                    QMutexLocker locker(&m_mutex);
-                    if (m_linkState != LinkState::LanProbing || !m_lanAwaitingFirstFrame) return;
-                    ws = m_lanWebSocket;
-                    viewerIdCopy = m_lastViewerId;
-                    targetIdCopy = m_lastTargetId;
-                    audioOnlyCopy = m_lastWatchAudioOnly;
-                }
-                if (!ws || ws->state() != QAbstractSocket::ConnectedState) return;
-                if (viewerIdCopy.isEmpty() || targetIdCopy.isEmpty()) return;
-                QJsonObject startStreamingMessage;
-                startStreamingMessage["type"] = "start_streaming";
-                startStreamingMessage["viewer_id"] = viewerIdCopy;
-                startStreamingMessage["target_id"] = targetIdCopy;
-                if (audioOnlyCopy) {
-                    startStreamingMessage["audio_only"] = true;
-                    startStreamingMessage["action"] = "audio_only";
-                }
-                ws->sendTextMessage(QJsonDocument(startStreamingMessage).toJson(QJsonDocument::Compact));
-                QJsonObject kf;
-                kf["type"] = "request_keyframe";
-                ws->sendTextMessage(QJsonDocument(kf).toJson(QJsonDocument::Compact));
-            });
-
-            QTimer::singleShot(2500, this, [this]() {
-                QWebSocket *ws = nullptr;
-                {
-                    QMutexLocker locker(&m_mutex);
-                    if (m_linkState != LinkState::LanProbing || !m_lanAwaitingFirstFrame) return;
-                    ws = m_lanWebSocket;
-                }
-                if (!ws || ws->state() != QAbstractSocket::ConnectedState) return;
-                QJsonObject kf;
-                kf["type"] = "request_keyframe";
-                ws->sendTextMessage(QJsonDocument(kf).toJson(QJsonDocument::Compact));
-            });
-
-            Q_UNUSED(cloudWsToClose);
-            return;
-        }
 
         if (type == "lan_offer") {
             if (!AppConfig::lanWsEnabled()) {
@@ -1762,26 +1150,51 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 return;
             }
 
-            {
-                QMutexLocker locker(&m_mutex);
-                if (m_serverUrl != fromUrl) {
-                    return;
-                }
-                if (QUrl(m_serverUrl).port() == AppConfig::lanWsPort()) {
-                    return;
-                }
-            }
+            QTcpSocket *probe = new QTcpSocket(this);
+            probe->setProxy(QNetworkProxy::NoProxy);
+            probe->connectToHost(host, static_cast<quint16>(port));
 
-            qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer switch_to_lan"
-                              << " channel_id=" << channelId
-                              << " base_urls=" << basesJoined
-                              << " chosen=" << chosenUrl
-                              << " from=" << fromUrl;
+            QPointer<QTcpSocket> probePtr(probe);
+            QTimer::singleShot(800, probe, [probePtr]() {
+                if (!probePtr) return;
+                if (probePtr->state() == QAbstractSocket::ConnectedState) return;
+                probePtr->abort();
+                probePtr->deleteLater();
+            });
 
-            if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
-                m_lanOfferRetryTimer->stop();
-            }
-            startLanProbe(chosenUrl, fromUrl);
+            connect(probe, &QTcpSocket::connected, this, [this, probePtr, channelId, basesJoined, chosenUrl, fromUrl]() {
+                if (!probePtr) return;
+                probePtr->disconnectFromHost();
+                probePtr->deleteLater();
+
+                {
+                    QMutexLocker locker(&m_mutex);
+                    if (m_serverUrl != fromUrl) {
+                        return;
+                    }
+                    if (QUrl(m_serverUrl).port() == AppConfig::lanWsPort()) {
+                        return;
+                    }
+                    m_cloudFallbackUrl = fromUrl;
+                    m_lanSwitchInProgress = true;
+                    m_lanSwitchStartStreamingSent = false; // Reset streaming trigger for new switch
+                }
+
+                qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer switch_to_lan"
+                                  << " channel_id=" << channelId
+                                  << " base_urls=" << basesJoined
+                                  << " chosen=" << chosenUrl
+                                  << " from=" << fromUrl;
+
+                if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
+                    m_lanOfferRetryTimer->stop();
+                }
+                stopReconnectTimer();
+                connectToServer(chosenUrl);
+                if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                    m_lanFallbackTimer->start(4500);
+                }
+            });
             return;
         }
         
@@ -2038,11 +1451,6 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
 
 void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
 {
-    QWebSocket *errWs = qobject_cast<QWebSocket *>(sender());
-    if (!errWs) {
-        return;
-    }
-
     QString errorString;
     switch (error) {
     case QAbstractSocket::ConnectionRefusedError:
@@ -2066,54 +1474,6 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
     }
     emit connectionStatusChanged(QString("连接错误: %1").arg(errorString));
 
-    if (errWs == m_lanWebSocket) {
-        QPointer<QWebSocket> lanWsToClose;
-        QString retryLanUrl;
-        QString retryFromUrl;
-        bool shouldRetry = false;
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_linkState == LinkState::LanProbing && m_lanWebSocket) {
-                const bool lanOnly = AppConfig::lanOnlyEnabled();
-                if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
-                    retryLanUrl = m_pendingLanUrl;
-                    retryFromUrl = m_cloudFallbackUrl;
-                    shouldRetry = true;
-                }
-                lanWsToClose = m_lanWebSocket;
-                m_lanWebSocket = nullptr;
-                m_lanConnected = false;
-                m_linkState = LinkState::CloudActive;
-                m_lanSwitchInProgress = false;
-                m_lanAwaitingFirstFrame = false;
-                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                if (lanOnly) {
-                    m_lanSwitchDisabledUntilMs = 0;
-                } else {
-                    m_lanSwitchDisabledUntilMs = nowMs + 15000;
-                }
-                if (m_lanFallbackTimer && m_lanFallbackTimer->isActive()) {
-                    m_lanFallbackTimer->stop();
-                }
-                if (m_lanFirstFrameTimer && m_lanFirstFrameTimer->isActive()) {
-                    m_lanFirstFrameTimer->stop();
-                }
-            }
-        }
-        if (lanWsToClose) {
-            lanWsToClose->disconnect(this);
-            lanWsToClose->abort();
-            lanWsToClose->deleteLater();
-        }
-        if (shouldRetry) {
-            QTimer::singleShot(600, this, [this, retryLanUrl, retryFromUrl]() {
-                if (!AppConfig::lanOnlyEnabled()) return;
-                startLanProbe(retryLanUrl, retryFromUrl);
-            });
-        }
-        return;
-    }
-
     if (AppConfig::lanWsEnabled()) {
         QString currentUrl;
         QString channelId;
@@ -2122,7 +1482,7 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
             currentUrl = m_serverUrl;
             if (QUrl(currentUrl).port() != AppConfig::lanWsPort() &&
                 isSubscribeWsUrlString(currentUrl) &&
-                m_linkState == LinkState::CloudActive) {
+                !m_lanSwitchInProgress) {
                 channelId = roomIdFromWsUrlString(currentUrl);
             }
         }
@@ -2133,6 +1493,11 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
             const QString lanUrl = pickBestLanSubscribeUrlString(bases, channelId, currentUrl);
 
             if (!lanUrl.isEmpty()) {
+                {
+                    QMutexLocker locker(&m_mutex);
+                    m_cloudFallbackUrl = currentUrl;
+                    m_lanSwitchInProgress = true;
+                }
                 qInfo().noquote() << "[KickDiag][Receiver] onError switch_to_lan"
                                   << " channel_id=" << channelId
                                   << " base_urls=" << bases.join(QStringLiteral(","))
@@ -2141,8 +1506,22 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
                 if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
                     m_lanOfferRetryTimer->stop();
                 }
-                startLanProbe(lanUrl, currentUrl);
+                stopReconnectTimer();
+                connectToServer(lanUrl);
+                if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                    m_lanFallbackTimer->start(4500);
+                }
                 return;
+            }
+        }
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (QUrl(m_serverUrl).port() == AppConfig::lanWsPort() && !m_cloudFallbackUrl.isEmpty()) {
+            m_lanSwitchInProgress = true;
+            if (m_lanFallbackTimer && !m_lanFallbackTimer->isActive()) {
+                m_lanFallbackTimer->start(4500);
             }
         }
     }
@@ -2156,11 +1535,7 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
 void WebSocketReceiver::onSslErrors(const QList<QSslError> &errors)
 {
     Q_UNUSED(errors);
-    QWebSocket *ws = qobject_cast<QWebSocket *>(sender());
-    if (!ws) {
-        return;
-    }
-    ws->ignoreSslErrors();
+    m_webSocket->ignoreSslErrors();
 }
 
 void WebSocketReceiver::onStateChanged(QAbstractSocket::SocketState state)
@@ -2212,14 +1587,6 @@ void WebSocketReceiver::updateStats()
 {
     QMutexLocker locker(&m_mutex);
     qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-    bool shouldNudgeVideo = false;
-    QString nudgeViewerId;
-    QString nudgeTargetId;
-    qint64 nudgeGapMs = 0;
-    int nudgeAttempt = 0;
-    bool shouldProbeLan = false;
-    QString probeLanUrl;
-    QString probeFromUrl;
     
     // 计算平均帧大小
     if (!m_frameSizes.isEmpty()) {
@@ -2233,46 +1600,6 @@ void WebSocketReceiver::updateStats()
     // 计算连接时间
     if (m_connected && m_connectionStartTime > 0) {
         m_stats.connectionTime = currentTime - m_connectionStartTime;
-    }
-
-    if (m_connected &&
-        m_linkState == LinkState::CloudActive &&
-        AppConfig::lanWsEnabled() &&
-        !m_lanSwitchInProgress &&
-        isSubscribeWsUrlString(m_serverUrl) &&
-        QUrl(m_serverUrl).port() != AppConfig::lanWsPort()) {
-        const bool cooldownOk = (m_lanSwitchDisabledUntilMs == 0 || currentTime >= m_lanSwitchDisabledUntilMs);
-        if (cooldownOk) {
-            const QString channelId = roomIdFromWsUrlString(m_serverUrl);
-            if (!channelId.isEmpty()) {
-                const QStringList bases = AppConfig::lanBaseUrlsForTarget(channelId);
-                const QString picked = pickBestLanSubscribeUrlString(bases, channelId, m_serverUrl);
-                if (!picked.isEmpty() && picked != m_serverUrl) {
-                    shouldProbeLan = true;
-                    probeLanUrl = picked;
-                    probeFromUrl = m_serverUrl;
-                }
-            }
-        }
-    }
-
-    if (m_connected &&
-        m_hasAnyVideoFrame &&
-        m_lastVideoFrameAtMs > 0 &&
-        m_linkState != LinkState::LanProbing) {
-        const qint64 gap = currentTime - m_lastVideoFrameAtMs;
-        if (gap > 5000) {
-            const bool cooldownOk = (m_lastVideoNudgeAtMs == 0) || (currentTime - m_lastVideoNudgeAtMs > 3000);
-            if (cooldownOk && m_videoNudgeCount < 3) {
-                m_videoNudgeCount++;
-                m_lastVideoNudgeAtMs = currentTime;
-                shouldNudgeVideo = true;
-                nudgeAttempt = m_videoNudgeCount;
-                nudgeGapMs = gap;
-                nudgeViewerId = m_lastViewerId;
-                nudgeTargetId = m_lastTargetId;
-            }
-        }
     }
     
     // 计算网络延迟和抖动
@@ -2295,42 +1622,6 @@ void WebSocketReceiver::updateStats()
     m_lastStatsUpdateTime = currentTime;
     
     emit statsUpdated(m_stats);
-    locker.unlock();
-
-    if (shouldProbeLan) {
-        qInfo().noquote() << "[KickDiag][Receiver] cached_switch_to_lan_tick"
-                          << " to=" << probeLanUrl
-                          << " from=" << probeFromUrl;
-        startLanProbe(probeLanUrl, probeFromUrl);
-    }
-
-    if (shouldNudgeVideo) {
-        QTimer::singleShot(0, this, [this, nudgeViewerId, nudgeTargetId, nudgeGapMs, nudgeAttempt]() {
-            if (!m_webSocket || m_webSocket->state() != QAbstractSocket::ConnectedState) {
-                return;
-            }
-            if (nudgeViewerId.isEmpty() || nudgeTargetId.isEmpty()) {
-                return;
-            }
-            qInfo().noquote() << "[KickDiag][Receiver] video_frame_stall_nudge"
-                              << " gap_ms=" << nudgeGapMs
-                              << " attempt=" << nudgeAttempt
-                              << " url=" << m_serverUrl;
-            QJsonObject startStreamingMessage;
-            startStreamingMessage["type"] = "start_streaming";
-            startStreamingMessage["viewer_id"] = nudgeViewerId;
-            startStreamingMessage["target_id"] = nudgeTargetId;
-            {
-                QMutexLocker locker(&m_mutex);
-                if (m_lastWatchAudioOnly) {
-                    startStreamingMessage["audio_only"] = true;
-                    startStreamingMessage["action"] = "audio_only";
-                }
-            }
-            m_webSocket->sendTextMessage(QJsonDocument(startStreamingMessage).toJson(QJsonDocument::Compact));
-            sendRequestKeyFrame();
-        });
-    }
 }
 
 void WebSocketReceiver::initOpusDecoderIfNeeded(int sampleRate, int channels)
@@ -2435,22 +1726,12 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     // 立即发送开始推流请求
     QJsonObject startStreamingMessage;
     startStreamingMessage["type"] = "start_streaming";
-    startStreamingMessage["viewer_id"] = viewerId;
-    startStreamingMessage["target_id"] = targetId;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (m_lastWatchAudioOnly) {
-            startStreamingMessage["audio_only"] = true;
-            startStreamingMessage["action"] = "audio_only";
-        }
-    }
     
     QJsonDocument startStreamingDoc(startStreamingMessage);
     QString startStreamingJsonString = startStreamingDoc.toJson(QJsonDocument::Compact);
     // 日志清理：移除开始推流提示
     
     m_webSocket->sendTextMessage(startStreamingJsonString);
-    sendRequestKeyFrame();
 }
 
 void WebSocketReceiver::sendRequestKeyFrame()
@@ -2470,9 +1751,6 @@ void WebSocketReceiver::sendViewerExit()
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
-        if (m_lanSwitchInProgress) {
-            return;
-        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }
@@ -2515,14 +1793,7 @@ void WebSocketReceiver::setViewerName(const QString &name)
 
 void WebSocketReceiver::sendViewerCursor(int x, int y)
 {
-    QWebSocket *ws = m_webSocket;
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
-            ws = m_lanWebSocket;
-        }
-    }
-    
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
+    if (!m_connected || !m_webSocket) {
         return;
     }
     QString viewerId;
@@ -2538,7 +1809,6 @@ void WebSocketReceiver::sendViewerCursor(int x, int y)
         return;
     }
     if (viewerId.isEmpty() || targetId.isEmpty()) {
-        qWarning() << "sendViewerCursor failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
     QJsonObject message;
@@ -2552,33 +1822,33 @@ void WebSocketReceiver::sendViewerCursor(int x, int y)
     }
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     QJsonDocument doc(message);
-    ws->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, int colorId)
 {
-    QWebSocket *ws = m_webSocket;
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
-            ws = m_lanWebSocket;
-        }
-    }
-    
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        return;
-    }
-
-    // 使用最近一次的viewer/target信息进行路由
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
+
     {
         QMutexLocker locker(&m_mutex);
+        // 优先使用LAN连接
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
+
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }
 
+    if (!wsToUse) {
+        return;
+    }
+
     if (viewerId.isEmpty() || targetId.isEmpty()) {
-        qWarning() << "sendAnnotationEvent failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2602,33 +1872,33 @@ void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, 
          qDebug().noquote() << "[WebSocketReceiver] sendAnnotationEvent phase=" << phase 
                             << " x=" << x << " y=" << y 
                             << " viewer=" << viewerId << " target=" << targetId
-                            << " ws=" << ws->requestUrl().toString();
+                            << " ws=" << wsToUse->requestUrl().toString();
     }
-    ws->sendTextMessage(jsonString);
+    wsToUse->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, int colorId, int fontSize)
 {
-    QWebSocket *ws = m_webSocket;
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
-            ws = m_lanWebSocket;
-        }
-    }
-    
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        return;
-    }
-
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        // 优先使用LAN连接
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }
+    
+    if (!wsToUse) {
+        return;
+    }
+
     if (viewerId.isEmpty() || targetId.isEmpty()) {
-        qWarning() << "sendTextAnnotation failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2644,32 +1914,31 @@ void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, in
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
 
     QJsonDocument doc(message);
-    ws->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    wsToUse->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendSwitchScreenNext()
 {
-    QWebSocket *ws = m_webSocket;
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
-            ws = m_lanWebSocket;
-        }
-    }
-    
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        return;
-    }
-
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        // 优先使用LAN连接
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }
 
+    if (!wsToUse) {
+        return;
+    }
+
     if (viewerId.isEmpty() || targetId.isEmpty()) {
-        qWarning() << "sendSwitchScreenNext failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2682,30 +1951,29 @@ void WebSocketReceiver::sendSwitchScreenNext()
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
-    ws->sendTextMessage(jsonString);
+    wsToUse->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendLikeEvent()
 {
-    QWebSocket *ws = m_webSocket;
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
-            ws = m_lanWebSocket;
-        }
-    }
-    
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        return;
-    }
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }
+
+    if (!wsToUse) {
+        return;
+    }
     if (viewerId.isEmpty() || targetId.isEmpty()) {
-        qWarning() << "sendLikeEvent failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
     QJsonObject message;
@@ -2714,32 +1982,30 @@ void WebSocketReceiver::sendLikeEvent()
     message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     QJsonDocument doc(message);
-    ws->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    wsToUse->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendSwitchScreenIndex(int index)
 {
-    QWebSocket *ws = m_webSocket;
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
-            ws = m_lanWebSocket;
-        }
-    }
-    
-    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
-        return;
-    }
-
+    QWebSocket *wsToUse = nullptr;
     QString viewerId;
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
+        if (m_linkState == LinkState::LanActive && m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            wsToUse = m_lanWebSocket;
+        } else if (m_connected && m_webSocket) {
+            wsToUse = m_webSocket;
+        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }
 
+    if (!wsToUse) {
+        return;
+    }
+
     if (viewerId.isEmpty() || targetId.isEmpty()) {
-        qWarning() << "sendSwitchScreenIndex failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2753,7 +2019,7 @@ void WebSocketReceiver::sendSwitchScreenIndex(int index)
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
-    ws->sendTextMessage(jsonString);
+    wsToUse->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendStopStreaming()
@@ -2766,9 +2032,6 @@ void WebSocketReceiver::sendStopStreaming()
     QString targetId;
     {
         QMutexLocker locker(&m_mutex);
-        if (m_lanSwitchInProgress) {
-            return;
-        }
         viewerId = m_lastViewerId;
         targetId = m_lastTargetId;
     }

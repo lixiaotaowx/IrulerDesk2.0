@@ -26,6 +26,7 @@
 #include <QSet>
 #include <QHash>
 #include <QUdpSocket>
+#include "common/AutoUpdater.h"
 
 // 前向声明
 class VideoWindow;
@@ -84,6 +85,11 @@ private slots:
     void onUserNameChanged(const QString &name);
     void onMicToggleRequested(bool enabled);
     void onSpeakerToggleRequested(bool enabled);
+    
+    // 自动更新槽函数
+    void onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force);
+    void onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+    void onUpdateError(const QString &error);
 
 private:
     void setupUI();
@@ -151,7 +157,9 @@ private:
 
     // 显示更新日志
     void checkAndShowUpdateLog();
-    void startLanDiscoveryListener();
+    
+
+
 private:
     void sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly);
     void sendWatchRequestWithVideo(const QString& targetDeviceId);
@@ -193,8 +201,6 @@ private:
     void onWatchdogNewConnection();
     void onWatchdogDataReady();
     void onWatchdogTimeout();
-    void scheduleNoViewerSoftStop();
-    QTimer *m_noViewerSoftStopTimer = nullptr;
     
     // 熔断机制相关
     QList<qint64> m_crashTimestamps; // 记录最近崩溃的时间戳
@@ -251,6 +257,9 @@ private:
 
     QUdpSocket *m_lanDiscoverySocket = nullptr;
     QHash<QString, QString> m_lanDiscoveredBaseByTarget;
+
+    AutoUpdater *m_autoUpdater = nullptr;
+    class QProgressDialog *m_updateProgressDialog = nullptr;
 };
 
 #endif // MAINWINDOW_H

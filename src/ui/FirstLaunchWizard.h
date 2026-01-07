@@ -25,6 +25,7 @@ public:
     bool exitRequested() const;
 protected:
     void closeEvent(QCloseEvent* e) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     void setupStyle();

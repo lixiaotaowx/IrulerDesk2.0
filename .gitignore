@@ -19,3 +19,7 @@
 # MSVC project intermediates in build folders
 /build/bin/
 /build/
+
+# Ignored reference directory
+参考/
+

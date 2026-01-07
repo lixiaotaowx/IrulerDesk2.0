@@ -54,18 +54,12 @@ public:
 
         m_server = new QWebSocketServer(QStringLiteral("IrulerDeskpro LAN Relay"), QWebSocketServer::NonSecureMode, this);
         if (!m_server->listen(QHostAddress::AnyIPv4, port)) {
-            const QString err = m_server->errorString();
             m_server->deleteLater();
             m_server = nullptr;
-            qWarning().noquote() << "[LanRelay] start_failed"
-                                 << " port=" << port
-                                 << " err=" << err;
             return false;
         }
 
         connect(m_server, &QWebSocketServer::newConnection, this, &LanRelayServer::onNewConnection);
-        qInfo().noquote() << "[LanRelay] started"
-                          << " port=" << m_server->serverPort();
         return true;
     }
 
@@ -114,9 +108,6 @@ private:
             return;
         }
 
-        qInfo().noquote() << "[LanRelay] New connection:" << sock->peerAddress().toString()
-                          << " role=" << role << " roomId=" << roomId;
-
         Room &room = m_rooms[roomId];
 
         if (role == QStringLiteral("publish")) {
@@ -125,7 +116,6 @@ private:
                 room.publisher->deleteLater();
             }
             room.publisher = sock;
-            qInfo().noquote() << "[LanRelay] Publisher connected for room:" << roomId;
             if (!room.pendingTextToPublisher.isEmpty()) {
                 for (const QString &msg : room.pendingTextToPublisher) {
                     if (sock->state() == QAbstractSocket::ConnectedState) {
@@ -166,7 +156,6 @@ private:
             });
         } else {
             room.subscribers.insert(sock);
-            qInfo().noquote() << "[LanRelay] Subscriber connected for room:" << roomId;
 
             connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
                 auto it = m_rooms.find(roomId);

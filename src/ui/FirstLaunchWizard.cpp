@@ -1,6 +1,7 @@
 #include "FirstLaunchWizard.h"
 #include <QStyle>
 #include <QMessageBox>
+#include <QKeyEvent>
 
 FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
     : QDialog(parent)
@@ -115,6 +116,13 @@ void FirstLaunchWizard::buildScreenPage()
     for (int i = 0; i < screens.size(); ++i) {
         QScreen* s = screens[i];
         QPixmap pix = s->grabWindow(0);
+        if (!pix.isNull() && s->devicePixelRatio() > 1.1) {
+            const int capturedW = static_cast<int>(pix.width() * pix.devicePixelRatio());
+            const int physW = static_cast<int>(s->size().width() * s->devicePixelRatio());
+            if (capturedW < physW * 0.9) {
+                pix = s->grabWindow(0, 0, 0, s->size().width(), s->size().height());
+            }
+        }
         QPixmap scaled = pix.scaled(240, 135, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         QPushButton* b = new QPushButton(rowWidget);
         b->setObjectName("screen");
@@ -167,4 +175,24 @@ void FirstLaunchWizard::closeEvent(QCloseEvent* e)
     } else {
         e->ignore();
     }
+}
+
+void FirstLaunchWizard::keyPressEvent(QKeyEvent* event)
+{
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        int i = m_stack->currentIndex();
+        bool last = (i + 1 == m_stack->count());
+        if (last) {
+            if (m_finishBtn && m_finishBtn->isVisible() && m_finishBtn->isEnabled()) {
+                m_finishBtn->click();
+            }
+        } else {
+            if (m_nextBtn && m_nextBtn->isVisible() && m_nextBtn->isEnabled()) {
+                m_nextBtn->click();
+            }
+        }
+        event->accept();
+        return;
+    }
+    QDialog::keyPressEvent(event);
 }

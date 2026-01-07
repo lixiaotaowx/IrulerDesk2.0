@@ -19,7 +19,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # 查找 Qt 组件
-find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia WebEngineWidgets REQUIRED)
+find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia WebEngineWidgets WebChannel Positioning Quick Qml OpenGL REQUIRED)
 
 # Opus audio codec
 set(Opus_DIR "G:/rust_projects/vcpkg/installed/x64-windows-static-md/share/opus")
@@ -48,6 +48,8 @@ set(MAIN_SOURCES
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
     src/common/CrashGuard.h               # 崩溃守护声明
     src/common/AppConfig.h                # 应用配置：应用信息与服务器地址
+    src/common/AutoUpdater.cpp            # 自动更新逻辑
+    src/common/AutoUpdater.h              # 自动更新逻辑声明
     src/video_components/VideoDisplayWidget.cpp # 视频显示控件实现：绘制视频帧与批注事件处理
     src/video_components/VideoDisplayWidget.h   # 视频显示控件声明：接口与状态
     src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件
@@ -159,6 +161,11 @@ target_link_libraries(ScreenStreamApp PRIVATE
     Qt6::Svg
     Qt6::Multimedia
     Qt6::WebEngineWidgets
+    Qt6::WebChannel
+    Qt6::Positioning
+    Qt6::Quick
+    Qt6::Qml
+    Qt6::OpenGL
     Opus::opus
     unofficial::libvpx::libvpx
     yuv
@@ -238,16 +245,22 @@ if(WIN32)
     message(STATUS "检测到Windows平台，正在链接d3d11、dxgi、dxva2、ole32、dbghelp")
 endif()
 
-# 设置输出目录
-set_target_properties(ScreenStreamApp PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-)
-set_target_properties(CaptureProcess PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-)
-set_target_properties(PlayerProcess PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-)
+# 设置输出目录（多配置生成器下按配置分目录，避免 Release/Debug 混在一起）
+if(CMAKE_CONFIGURATION_TYPES)
+    foreach(tgt IN ITEMS ScreenStreamApp CaptureProcess PlayerProcess)
+        set_target_properties(${tgt} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+        )
+    endforeach()
+else()
+    set(_single_out_dir ${CMAKE_BINARY_DIR}/bin)
+    if(CMAKE_BUILD_TYPE)
+        set(_single_out_dir ${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE})
+    endif()
+    set_target_properties(ScreenStreamApp PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${_single_out_dir})
+    set_target_properties(CaptureProcess  PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${_single_out_dir})
+    set_target_properties(PlayerProcess   PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${_single_out_dir})
+endif()
 
 # 在Windows/MSVC下，构建前确保旧的可执行未在运行，避免 LNK1104
 if(MSVC AND WIN32)
@@ -326,17 +339,19 @@ if(WIN32)
             endforeach()
         endif()
 
-        add_custom_command(TARGET ScreenStreamApp POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for ScreenStreamApp (covers dependencies for Capture/Player too)..."
-            COMMAND ${WINDEPLOYQT_EXECUTABLE}
-                --verbose 2
-                $<IF:$<CONFIG:Debug>,--debug,--release>
-                --compiler-runtime
-                --no-system-d3d-compiler
-                --force
-                $<TARGET_FILE:ScreenStreamApp>
-            COMMENT "Deploying Qt libraries and plugins for ScreenStreamApp"
-        )
+        foreach(tgt IN ITEMS ScreenStreamApp CaptureProcess PlayerProcess)
+            add_custom_command(TARGET ${tgt} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies for ${tgt}..."
+                COMMAND ${WINDEPLOYQT_EXECUTABLE}
+                    --verbose 2
+                    $<IF:$<CONFIG:Debug>,--debug,--release>
+                    --compiler-runtime
+                    --no-system-d3d-compiler
+                    --force
+                    $<TARGET_FILE:${tgt}>
+                COMMENT "Deploying Qt libraries and plugins for ${tgt}"
+            )
+        endforeach()
         message(STATUS "Found windeployqt: ${WINDEPLOYQT_EXECUTABLE}")
     else()
         message(WARNING "windeployqt not found! Qt dependencies will not be deployed automatically.")
@@ -408,15 +423,26 @@ endif()
 include(GNUInstallDirs)
 
 # 将已部署的可执行文件与其依赖（Qt DLL、插件、资源）整体安装到根目录
-if(MSVC)
-    set(INSTALL_BUNDLE_DIR ${CMAKE_BINARY_DIR}/bin/Release)
-else()
-    set(INSTALL_BUNDLE_DIR ${CMAKE_BINARY_DIR}/bin/$<CONFIG>)
-endif()
-
-install(DIRECTORY ${INSTALL_BUNDLE_DIR}/ DESTINATION .
-        PATTERN "*.pdb" EXCLUDE
+# 直接安装 Release 目录的内容，这是最稳妥的方式，因为 POST_BUILD 已经保证了该目录的完整性
+install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/Release/ 
+    DESTINATION .
+    USE_SOURCE_PERMISSIONS
+    PATTERN "*.pdb" EXCLUDE
+    PATTERN "*.lib" EXCLUDE
+    PATTERN "*.exp" EXCLUDE
+    PATTERN "*.ilk" EXCLUDE
+    PATTERN "config" EXCLUDE
+    PATTERN "cache" EXCLUDE
 )
+
+# 移除旧的 install(CODE) 尝试
+# install(CODE "...")
+
+
+# 强制补充 windeployqt 可能漏掉的特定 DLL
+# 注意：现在使用 install(DIRECTORY) 直接打包整个 bin/Release 目录，理论上不需要手动 install(FILES)
+# 但为了保险起见，如果 windeployqt 没有生成这些文件，我们可以在这里手动补充
+# 不过鉴于用户反馈 build/bin/Release 是完整的，我们信任 install(DIRECTORY)
 
 # 安装静态资源（地图/头像等），以确保无构建工序也可包含
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/maps DESTINATION .)
@@ -426,15 +452,19 @@ include(InstallRequiredSystemLibraries)
 set(CPACK_PACKAGE_NAME "IrulerDeskPro")
 set(CPACK_PACKAGE_VENDOR "lunzi")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "屏幕采集、VP9 传输、Qt 前端一体化客户端")
-set(CPACK_PACKAGE_VERSION "1.0.1")
+set(CPACK_PACKAGE_VERSION "1.0.8")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win64")
 set(CPACK_SYSTEM_NAME "Windows")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "IrulerDeskPro")
 set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
 set(CPACK_NSIS_ENABLE_UNINSTALL ON)
-set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
 set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "IrulerDeskPro")
+
+# 恢复类似默认行为的中文卸载提示
+# 仅保留核心的检测和卸载逻辑，移除激进的 RMDir，避免副作用
 set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "
+    # 尝试关闭运行中的进程
     nsExec::ExecToLog '$SYSDIR\\\\taskkill.exe /F /IM irulerdesk.exe /T'
     Pop $0
     nsExec::ExecToLog '$SYSDIR\\\\taskkill.exe /F /IM ScreenStreamApp.exe /T'
@@ -452,9 +482,15 @@ set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "
     ReadRegStr $R0 HKCU 'Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\IrulerDeskPro' 'UninstallString'
     StrCmp $R0 '' doneCheck haveUninst
     haveUninst:
-    MessageBox MB_ICONQUESTION|MB_YESNO '检测到已安装旧版本，是否先卸载后继续安装？' IDYES doUninstall IDNO doneCheck
+    # 为了避免 CPackConfig.cmake 转义问题，使用单引号且不包含特殊转义符
+    MessageBox MB_ICONQUESTION|MB_YESNO '检测到已安装旧版本，必须先卸载后才能继续安装。点击[是]卸载旧版本(推荐)，点击[否]直接覆盖安装。' IDYES doUninstall IDNO doneCheck
     doUninstall:
-    ExecWait '$R0'
+    # 运行卸载程序，_?=$INSTDIR 参数让卸载程序不复制自身到临时目录，而是直接运行，等待其结束
+    ExecWait '$R0 _?=$INSTDIR'
+    
+    # 卸载完成后，如果不手动清理，可能会残留文件，但既然用户反馈之前的清理有问题，我们这里只做最小限度的清理
+    # 如果卸载程序执行成功，它应该已经清理了大部分文件
+    
     doneCheck:
 ")
 set(CPACK_NSIS_DISPLAY_NAME "IrulerDeskPro")

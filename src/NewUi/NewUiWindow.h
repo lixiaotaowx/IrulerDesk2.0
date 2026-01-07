@@ -228,4 +228,5 @@ private:
     qint64 m_lastPreviewCaptureAtMs = 0;
     qint64 m_lastPreviewResendAtMs = 0;
     qint64 m_lastPreviewLogAtMs = 0;
+    qint64 m_lastCloudSlowFrameSentAtMs = 0;
 };

@@ -13,6 +13,7 @@
 #include <QMenu>
 #include <QIcon>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QDir>
 #include <QStandardPaths>
 #include <QFile>
@@ -33,6 +34,7 @@
 #include <cstdlib>
 #include <ctime>
 #include "common/AppConfig.h"
+#include "common/AutoUpdater.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -90,6 +92,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     
     
+    
     // 初始化随机数种子
     srand(static_cast<unsigned int>(time(nullptr)));
     
@@ -102,6 +105,8 @@ MainWindow::MainWindow(QWidget *parent)
                 QString n = w.userName().trimmed();
                 if (!n.isEmpty()) { saveUserNameToConfig(n); m_userName = n; }
                 int si = w.screenIndex(); if (si >= 0) saveScreenIndexToConfig(si);
+            } else {
+                std::exit(0);
             }
         }
     }
@@ -109,7 +114,6 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     
     setupStatusBar();
-    startLanDiscoveryListener();
 
     if (!m_trayIcon) {
         QString appDir = QCoreApplication::applicationDirPath();
@@ -134,6 +138,16 @@ MainWindow::MainWindow(QWidget *parent)
         if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
     });
 
+    // 自动更新
+    m_autoUpdater = new AutoUpdater(this);
+    connect(m_autoUpdater, &AutoUpdater::updateAvailable, this, &MainWindow::onUpdateAvailable);
+    connect(m_autoUpdater, &AutoUpdater::downloadProgress, this, &MainWindow::onUpdateDownloadProgress);
+    connect(m_autoUpdater, &AutoUpdater::errorOccurred, this, &MainWindow::onUpdateError);
+    // 启动后延时检查更新
+    QTimer::singleShot(5000, this, [this](){
+         m_autoUpdater->checkUpdate("https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json");
+    });
+
     // 初始化登录系统
     initializeLoginSystem();
     
@@ -142,94 +156,6 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 检查并显示更新日志
     QTimer::singleShot(500, this, &MainWindow::checkAndShowUpdateLog);
-}
-
-void MainWindow::startLanDiscoveryListener()
-{
-    if (!AppConfig::lanDiscoveryEnabled()) {
-        return;
-    }
-    if (m_lanDiscoverySocket) {
-        return;
-    }
-
-    m_lanDiscoverySocket = new QUdpSocket(this);
-    const quint16 port = static_cast<quint16>(AppConfig::lanDiscoveryPort());
-    const bool ok = m_lanDiscoverySocket->bind(QHostAddress::AnyIPv4, port,
-                                               QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
-    if (!ok) {
-        qWarning().noquote() << "[KickDiag][LanDiscovery] bind_failed"
-                             << " port=" << port
-                             << " err=" << m_lanDiscoverySocket->errorString();
-        m_lanDiscoverySocket->deleteLater();
-        m_lanDiscoverySocket = nullptr;
-        return;
-    }
-
-    qInfo().noquote() << "[KickDiag][LanDiscovery] listening"
-                      << " port=" << port;
-
-    connect(m_lanDiscoverySocket, &QUdpSocket::readyRead, this, [this]() {
-        if (!m_lanDiscoverySocket) return;
-
-        while (m_lanDiscoverySocket->hasPendingDatagrams()) {
-            QHostAddress sender;
-            quint16 senderPort = 0;
-            QByteArray datagram;
-            datagram.resize(static_cast<int>(m_lanDiscoverySocket->pendingDatagramSize()));
-            const qint64 n = m_lanDiscoverySocket->readDatagram(datagram.data(), datagram.size(), &sender, &senderPort);
-            if (n <= 0) continue;
-
-            if (sender.protocol() != QAbstractSocket::IPv4Protocol) {
-                continue;
-            }
-
-            QJsonParseError err;
-            const QJsonDocument doc = QJsonDocument::fromJson(datagram, &err);
-            if (err.error != QJsonParseError::NoError || !doc.isObject()) {
-                continue;
-            }
-
-            const QJsonObject obj = doc.object();
-            const QString type = obj.value(QStringLiteral("type")).toString();
-            if (type != QStringLiteral("lan_announce")) {
-                continue;
-            }
-
-            const QString targetId = obj.value(QStringLiteral("device_id")).toString().trimmed();
-            if (targetId.isEmpty() || targetId == getDeviceId()) {
-                continue;
-            }
-
-            int wsPort = obj.value(QStringLiteral("ws_port")).toInt(AppConfig::lanWsPort());
-            if (wsPort <= 0 || wsPort > 65535) {
-                wsPort = AppConfig::lanWsPort();
-            }
-
-            const QString base = QStringLiteral("ws://%1:%2").arg(sender.toString()).arg(wsPort);
-
-            if (m_lanDiscoveredBaseByTarget.value(targetId) != base) {
-                m_lanDiscoveredBaseByTarget.insert(targetId, base);
-                qInfo().noquote() << "[KickDiag][LanDiscovery] discovered"
-                                  << " target_id=" << targetId
-                                  << " base=" << base
-                                  << " udp_port=" << senderPort;
-            }
-
-            QStringList existing = AppConfig::lanBaseUrlsForTarget(targetId);
-            QStringList merged;
-            merged.reserve(existing.size() + 1);
-            merged.append(base);
-            for (const QString &it : existing) {
-                if (it.isEmpty()) continue;
-                if (it == base) continue;
-                merged.append(it);
-                if (merged.size() >= 4) break;
-            }
-            merged.removeDuplicates();
-            AppConfig::setLanBaseUrlsForTarget(targetId, merged);
-        }
-    });
 }
 
 void MainWindow::checkAndShowUpdateLog()
@@ -1057,9 +983,6 @@ void MainWindow::stopStreaming()
     }
 
     m_isStreaming = false;
-    if (m_noViewerSoftStopTimer) {
-        m_noViewerSoftStopTimer->stop();
-    }
     
     // [Fix] Do NOT force clear viewers here.
     // Let individual viewer_exit events handle removal.
@@ -1089,50 +1012,6 @@ void MainWindow::stopStreaming()
         "    padding: 5px;"
         "}"
     );
-}
-
-void MainWindow::scheduleNoViewerSoftStop()
-{
-    if (!m_isStreaming) {
-        return;
-    }
-    if (!m_transparentImageList) {
-        return;
-    }
-
-    if (m_transparentImageList->getViewerCount() > 0) {
-        if (m_noViewerSoftStopTimer) {
-            m_noViewerSoftStopTimer->stop();
-        }
-        return;
-    }
-
-    constexpr int kDelayMs = 20000;
-    if (!m_noViewerSoftStopTimer) {
-        m_noViewerSoftStopTimer = new QTimer(this);
-        m_noViewerSoftStopTimer->setSingleShot(true);
-        connect(m_noViewerSoftStopTimer, &QTimer::timeout, this, [this]() {
-            if (!m_isStreaming) {
-                return;
-            }
-            if (!m_transparentImageList) {
-                return;
-            }
-            const int viewerCount = m_transparentImageList->getViewerCount();
-            if (viewerCount > 0) {
-                return;
-            }
-            qInfo().noquote() << "[NoViewerSoftStop] timeout fired, viewers=" << viewerCount;
-            if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
-                m_currentWatchdogSocket->write("CMD_SOFT_STOP");
-                m_currentWatchdogSocket->flush();
-            } else {
-                stopStreaming();
-            }
-        });
-    }
-    qInfo().noquote() << "[NoViewerSoftStop] scheduled in" << kDelayMs << "ms";
-    m_noViewerSoftStopTimer->start(kDelayMs);
 }
 
 void MainWindow::updateStatus()
@@ -1489,7 +1368,12 @@ void MainWindow::onWatchdogDataReady()
             if (!viewerId.isEmpty() && m_transparentImageList) {
                 m_transparentImageList->removeViewer(viewerId);
                 if (m_isStreaming && m_transparentImageList->getViewerCount() <= 0) {
-                    scheduleNoViewerSoftStop();
+                    if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                        m_currentWatchdogSocket->write("CMD_SOFT_STOP");
+                        m_currentWatchdogSocket->flush();
+                    } else {
+                        stopStreaming();
+                    }
                 }
             }
         } else if (line.startsWith(kViewerMicPrefix)) {
@@ -2708,7 +2592,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 // [Fix] Add to "My Room" list
                 if (m_transparentImageList) {
                     m_transparentImageList->addViewer(viewerId, viewerName);
-                    scheduleNoViewerSoftStop();
                 }
 
                 // [Local Control] 本地直接通知捕获进程开始推流
@@ -2788,7 +2671,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             // [Fix] Add to "My Room" list for auto-approve case
             if (m_transparentImageList) {
                 m_transparentImageList->addViewer(viewerId, viewerName);
-                scheduleNoViewerSoftStop();
             }
         }
     } else if (type == "watch_request_canceled") {
@@ -2966,7 +2848,12 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (m_transparentImageList) {
             m_transparentImageList->removeViewer(viewerId);
             if (m_isStreaming && m_transparentImageList->getViewerCount() <= 0) {
-                scheduleNoViewerSoftStop();
+                if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
+                    m_currentWatchdogSocket->write("CMD_SOFT_STOP");
+                    m_currentWatchdogSocket->flush();
+                } else {
+                    stopStreaming();
+                }
             }
         }
     } else if (type == "kick_viewer") {
@@ -3717,6 +3604,68 @@ void MainWindow::saveSpeakerEnabledToConfig(bool enabled)
         QTextStream out(&configFile);
         for (const QString &line : configLines) out << line << "\n";
         configFile.close();
+    }
+}
+
+void MainWindow::onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force)
+{
+    QString msg = QString("发现新版本: %1\n\n%2").arg(version, description);
+    
+    if (force) {
+        QMessageBox::information(this, "强制更新", msg + "\n\n该版本为强制更新，点击确定开始下载。");
+        m_autoUpdater->downloadAndInstall();
+        
+        m_updateProgressDialog = new QProgressDialog("正在下载更新...", "取消", 0, 100, this);
+        m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+        m_updateProgressDialog->setAutoClose(false);
+        m_updateProgressDialog->setAutoReset(false);
+        m_updateProgressDialog->setCancelButton(nullptr);
+        m_updateProgressDialog->show();
+    } else {
+        QMessageBox::StandardButton btn = QMessageBox::question(this, "发现新版本", msg + "\n\n是否立即更新？", QMessageBox::Yes | QMessageBox::No);
+        if (btn == QMessageBox::Yes) {
+            m_autoUpdater->downloadAndInstall();
+            
+            m_updateProgressDialog = new QProgressDialog("正在下载更新...", "取消", 0, 100, this);
+            m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+            m_updateProgressDialog->setAutoClose(false);
+            m_updateProgressDialog->setAutoReset(false);
+            connect(m_updateProgressDialog, &QProgressDialog::canceled, this, [this](){
+                if (m_updateProgressDialog) {
+                    m_updateProgressDialog->close();
+                }
+            });
+            m_updateProgressDialog->show();
+        }
+    }
+}
+
+void MainWindow::onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (m_updateProgressDialog && bytesTotal > 0) {
+        m_updateProgressDialog->setMaximum(100);
+        int percent = static_cast<int>((bytesReceived * 100) / bytesTotal);
+        m_updateProgressDialog->setValue(percent);
+    }
+}
+
+void MainWindow::onUpdateError(const QString &error)
+{
+    if (m_updateProgressDialog) {
+        m_updateProgressDialog->close();
+        m_updateProgressDialog->deleteLater();
+        m_updateProgressDialog = nullptr;
+        QMessageBox::warning(this, "更新失败", error);
+    } else {
+        qWarning() << "[AutoUpdater] Error:" << error;
+        // 如果是后台检查更新失败（通常是启动时），提示用户可能需要VPN
+        if (error.startsWith("检查更新失败")) {
+             QMessageBox::warning(this, "检查更新提示", 
+                "无法连接到 GitHub 更新服务器，无法检测新版本。\n\n"
+                "更新版本可能需要开启 VPN。\n"
+                "请开启 VPN 后重启软件重试。");
+        }
+
     }
 }
 

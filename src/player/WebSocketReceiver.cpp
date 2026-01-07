@@ -2515,7 +2515,14 @@ void WebSocketReceiver::setViewerName(const QString &name)
 
 void WebSocketReceiver::sendViewerCursor(int x, int y)
 {
-    if (!m_connected || !m_webSocket) {
+    QWebSocket *ws = m_webSocket;
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
+        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            ws = m_lanWebSocket;
+        }
+    }
+    
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
         return;
     }
     QString viewerId;
@@ -2531,6 +2538,7 @@ void WebSocketReceiver::sendViewerCursor(int x, int y)
         return;
     }
     if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qWarning() << "sendViewerCursor failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
     QJsonObject message;
@@ -2544,12 +2552,19 @@ void WebSocketReceiver::sendViewerCursor(int x, int y)
     }
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     QJsonDocument doc(message);
-    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    ws->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, int colorId)
 {
-    if (!m_connected || !m_webSocket) {
+    QWebSocket *ws = m_webSocket;
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
+        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            ws = m_lanWebSocket;
+        }
+    }
+    
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
         return;
     }
 
@@ -2563,6 +2578,7 @@ void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, 
     }
 
     if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qWarning() << "sendAnnotationEvent failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2583,13 +2599,24 @@ void WebSocketReceiver::sendAnnotationEvent(const QString &phase, int x, int y, 
     if (phase == "move") {
         moveEventCount++;
     } else {
+         qDebug().noquote() << "[WebSocketReceiver] sendAnnotationEvent phase=" << phase 
+                            << " x=" << x << " y=" << y 
+                            << " viewer=" << viewerId << " target=" << targetId
+                            << " ws=" << ws->requestUrl().toString();
     }
-    m_webSocket->sendTextMessage(jsonString);
+    ws->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, int colorId, int fontSize)
 {
-    if (!m_connected || !m_webSocket) {
+    QWebSocket *ws = m_webSocket;
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
+        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            ws = m_lanWebSocket;
+        }
+    }
+    
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
         return;
     }
 
@@ -2601,6 +2628,7 @@ void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, in
         targetId = m_lastTargetId;
     }
     if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qWarning() << "sendTextAnnotation failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2616,12 +2644,19 @@ void WebSocketReceiver::sendTextAnnotation(const QString &text, int x, int y, in
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
 
     QJsonDocument doc(message);
-    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    ws->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendSwitchScreenNext()
 {
-    if (!m_connected || !m_webSocket) {
+    QWebSocket *ws = m_webSocket;
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
+        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            ws = m_lanWebSocket;
+        }
+    }
+    
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
         return;
     }
 
@@ -2634,6 +2669,7 @@ void WebSocketReceiver::sendSwitchScreenNext()
     }
 
     if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qWarning() << "sendSwitchScreenNext failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2646,12 +2682,19 @@ void WebSocketReceiver::sendSwitchScreenNext()
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
-    m_webSocket->sendTextMessage(jsonString);
+    ws->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendLikeEvent()
 {
-    if (!m_connected || !m_webSocket) {
+    QWebSocket *ws = m_webSocket;
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
+        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            ws = m_lanWebSocket;
+        }
+    }
+    
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
         return;
     }
     QString viewerId;
@@ -2662,6 +2705,7 @@ void WebSocketReceiver::sendLikeEvent()
         targetId = m_lastTargetId;
     }
     if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qWarning() << "sendLikeEvent failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
     QJsonObject message;
@@ -2670,12 +2714,19 @@ void WebSocketReceiver::sendLikeEvent()
     message["target_id"] = targetId;
     message["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     QJsonDocument doc(message);
-    m_webSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    ws->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 }
 
 void WebSocketReceiver::sendSwitchScreenIndex(int index)
 {
-    if (!m_connected || !m_webSocket) {
+    QWebSocket *ws = m_webSocket;
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
+        if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+            ws = m_lanWebSocket;
+        }
+    }
+    
+    if (!ws || ws->state() != QAbstractSocket::ConnectedState) {
         return;
     }
 
@@ -2688,6 +2739,7 @@ void WebSocketReceiver::sendSwitchScreenIndex(int index)
     }
 
     if (viewerId.isEmpty() || targetId.isEmpty()) {
+        qWarning() << "sendSwitchScreenIndex failed: viewerId or targetId empty. viewer=" << viewerId << " target=" << targetId;
         return;
     }
 
@@ -2701,7 +2753,7 @@ void WebSocketReceiver::sendSwitchScreenIndex(int index)
 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
-    m_webSocket->sendTextMessage(jsonString);
+    ws->sendTextMessage(jsonString);
 }
 
 void WebSocketReceiver::sendStopStreaming()

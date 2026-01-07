@@ -40,6 +40,7 @@ private slots:
     void onUserListUpdated(const QJsonArray &users);
     void onLoginConnected();
     void toggleFunction1Maximize();
+    void onBroadcastBtnClicked();
 
 public:
     void setMyStreamId(const QString &id, const QString &name = QString());
@@ -79,6 +80,7 @@ signals:
     void closeRoomRequested();
     void talkToggleRequested(const QString &targetId, bool enabled);
     void avatarPixmapUpdated(const QString &userId, const QPixmap &pixmap);
+    void broadcastRequested(const QString &content);
 
 private:
     void setupUi();

@@ -919,6 +919,9 @@ void MainWindow::setupUI()
     connect(m_transparentImageList, &NewUiWindow::toggleStreamingIslandRequested,
             this, &MainWindow::onToggleStreamingIsland);
 
+    connect(m_transparentImageList, &NewUiWindow::broadcastRequested,
+            this, &MainWindow::sendBroadcastNotice);
+
     connect(m_transparentImageList, &NewUiWindow::kickViewerRequested,
             this, [this](const QString &viewerId) {
         if (!m_loginWebSocket) {
@@ -2403,7 +2406,6 @@ void MainWindow::showUserOnlineToast(const QString& userId, const QString& userN
     QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
     toast->setAttribute(Qt::WA_TranslucentBackground);
     toast->setAttribute(Qt::WA_ShowWithoutActivating);
-    toast->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
     QWidget *body = new QWidget(toast);
     body->setStyleSheet("background-color: rgba(255, 255, 255, 255); border: none; border-radius: 18px;");
@@ -2424,6 +2426,20 @@ void MainWindow::showUserOnlineToast(const QString& userId, const QString& userN
     QLabel *label = new QLabel(QStringLiteral("%1已上线 😊").arg(display), body);
     label->setStyleSheet("color: #111111; font-size: 24px; font-weight: 800; background: transparent;");
     bodyLayout->addWidget(label);
+
+    QPushButton *closeBtn = new QPushButton("×", body);
+    closeBtn->setFixedSize(24, 24);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton { color: #999; background: transparent; border: none; font-size: 20px; font-weight: bold; margin-top: -10px; }"
+        "QPushButton:hover { color: #333; }"
+    );
+    connect(closeBtn, &QPushButton::clicked, toast, &QWidget::deleteLater);
+    
+    QVBoxLayout *rightLayout = new QVBoxLayout();
+    rightLayout->addWidget(closeBtn);
+    rightLayout->addStretch();
+    bodyLayout->addLayout(rightLayout);
 
     QVBoxLayout *root = new QVBoxLayout(toast);
     root->setContentsMargins(0, 0, 0, 0);
@@ -2451,10 +2467,10 @@ void MainWindow::showUserOfflineToast(const QString& userId, const QString& user
     QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
     toast->setAttribute(Qt::WA_TranslucentBackground);
     toast->setAttribute(Qt::WA_ShowWithoutActivating);
-    toast->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
     QWidget *body = new QWidget(toast);
-    body->setStyleSheet("background-color: rgba(140, 70, 70, 255); border: none; border-radius: 18px;");
+    // Low saturation blue
+    body->setStyleSheet("background-color: rgba(70, 90, 120, 255); border: none; border-radius: 18px;");
     body->setMinimumSize(420, 96);
     QHBoxLayout *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(20, 18, 20, 18);
@@ -2472,6 +2488,20 @@ void MainWindow::showUserOfflineToast(const QString& userId, const QString& user
     QLabel *label = new QLabel(QStringLiteral("%1已下班").arg(display), body);
     label->setStyleSheet("color: #ffffff; font-size: 24px; font-weight: 800; background: transparent;");
     bodyLayout->addWidget(label);
+
+    QPushButton *closeBtn = new QPushButton("×", body);
+    closeBtn->setFixedSize(24, 24);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton { color: #ccc; background: transparent; border: none; font-size: 20px; font-weight: bold; margin-top: -10px; }"
+        "QPushButton:hover { color: #fff; }"
+    );
+    connect(closeBtn, &QPushButton::clicked, toast, &QWidget::deleteLater);
+    
+    QVBoxLayout *rightLayout = new QVBoxLayout();
+    rightLayout->addWidget(closeBtn);
+    rightLayout->addStretch();
+    bodyLayout->addLayout(rightLayout);
 
     QVBoxLayout *root = new QVBoxLayout(toast);
     root->setContentsMargins(0, 0, 0, 0);
@@ -2647,6 +2677,12 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
         updateUserList(users);
         if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
+    } else if (type == "broadcast_notice") {
+        QString content = obj["content"].toString();
+        QString sender = obj["sender_name"].toString();
+        // Use local time for display
+        QString timeStr = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+        showNoticeToast(content, sender, timeStr);
     } else if (type == "start_streaming_request") {
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
@@ -4167,4 +4203,97 @@ void MainWindow::saveUserNameToConfig(const QString &name)
         for (const QString &line : configLines) out << line << "\n";
         configFile.close();
     }
+}
+
+void MainWindow::sendBroadcastNotice(const QString& content)
+{
+    if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
+        QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("未连接到服务器，无法发布公告"));
+        return;
+    }
+
+    QJsonObject msg;
+    msg["type"] = "broadcast_notice";
+    msg["content"] = content;
+    msg["sender"] = m_userName.isEmpty() ? m_userId : m_userName;
+    msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    
+    m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::showNoticeToast(const QString& content, const QString& sender, const QString& timeStr)
+{
+    QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
+    toast->setAttribute(Qt::WA_TranslucentBackground);
+    toast->setAttribute(Qt::WA_ShowWithoutActivating);
+
+    QWidget *body = new QWidget(toast);
+    // Original offline red color
+    body->setStyleSheet("background-color: rgba(140, 70, 70, 255); border: none; border-radius: 18px;");
+    body->setMinimumSize(420, 96);
+    QHBoxLayout *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(20, 18, 20, 18);
+    bodyLayout->setSpacing(14);
+
+    QLabel *avatar = new QLabel(body);
+    avatar->setFixedSize(56, 56);
+    
+    QString appDir = QCoreApplication::applicationDirPath();
+    QPixmap pix(appDir + "/maps/logo/log.png");
+    if (pix.isNull()) {
+        pix = QPixmap(56, 56);
+        pix.fill(Qt::transparent);
+    } else {
+        pix = pix.scaled(56, 56, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    avatar->setPixmap(pix);
+    avatar->setAlignment(Qt::AlignCenter);
+    avatar->setStyleSheet("background: transparent;");
+    bodyLayout->addWidget(avatar);
+
+    QVBoxLayout *textLayout = new QVBoxLayout();
+    textLayout->setSpacing(4);
+    
+    QLabel *titleLabel = new QLabel(QStringLiteral("%1  %2").arg(sender, timeStr), body);
+    titleLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; font-weight: normal; background: transparent;");
+    textLayout->addWidget(titleLabel);
+
+    QLabel *contentLabel = new QLabel(content, body);
+    contentLabel->setStyleSheet("color: #ffffff; font-size: 16px; font-weight: 800; background: transparent;");
+    contentLabel->setWordWrap(true);
+    textLayout->addWidget(contentLabel);
+    
+    bodyLayout->addLayout(textLayout, 1);
+
+    QPushButton *closeBtn = new QPushButton("×", body);
+    closeBtn->setFixedSize(24, 24);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton { color: #ccc; background: transparent; border: none; font-size: 20px; font-weight: bold; margin-top: -10px; }"
+        "QPushButton:hover { color: #fff; }"
+    );
+    connect(closeBtn, &QPushButton::clicked, toast, &QWidget::deleteLater);
+    
+    QVBoxLayout *rightLayout = new QVBoxLayout();
+    rightLayout->addWidget(closeBtn);
+    rightLayout->addStretch();
+    bodyLayout->addLayout(rightLayout);
+
+    QVBoxLayout *root = new QVBoxLayout(toast);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->addWidget(body);
+
+    toast->adjustSize();
+    body->adjustSize();
+
+    m_onlineToasts.append(toast);
+
+    connect(toast, &QObject::destroyed, this, [this, toast]() {
+        m_onlineToasts.removeAll(toast);
+        repositionOnlineToasts();
+    });
+
+    repositionOnlineToasts();
+    toast->show();
+    toast->raise();
 }

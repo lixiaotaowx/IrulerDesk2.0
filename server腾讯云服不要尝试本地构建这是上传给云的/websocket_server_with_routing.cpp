@@ -545,6 +545,36 @@ private slots:
                         m_userLastHeartbeat[uid] = QDateTime::currentMSecsSinceEpoch();
                     }
                     return;
+                } else if (type == "broadcast_notice") {
+                    // 广播公告给所有登录客户端
+                    QString content = obj.value("content").toString();
+                    if (!content.isEmpty()) {
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "收到广播公告:" << content.left(50);
+                        
+                        // 构建广播消息
+                        QJsonObject noticeMsg;
+                        noticeMsg["type"] = "broadcast_notice";
+                        noticeMsg["content"] = content;
+                        noticeMsg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                        
+                        // 添加发布者信息
+                        if (m_loginUsers.contains(sender)) {
+                            noticeMsg["sender_name"] = m_loginUsers[sender].second;
+                        } else {
+                            noticeMsg["sender_name"] = "未知用户";
+                        }
+                        
+                        QJsonDocument doc(noticeMsg);
+                        QString jsonString = doc.toJson(QJsonDocument::Compact);
+                        
+                        for (QWebSocket *client : m_loginClients) {
+                            if (client->state() == QAbstractSocket::ConnectedState) {
+                                client->sendTextMessage(jsonString);
+                            }
+                        }
+                    }
+                    return;
                 } else if (type == "ping") {
                     // 处理轻量级心跳
                     QPair<QString, QString> ui = m_loginUsers.value(sender);

@@ -85,6 +85,7 @@ private slots:
     void onUserNameChanged(const QString &name);
     void onMicToggleRequested(bool enabled);
     void onSpeakerToggleRequested(bool enabled);
+    void sendBroadcastNotice(const QString& content);
 
 private:
     void setupUI();
@@ -148,8 +149,9 @@ private:
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
     void showUserOnlineToast(const QString& userId, const QString& userName, int iconId);
     void showUserOfflineToast(const QString& userId, const QString& userName, int iconId);
+    void showNoticeToast(const QString& content, const QString& sender, const QString& timeStr);
     void repositionOnlineToasts();
-
+    
     // 显示更新日志
     void checkAndShowUpdateLog();
     void startLanDiscoveryListener();

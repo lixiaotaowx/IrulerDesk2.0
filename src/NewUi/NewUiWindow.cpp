@@ -50,6 +50,7 @@
 #include <windows.h>
 #endif
 #include "../common/AppConfig.h"
+#include "../ui/BroadcastNoticeDialog.h"
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -1450,6 +1451,7 @@ void NewUiWindow::setupUi()
     toolBtn2->setCursor(Qt::PointingHandCursor);
     toolBtn2->setToolTip("日志");
     toolBtn2->installEventFilter(this);
+    connect(toolBtn2, &QPushButton::clicked, this, &NewUiWindow::onBroadcastBtnClicked);
 
     // clearn.png
     ResponsiveButton *toolBtn3 = new ResponsiveButton();
@@ -4072,4 +4074,11 @@ void NewUiWindow::updateUserAvatar(const QString &userId, int iconId)
 QString NewUiWindow::getCurrentUserId() const
 {
     return m_myStreamId;
+}
+
+void NewUiWindow::onBroadcastBtnClicked()
+{
+    BroadcastNoticeDialog dlg(this);
+    connect(&dlg, &BroadcastNoticeDialog::publishRequested, this, &NewUiWindow::broadcastRequested);
+    dlg.exec();
 }

@@ -1683,6 +1683,79 @@ int main(int argc, char *argv[])
         }
     });
 
+    // ============================================================
+    // [Fix Start] 局域网绘制支持补丁
+    // 原因：必须连接 lanSender 的信号，否则局域网下的绘制指令无法触发 Overlay
+    // ============================================================
+    if (lanSender) {
+        // 1. 核心绘制事件 (按下、移动、抬起、清除)
+        QObject::connect(lanSender, &WebSocketSender::annotationEventReceived,
+                         [&](const QString &phase, int x, int y, const QString &viewerId, int colorId) {
+            // 过滤：如果 LAN 未推流且不是清除命令，则忽略
+            if (!lanSender->isStreaming() && phase != QStringLiteral("clear")) {
+                return;
+            }
+            
+            // [可选] 调试日志，排查问题时非常有用 (排除 move 防止刷屏)
+            if (phase != "move") { 
+                 qDebug() << "[CaptureProcess][LAN] Annotation received:" << phase << "from" << viewerId << "at" << x << "," << y;
+            }
+
+            int idx = currentScreenIndex;
+            // 处理清除命令
+            if (phase == QStringLiteral("clear")) {
+                for (auto *ov : s_overlays) { if (ov) ov->clear(); }
+                for (auto *cv : s_cursorOverlays) { if (cv) cv->clear(); }
+                return;
+            }
+            
+            // 处理绘制命令
+            if (idx >= 0 && idx < s_overlays.size()) {
+                QSize logicalSize = s_overlays[idx]->size();
+                QSize enc = targetEncodeSize; // 确保使用当前编码分辨率进行映射
+                
+                // 坐标映射：将编码坐标 (视频流坐标) 转换为 Overlay 逻辑坐标
+                int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+                int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+                
+                s_overlays[idx]->onAnnotationEvent(phase, sx, sy, viewerId, colorId);
+                
+                // [关键修复] 强制 Overlay 置顶，防止被全屏游戏或视频遮挡
+                s_overlays[idx]->raise();
+                s_overlays[idx]->show(); 
+            }
+        });
+
+        // 2. 文本标注事件
+        QObject::connect(lanSender, &WebSocketSender::textAnnotationReceived,
+                         [&](const QString &text, int x, int y, const QString &viewerId, int colorId, int fontSize) {
+            if (!lanSender->isStreaming()) return;
+            int idx = currentScreenIndex;
+            if (idx >= 0 && idx < s_overlays.size()) {
+                QSize logicalSize = s_overlays[idx]->size();
+                QSize enc = targetEncodeSize;
+                
+                int sx = enc.width() > 0 ? qRound(double(x) * double(logicalSize.width()) / double(enc.width())) : x;
+                int sy = enc.height() > 0 ? qRound(double(y) * double(logicalSize.height()) / double(enc.height())) : y;
+                
+                s_overlays[idx]->onTextAnnotation(text, sx, sy, viewerId, colorId, fontSize);
+            }
+        });
+        
+        // 3. 点赞事件
+        QObject::connect(lanSender, &WebSocketSender::likeRequested,
+                         [&](const QString &viewerId) {
+            if (!lanSender->isStreaming()) return;
+            int idx = currentScreenIndex;
+            if (idx >= 0 && idx < s_overlays.size()) {
+                s_overlays[idx]->onLikeRequested(viewerId);
+            }
+        });
+    }
+    // ============================================================
+    // [Fix End]
+    // ============================================================
+
     
     const auto screens = QApplication::screens();
     int screenIndex = getScreenIndexFromConfig();

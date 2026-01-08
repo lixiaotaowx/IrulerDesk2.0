@@ -1910,7 +1910,10 @@ void NewUiWindow::setupUi()
         QScreen *screen = QGuiApplication::primaryScreen();
         QPixmap srcPix;
         if (screen) {
-             QPixmap original = screen->grabWindow(0);
+             QPixmap original = screen->grabWindow(0,
+                 screen->geometry().x(), screen->geometry().y(),
+                 screen->size().width(), screen->size().height());
+             original.setDevicePixelRatio(1.0);
              srcPix = original.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
         } else {
              srcPix = QPixmap(m_cardBaseWidth, (int)(m_cardBaseWidth/1.77));
@@ -1919,6 +1922,7 @@ void NewUiWindow::setupUi()
 
         // Process Image (Rounded Corners)
         QPixmap pixmap(m_imgWidth, m_imgHeight); 
+        pixmap.setDevicePixelRatio(1.0);
         pixmap.fill(Qt::transparent);
         QPainter p(&pixmap);
         p.setRenderHint(QPainter::Antialiasing);
@@ -2956,7 +2960,10 @@ void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
 
     QPixmap originalPixmap;
     for (QScreen *s : candidates) {
-        originalPixmap = s->grabWindow(0);
+        originalPixmap = s->grabWindow(0,
+            s->geometry().x(), s->geometry().y(),
+            s->size().width(), s->size().height());
+        originalPixmap.setDevicePixelRatio(1.0);
         if (!originalPixmap.isNull()) {
             break;
         }
@@ -3084,7 +3091,10 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
 
     QPixmap originalPixmap;
     for (QScreen *s : candidates) {
-        originalPixmap = s->grabWindow(0);
+        originalPixmap = s->grabWindow(0,
+            s->geometry().x(), s->geometry().y(),
+            s->size().width(), s->size().height());
+        originalPixmap.setDevicePixelRatio(1.0);
         if (!originalPixmap.isNull()) {
             break;
         }

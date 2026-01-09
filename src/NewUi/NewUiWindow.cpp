@@ -2823,15 +2823,33 @@ void NewUiWindow::setGlobalMicCheckedSilently(bool enabled)
 
 void NewUiWindow::updateViewerNameIfExists(const QString &id, const QString &name)
 {
-    if (!m_viewerItems.contains(id)) return;
-    QListWidgetItem *existingItem = m_viewerItems.value(id);
-    if (!existingItem) return;
-    QWidget *w = m_viewerList ? m_viewerList->itemWidget(existingItem) : nullptr;
-    if (!w) return;
-    QList<QLabel*> labels = w->findChildren<QLabel*>();
-    for (auto label : labels) {
-        label->setText(name.isEmpty() ? id : name);
-        break;
+    // 1. Update Viewer List (Right Panel)
+    if (m_viewerItems.contains(id)) {
+        QListWidgetItem *existingItem = m_viewerItems.value(id);
+        if (existingItem) {
+            QWidget *w = m_viewerList ? m_viewerList->itemWidget(existingItem) : nullptr;
+            if (w) {
+                QList<QLabel*> labels = w->findChildren<QLabel*>();
+                for (auto label : labels) {
+                    label->setText(name.isEmpty() ? id : name);
+                    break;
+                }
+            }
+        }
+    }
+
+    // 2. Update Main User List (Cards)
+    if (m_userItems.contains(id)) {
+        QListWidgetItem *existingItem = m_userItems.value(id);
+        if (existingItem && m_listWidget) {
+            QWidget *w = m_listWidget->itemWidget(existingItem);
+            if (w) {
+                QLabel *lbl = w->findChild<QLabel*>("UserNameLabel");
+                if (lbl) {
+                    lbl->setText(name.isEmpty() ? id : name);
+                }
+            }
+        }
     }
 }
 
@@ -3738,6 +3756,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
     // Name Label
     QLabel *txtLabel = new QLabel(displayName);
+    txtLabel->setObjectName("UserNameLabel");
     txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
     txtLabel->setAlignment(Qt::AlignCenter);
 

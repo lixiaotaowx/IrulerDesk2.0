@@ -60,6 +60,14 @@
 #include "AnnotationOverlay.h"
 #include "CursorOverlay.h"
 
+// Forward declarations
+QString getLocalQualityFromConfig();
+QString getUserNameFromConfig();
+bool getMicEnabledFromConfig();
+QString getDeviceIdFromConfig();
+QString getServerAddressFromConfig();
+int getScreenIndexFromConfig();
+
 namespace {
 class LanRelayServer final : public QObject
 {
@@ -257,9 +265,10 @@ private:
 class LanDiscoveryBroadcaster final : public QObject
 {
 public:
-    explicit LanDiscoveryBroadcaster(const QString &deviceId, QObject *parent = nullptr)
+    explicit LanDiscoveryBroadcaster(const QString &deviceId, const QString &userName, QObject *parent = nullptr)
         : QObject(parent)
         , m_deviceId(deviceId)
+        , m_userName(userName)
     {
         m_socket = new QUdpSocket(this);
         m_timer = new QTimer(this);
@@ -276,6 +285,7 @@ private:
     QUdpSocket *m_socket = nullptr;
     QTimer *m_timer = nullptr;
     QString m_deviceId;
+    QString m_userName;
     qint64 m_lastLogAtMs = 0;
 
     void scheduleNext(int minDelayMs = 0)
@@ -299,12 +309,25 @@ private:
             return;
         }
 
+        // [Fix] Refresh username from config periodically (every ~10 seconds) or if empty
+        // This handles the case where CaptureProcess starts before user completes wizard
+        static int cycleCount = 0;
+        if ((++cycleCount % 5) == 0 || m_userName.isEmpty()) {
+             QString newName = getUserNameFromConfig();
+             if (!newName.isEmpty() && newName != m_userName) {
+                 m_userName = newName;
+                 // Force log next time
+                 m_lastLogAtMs = 0;
+             }
+        }
+
         const quint16 udpPort = static_cast<quint16>(AppConfig::lanDiscoveryPort());
         const quint16 wsPort = static_cast<quint16>(AppConfig::lanWsPort());
 
         QJsonObject obj;
         obj["type"] = QStringLiteral("lan_announce");
         obj["device_id"] = m_deviceId;
+        obj["user_name"] = m_userName;
         obj["ws_port"] = static_cast<int>(wsPort);
         obj["ts"] = QDateTime::currentMSecsSinceEpoch();
         obj["nonce"] = QString::number(QRandomGenerator::global()->generate64(), 16);
@@ -342,10 +365,14 @@ private:
         }
 
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (nowMs - m_lastLogAtMs > 60000) {
+        // Log more frequently if username is missing to help debugging
+        bool forceLog = m_userName.isEmpty() && (nowMs - m_lastLogAtMs > 10000);
+        
+        if (forceLog || nowMs - m_lastLogAtMs > 60000) {
             m_lastLogAtMs = nowMs;
             qInfo().noquote() << "[KickDiag][LanDiscovery] broadcast"
                               << " device_id=" << m_deviceId
+                              << " user_name=" << (m_userName.isEmpty() ? "<EMPTY>" : m_userName)
                               << " ws_port=" << wsPort
                               << " udp_port=" << udpPort;
         }
@@ -358,84 +385,23 @@ private:
 // 新增：读取本地默认质量设置
 QString getLocalQualityFromConfig()
 {
-    QStringList configPaths;
-    // 覆盖多种位置，兼容现有读取策略
-    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
-    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/app_config.txt";
-    configPaths << QDir::currentPath() + "/config/app_config.txt";
-    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-
-    for (const QString& path : configPaths) {
-        QFile configFile(path);
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&configFile);
-            while (!in.atEnd()) {
-                QString line = in.readLine().trimmed();
-                if (line.startsWith("local_quality=")) {
-                    QString q = line.mid(QString("local_quality=").length()).toLower();
-                    configFile.close();
-                    if (q == "low" || q == "medium" || q == "high" || q == "extreme") {
-                        return q;
-                    }
-                }
-            }
-            configFile.close();
-        }
+    QString q = AppConfig::readConfigValue(QStringLiteral("local_quality")).toLower();
+    if (q == "low" || q == "medium" || q == "high" || q == "extreme") {
+        return q;
     }
     return "medium";
 }
 
 QString getUserNameFromConfig()
 {
-    QStringList configPaths;
-    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
-    configPaths << QDir::currentPath() + "/config/app_config.txt";
-    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-
-    for (const QString& path : configPaths) {
-        QFile configFile(path);
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&configFile);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-            in.setEncoding(QStringConverter::Utf8);
-#else
-            in.setCodec("UTF-8");
-#endif
-            while (!in.atEnd()) {
-                QString line = in.readLine().trimmed();
-                if (line.startsWith("user_name=")) {
-                    QString name = line.mid(10).trimmed();
-                    configFile.close();
-                    if (!name.isEmpty()) return name;
-                }
-            }
-            configFile.close();
-        }
-    }
-    return "";
+    return AppConfig::readConfigValue(QStringLiteral("user_name"));
 }
 
 bool getMicEnabledFromConfig()
 {
-    QStringList configPaths;
-    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
-    configPaths << QDir::currentPath() + "/config/app_config.txt";
-    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-
-    for (const QString& path : configPaths) {
-        QFile configFile(path);
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&configFile);
-            while (!in.atEnd()) {
-                const QString line = in.readLine().trimmed();
-                if (line.startsWith("mic_enabled=")) {
-                    const QString v = line.mid(QString("mic_enabled=").length()).trimmed();
-                    configFile.close();
-                    return v.compare("true", Qt::CaseInsensitive) == 0;
-                }
-            }
-            configFile.close();
-        }
+    QString v = AppConfig::readConfigValue(QStringLiteral("mic_enabled"));
+    if (!v.isEmpty()) {
+        return v.compare("true", Qt::CaseInsensitive) == 0;
     }
     return true;
 }
@@ -443,40 +409,9 @@ bool getMicEnabledFromConfig()
 // 从配置文件读取设备ID
 QString getDeviceIdFromConfig()
 {
-    // 尝试多个可能的配置文件路径
-    QStringList possiblePaths;
-    
-    // 路径1：使用AppDataLocation
-    QString configDir1 = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    possiblePaths << configDir1 + "/config/app_config.txt";
-    
-    // 路径2：使用当前工作目录
-    possiblePaths << QDir::currentPath() + "/config/app_config.txt";
-    
-    // 路径3：使用应用程序目录
-    QString appDir = QCoreApplication::applicationDirPath();
-    possiblePaths << appDir + "/config/app_config.txt";
-    
-    // qDebug() << "[CaptureProcess] 尝试读取配置文件，可能的路径:";
-    // for (const QString& path : possiblePaths) {
-    //     qDebug() << "[CaptureProcess]   - " << path;
-    // }
-    
-    for (const QString& configFilePath : possiblePaths) {
-        QFile file(configFilePath);
-        if (file.exists() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&file);
-            while (!in.atEnd()) {
-                QString line = in.readLine().trimmed();
-                if (line.startsWith("random_id=")) {
-                    QString id = line.mid(10).trimmed(); // "random_id=".length() == 10
-                    // qInfo().noquote() << "[KickDiag][AppConfig] Found Device ID in " << configFilePath << ": " << id;
-                    file.close();
-                    return id;
-                }
-            }
-            file.close();
-        }
+    QString id = AppConfig::readConfigValue(QStringLiteral("random_id"));
+    if (!id.isEmpty()) {
+        return id;
     }
     
     // 如果没有找到配置文件或random_id，使用时间戳生成一个临时的（仅用于测试）
@@ -493,27 +428,12 @@ QString getServerAddressFromConfig()
 // 新增：读取屏幕索引
 int getScreenIndexFromConfig()
 {
-    QStringList configPaths;
-    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/app_config.txt";
-    configPaths << QDir::currentPath() + "/config/app_config.txt";
-    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-
-    for (const QString& path : configPaths) {
-        QFile configFile(path);
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&configFile);
-            while (!in.atEnd()) {
-                QString line = in.readLine().trimmed();
-                if (line.startsWith("screen_index=")) {
-                    bool ok = false;
-                    int idx = line.mid(QString("screen_index=").length()).toInt(&ok);
-                    if (ok && idx >= 0) {
-                        configFile.close();
-                        return idx;
-                    }
-                }
-            }
-            configFile.close();
+    QString v = AppConfig::readConfigValue(QStringLiteral("screen_index"));
+    if (!v.isEmpty()) {
+        bool ok = false;
+        int idx = v.toInt(&ok);
+        if (ok && idx >= 0) {
+            return idx;
         }
     }
     return 0; // 默认主屏索引0
@@ -522,7 +442,7 @@ int getScreenIndexFromConfig()
 // 新增：保存屏幕索引到配置
 static void saveScreenIndexToConfig(int screenIndex)
 {
-    QString configFilePath = QCoreApplication::applicationDirPath() + "/config/app_config.txt";
+    QString configFilePath = AppConfig::configFilePathInAppDir();
     QDir dir(QFileInfo(configFilePath).path());
     if (!dir.exists()) {
         dir.mkpath(".");
@@ -573,12 +493,13 @@ public:
         
         connect(m_timer, &QTimer::timeout, this, &WatchdogClient::sendHeartbeat);
         connect(m_socket, &QLocalSocket::readyRead, this, &WatchdogClient::onDataReceived);
+        connect(m_socket, &QLocalSocket::connected, this, &WatchdogClient::onConnected);
         
         // 尝试连接
         m_socket->connectToServer(serverName);
         
-        // 每1秒发送一次心跳
-        m_timer->start(1000);
+        // 每200ms尝试连接/发送心跳，提高连接响应速度
+        m_timer->start(200);
     }
 
     void notifyViewerExited(const QString &viewerId)
@@ -586,10 +507,31 @@ public:
         if (viewerId.isEmpty()) {
             return;
         }
-        if (m_socket->state() == QLocalSocket::ConnectedState) {
-            m_socket->write(QByteArray("EVT_VIEWER_EXIT:") + viewerId.toUtf8() + "\n");
-            m_socket->flush();
+        queueMessage(QByteArray("EVT_VIEWER_EXIT:") + viewerId.toUtf8() + "\n");
+    }
+
+    void notifyViewerJoined(const QString &viewerId, const QString &viewerName)
+    {
+        if (viewerId.isEmpty()) {
+            return;
         }
+        qInfo().noquote() << "[WatchdogClient] notifyViewerJoined id=" << viewerId << " name=" << viewerName;
+        QByteArray payload = "EVT_VIEWER_JOINED:" + viewerId.toUtf8();
+        if (!viewerName.isEmpty()) {
+            payload += ":" + viewerName.toUtf8();
+        }
+        payload += "\n";
+        queueMessage(payload);
+    }
+
+    void notifyViewerName(const QString &viewerId, const QString &viewerName)
+    {
+        if (viewerId.isEmpty()) {
+            return;
+        }
+        qInfo().noquote() << "[WatchdogClient] notifyViewerName id=" << viewerId << " name=" << viewerName;
+        QByteArray payload = "EVT_VIEWER_NAME:" + viewerId.toUtf8() + ":" + viewerName.toUtf8() + "\n";
+        queueMessage(payload);
     }
 
     void notifyViewerMicState(const QString &viewerId, bool enabled)
@@ -597,10 +539,7 @@ public:
         if (viewerId.isEmpty()) {
             return;
         }
-        if (m_socket->state() == QLocalSocket::ConnectedState) {
-            m_socket->write(QByteArray("EVT_VIEWER_MIC:") + viewerId.toUtf8() + (enabled ? ":1\n" : ":0\n"));
-            m_socket->flush();
-        }
+        queueMessage(QByteArray("EVT_VIEWER_MIC:") + viewerId.toUtf8() + (enabled ? ":1\n" : ":0\n"));
     }
 
 signals:
@@ -614,11 +553,20 @@ private slots:
     void sendHeartbeat() {
         if (m_socket->state() == QLocalSocket::ConnectedState) {
             m_socket->write("1\n");
-            m_socket->flush();
+            // m_socket->flush();
         } else if (m_socket->state() == QLocalSocket::UnconnectedState) {
             // 如果连接断开，尝试重连
             m_socket->connectToServer(m_socket->serverName());
         }
+    }
+
+    void onConnected() {
+        qDebug() << "[WatchdogClient] Connected. Flushing" << m_pendingMessages.size() << "messages.";
+        while (!m_pendingMessages.isEmpty()) {
+            QByteArray msg = m_pendingMessages.dequeue();
+            m_socket->write(msg);
+        }
+        // m_socket->flush();
     }
 
     void onDataReceived() {
@@ -661,6 +609,20 @@ private slots:
 private:
     QLocalSocket* m_socket;
     QTimer* m_timer;
+    QQueue<QByteArray> m_pendingMessages;
+
+    void queueMessage(const QByteArray &msg) {
+        if (m_socket->state() == QLocalSocket::ConnectedState) {
+            m_socket->write(msg);
+            // m_socket->flush();
+        } else {
+            m_pendingMessages.enqueue(msg);
+            // Limit queue size to prevent infinite growth
+            if (m_pendingMessages.size() > 100) {
+                m_pendingMessages.dequeue();
+            }
+        }
+    }
 };
 
 int main(int argc, char *argv[])
@@ -674,6 +636,16 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     AppConfig::applyApplicationInfo(app);
+
+    // [Fix] 提前启动 LAN 发现广播，解决房间列表显示延迟问题
+    if (AppConfig::lanWsEnabled() && AppConfig::lanDiscoveryEnabled()) {
+        QString earlyDeviceId = getDeviceIdFromConfig();
+        QString earlyUserName = getUserNameFromConfig();
+        auto *b = new LanDiscoveryBroadcaster(earlyDeviceId, earlyUserName, &app);
+        b->start();
+        qInfo() << "[CaptureProcess] LanDiscoveryBroadcaster started early with username:" << earlyUserName;
+    }
+
     QNetworkProxyFactory::setUseSystemConfiguration(false);
     QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     app.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/maps/logo/iruler.ico"));
@@ -2015,6 +1987,8 @@ int main(int argc, char *argv[])
         });
     }
 
+    static QMap<QString, QString> viewerNames;
+
     auto isManualApprovalEnabledFromConfig = []() -> bool {
         QStringList paths;
         paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
@@ -2038,9 +2012,11 @@ int main(int argc, char *argv[])
     };
 
     auto handleWatchRequest = [&](WebSocketSender *src, const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId) {
-        Q_UNUSED(viewerName);
         Q_UNUSED(targetId);
         Q_UNUSED(iconId);
+        if (!viewerId.isEmpty()) {
+            viewerNames[viewerId] = viewerName;
+        }
         if (!src) {
             return;
         }
@@ -2083,6 +2059,9 @@ int main(int argc, char *argv[])
     QObject::connect(sender, &WebSocketSender::viewerJoined, [&](const QString &viewerId) {
         if (!viewerId.isEmpty()) {
             cloudViewerIds.insert(viewerId);
+            if (watchdog) {
+                watchdog->notifyViewerJoined(viewerId, viewerNames.value(viewerId));
+            }
         }
         stopNoViewerStopTimer();
     });
@@ -2090,8 +2069,46 @@ int main(int argc, char *argv[])
         QObject::connect(lanSender, &WebSocketSender::viewerJoined, [&](const QString &viewerId) {
             if (!viewerId.isEmpty()) {
                 lanViewerIds.insert(viewerId);
+                if (watchdog) {
+                    watchdog->notifyViewerJoined(viewerId, viewerNames.value(viewerId));
+                }
             }
             stopNoViewerStopTimer();
+        });
+    }
+
+    QObject::connect(sender, &WebSocketSender::viewerNameUpdateReceived,
+                     [&](const QString &viewerId, const QString &viewerName) {
+        if (!viewerId.isEmpty()) {
+            viewerNames[viewerId] = viewerName;
+            if (watchdog) {
+                watchdog->notifyViewerName(viewerId, viewerName);
+            }
+        }
+        if (!isAnyStreaming()) {
+            return;
+        }
+        int idx = currentScreenIndex;
+        if (idx >= 0 && idx < s_cursorOverlays.size()) {
+            s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
+        }
+    });
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::viewerNameUpdateReceived,
+                         [&](const QString &viewerId, const QString &viewerName) {
+            if (!viewerId.isEmpty()) {
+                viewerNames[viewerId] = viewerName;
+                if (watchdog) {
+                    watchdog->notifyViewerName(viewerId, viewerName);
+                }
+            }
+            if (!isAnyStreaming()) {
+                return;
+            }
+            int idx = currentScreenIndex;
+            if (idx >= 0 && idx < s_cursorOverlays.size()) {
+                s_cursorOverlays[idx]->onViewerNameUpdate(viewerId, viewerName);
+            }
         });
     }
 
@@ -2099,6 +2116,7 @@ int main(int argc, char *argv[])
         if (viewerId.isEmpty()) {
             return;
         }
+        viewerNames.remove(viewerId);
         if (!viewerId.isEmpty()) {
             if (src == lanSender) {
                 lanViewerIds.remove(viewerId);
@@ -2676,10 +2694,7 @@ int main(int argc, char *argv[])
     }
     qWarning().noquote() << "[CaptureProcess] ==============================================";
 
-    if (AppConfig::lanWsEnabled() && AppConfig::lanDiscoveryEnabled()) {
-        auto *b = new LanDiscoveryBroadcaster(deviceId, &app);
-        b->start();
-    }
+    // [Moved] LanDiscoveryBroadcaster is now started early at the beginning of main()
 
     // 定期输出状态日志，确保用户知道进程还在运行以及ID是什么
     QTimer *aliveTimer = new QTimer(&app);

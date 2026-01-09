@@ -71,6 +71,9 @@ inline QStringList configFileCandidatePaths()
 {
     QStringList paths;
     paths << configFilePathInAppDir();
+    // [Fix] Handle case where executable is in a subdirectory (e.g., bin/)
+    paths << QCoreApplication::applicationDirPath() + QStringLiteral("/../config/app_config.txt");
+    
     paths << QDir::currentPath() + QStringLiteral("/config/app_config.txt");
     const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if (!appData.isEmpty()) {
@@ -383,6 +386,26 @@ inline QStringList lanBaseUrlsForTarget(const QString &targetId)
     if (targetId.isEmpty()) return {};
     QMutexLocker locker(&lanBaseUrlMutex());
     return lanBaseUrlsByTarget().value(targetId);
+}
+
+inline QHash<QString, QString> &lanUserNamesByTarget()
+{
+    static QHash<QString, QString> map;
+    return map;
+}
+
+inline void setLanUserNameForTarget(const QString &targetId, const QString &userName)
+{
+    if (targetId.isEmpty()) return;
+    QMutexLocker locker(&lanBaseUrlMutex());
+    lanUserNamesByTarget().insert(targetId, userName);
+}
+
+inline QString lanUserNameForTarget(const QString &targetId)
+{
+    if (targetId.isEmpty()) return QString();
+    QMutexLocker locker(&lanBaseUrlMutex());
+    return lanUserNamesByTarget().value(targetId);
 }
 
 }

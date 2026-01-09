@@ -503,6 +503,7 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
 
         qInfo().noquote() << "[KickDiag][Sender] rx watch_request"
                           << " viewer_id=" << viewerId
+                          << " viewer_name=" << viewerName
                           << " target_id=" << targetId
                           << " manual=" << isManualApprovalEnabled()
                           << " waiting=" << m_waitingForApproval;
@@ -527,11 +528,13 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             m_waitingForApproval = true;
             sendApprovalRequired(viewerId, targetId);
             if (!viewerId.isEmpty()) {
+                emit viewerNameUpdateReceived(viewerId, viewerName);
                 emit viewerJoined(viewerId);
             }
             emit watchRequestReceived(viewerId, viewerName, targetId, iconId);
         } else {
             if (!viewerId.isEmpty()) {
+                emit viewerNameUpdateReceived(viewerId, viewerName);
                 emit viewerJoined(viewerId);
             }
             if (m_isStreaming) {
@@ -561,6 +564,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         if (vid.isEmpty()) vid = obj.value("user_id").toString();
         if (vid.isEmpty()) vid = obj.value("id").toString();
         if (!vid.isEmpty()) {
+            QString vname = obj.value("viewer_name").toString();
+            if (!vname.isEmpty()) {
+                 if (m_viewerName != vname) {
+                     m_viewerName = vname;
+                     emit viewerNameChanged(m_viewerName);
+                 }
+                 emit viewerNameUpdateReceived(vid, vname);
+            }
             emit viewerJoined(vid);
         }
         const bool audioOnlySpecified = obj.contains("audio_only") || obj.contains("action");

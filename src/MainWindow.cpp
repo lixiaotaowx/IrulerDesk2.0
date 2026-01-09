@@ -292,6 +292,16 @@ void MainWindow::startLanDiscoveryListener()
                 continue;
             }
 
+            const QString userName = obj.value(QStringLiteral("user_name")).toString().trimmed();
+            if (!userName.isEmpty()) {
+                AppConfig::setLanUserNameForTarget(targetId, userName);
+                if (m_transparentImageList) {
+                    m_transparentImageList->updateViewerNameIfExists(targetId, userName);
+                    // [Fix] Ensure LAN users are added to the list immediately
+                    m_transparentImageList->addUser(targetId, userName);
+                }
+            }
+
             int wsPort = obj.value(QStringLiteral("ws_port")).toInt(AppConfig::lanWsPort());
             if (wsPort <= 0 || wsPort > 65535) {
                 wsPort = AppConfig::lanWsPort();
@@ -1558,6 +1568,8 @@ void MainWindow::onWatchdogDataReady()
 
     static const QByteArray kViewerExitPrefix("EVT_VIEWER_EXIT:");
     static const QByteArray kViewerMicPrefix("EVT_VIEWER_MIC:");
+    static const QByteArray kViewerJoinedPrefix("EVT_VIEWER_JOINED:");
+    static const QByteArray kViewerNamePrefix("EVT_VIEWER_NAME:");
     int idx = -1;
     while ((idx = m_watchdogRxBuffer.indexOf('\n')) >= 0) {
         QByteArray line = m_watchdogRxBuffer.left(idx).trimmed();
@@ -1596,6 +1608,30 @@ void MainWindow::onWatchdogDataReady()
                 const bool enabled = (stateBytes == "1");
                 if (!viewerId.isEmpty() && m_transparentImageList) {
                     m_transparentImageList->setViewerMicState(viewerId, enabled);
+                }
+            }
+        } else if (line.startsWith(kViewerJoinedPrefix)) {
+            const QByteArray payload = line.mid(kViewerJoinedPrefix.size()).trimmed();
+            const int sep = payload.indexOf(':');
+            QString viewerId;
+            QString viewerName;
+            if (sep > 0) {
+                viewerId = QString::fromUtf8(payload.left(sep));
+                viewerName = QString::fromUtf8(payload.mid(sep + 1));
+            } else {
+                viewerId = QString::fromUtf8(payload);
+            }
+            if (!viewerId.isEmpty() && m_transparentImageList) {
+                m_transparentImageList->addViewer(viewerId, viewerName);
+            }
+        } else if (line.startsWith(kViewerNamePrefix)) {
+            const QByteArray payload = line.mid(kViewerNamePrefix.size()).trimmed();
+            const int sep = payload.indexOf(':');
+            if (sep > 0) {
+                const QString viewerId = QString::fromUtf8(payload.left(sep));
+                const QString viewerName = QString::fromUtf8(payload.mid(sep + 1));
+                if (!viewerId.isEmpty() && m_transparentImageList) {
+                    m_transparentImageList->updateViewerNameIfExists(viewerId, viewerName);
                 }
             }
         }

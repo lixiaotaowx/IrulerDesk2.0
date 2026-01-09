@@ -129,34 +129,17 @@ static int pickBestOpusSampleRate(const QAudioDevice &inDev) {
     return inDev.preferredFormat().sampleRate();
 }
 
-static QString loadUserNameFromConfigForReceiver()
+static QString resolveViewerName(const QString &cachedName)
 {
-    QStringList configPaths;
-    configPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/config/app_config.txt";
-    configPaths << QDir::currentPath() + "/config/app_config.txt";
-    configPaths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-
-    for (const QString& path : configPaths) {
-        QFile configFile(path);
-        if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&configFile);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-            in.setEncoding(QStringConverter::Utf8);
-#else
-            in.setCodec("UTF-8");
-#endif
-            while (!in.atEnd()) {
-                QString line = in.readLine().trimmed();
-                if (line.startsWith("user_name=")) {
-                    QString name = line.mid(QString("user_name=").length()).trimmed();
-                    configFile.close();
-                    if (!name.isEmpty()) return name;
-                }
-            }
-            configFile.close();
-        }
+    if (!cachedName.isEmpty()) return cachedName;
+    QString name = AppConfig::readConfigValue("user_name");
+    if (name.isEmpty()) {
+        name = QHostInfo::localHostName();
     }
-    return QString();
+    if (name.isEmpty()) {
+        name = QStringLiteral("访客");
+    }
+    return name;
 }
 
 WebSocketReceiver::WebSocketReceiver(QObject *parent)
@@ -587,6 +570,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         QString viewerId;
         QString targetId;
         QString url;
+        QString viewerName;
         bool shouldRetry = false;
         int attempt = 0;
         {
@@ -602,6 +586,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             }
             viewerId = m_lastViewerId;
             targetId = m_lastTargetId;
+            viewerName = m_lastViewerName;
             url = m_serverUrl;
             m_videoStartRetryCount++;
             attempt = m_videoStartRetryCount;
@@ -617,6 +602,7 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         startStreamingMessage["type"] = "start_streaming";
         startStreamingMessage["viewer_id"] = viewerId;
         startStreamingMessage["target_id"] = targetId;
+        startStreamingMessage["viewer_name"] = resolveViewerName(viewerName);
         {
             QMutexLocker locker(&m_mutex);
             if (m_lastWatchAudioOnly) {
@@ -1585,6 +1571,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             bool shouldStart = false;
             QString viewerIdCopy;
             QString targetIdCopy;
+            QString viewerNameCopy;
             bool audioOnlyCopy = false;
             {
                 QMutexLocker locker(&m_mutex);
@@ -1604,6 +1591,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 }
                 viewerIdCopy = m_lastViewerId;
                 targetIdCopy = m_lastTargetId;
+                viewerNameCopy = m_lastViewerName;
                 audioOnlyCopy = m_lastWatchAudioOnly;
                 m_lanAwaitingFirstFrame = true;
                 shouldStart = !viewerIdCopy.isEmpty() && !targetIdCopy.isEmpty();
@@ -1617,6 +1605,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 startStreamingMessage["type"] = "start_streaming";
                 startStreamingMessage["viewer_id"] = viewerIdCopy;
                 startStreamingMessage["target_id"] = targetIdCopy;
+                startStreamingMessage["viewer_name"] = resolveViewerName(viewerNameCopy);
                 if (audioOnlyCopy) {
                     startStreamingMessage["audio_only"] = true;
                     startStreamingMessage["action"] = "audio_only";
@@ -1635,6 +1624,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 QWebSocket *ws = nullptr;
                 QString viewerIdCopy;
                 QString targetIdCopy;
+                QString viewerNameCopy;
                 bool audioOnlyCopy = false;
                 {
                     QMutexLocker locker(&m_mutex);
@@ -1642,6 +1632,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                     ws = m_lanWebSocket;
                     viewerIdCopy = m_lastViewerId;
                     targetIdCopy = m_lastTargetId;
+                    viewerNameCopy = m_lastViewerName;
                     audioOnlyCopy = m_lastWatchAudioOnly;
                 }
                 if (!ws || ws->state() != QAbstractSocket::ConnectedState) return;
@@ -1650,6 +1641,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 startStreamingMessage["type"] = "start_streaming";
                 startStreamingMessage["viewer_id"] = viewerIdCopy;
                 startStreamingMessage["target_id"] = targetIdCopy;
+                startStreamingMessage["viewer_name"] = resolveViewerName(viewerNameCopy);
                 if (audioOnlyCopy) {
                     startStreamingMessage["audio_only"] = true;
                     startStreamingMessage["action"] = "audio_only";
@@ -2320,13 +2312,16 @@ void WebSocketReceiver::updateStats()
             startStreamingMessage["type"] = "start_streaming";
             startStreamingMessage["viewer_id"] = nudgeViewerId;
             startStreamingMessage["target_id"] = nudgeTargetId;
+            QString viewerName;
             {
                 QMutexLocker locker(&m_mutex);
+                viewerName = m_lastViewerName;
                 if (m_lastWatchAudioOnly) {
                     startStreamingMessage["audio_only"] = true;
                     startStreamingMessage["action"] = "audio_only";
                 }
             }
+            startStreamingMessage["viewer_name"] = resolveViewerName(viewerName);
             m_webSocket->sendTextMessage(QJsonDocument(startStreamingMessage).toJson(QJsonDocument::Compact));
             sendRequestKeyFrame();
         });
@@ -2405,15 +2400,7 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
         QMutexLocker locker(&m_mutex);
         viewerName = m_lastViewerName;
     }
-    if (viewerName.isEmpty()) {
-        viewerName = loadUserNameFromConfigForReceiver();
-    }
-    if (viewerName.isEmpty()) {
-        viewerName = QHostInfo::localHostName();
-    }
-    if (viewerName.isEmpty()) {
-        viewerName = QStringLiteral("访客");
-    }
+    viewerName = resolveViewerName(viewerName);
     {
         QMutexLocker locker(&m_mutex);
         if (m_lastViewerName.isEmpty()) {
@@ -2437,6 +2424,7 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     startStreamingMessage["type"] = "start_streaming";
     startStreamingMessage["viewer_id"] = viewerId;
     startStreamingMessage["target_id"] = targetId;
+    startStreamingMessage["viewer_name"] = viewerName;
     {
         QMutexLocker locker(&m_mutex);
         if (m_lastWatchAudioOnly) {

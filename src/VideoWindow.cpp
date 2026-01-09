@@ -88,6 +88,36 @@ VideoDisplayWidget* VideoWindow::getVideoDisplayWidget() const
 {
     return m_videoDisplayWidget;
 }
+
+void VideoWindow::startTitleTimer(const QString &userName)
+{
+    m_targetUserName = userName;
+    m_startTime = QDateTime::currentMSecsSinceEpoch();
+    
+    if (!m_titleTimer) {
+        m_titleTimer = new QTimer(this);
+        connect(m_titleTimer, &QTimer::timeout, this, &VideoWindow::updateTitle);
+    }
+    m_titleTimer->start(1000); // Update every second
+    updateTitle(); // Update immediately
+}
+
+void VideoWindow::updateTitle()
+{
+    if (!m_titleLabel) return;
+    
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 elapsed = (now - m_startTime) / 1000;
+    
+    QTime t(0, 0, 0);
+    t = t.addSecs(elapsed);
+    
+    QString timeStr = t.toString("HH:mm:ss");
+    QString title = QString("%1  %2").arg(m_targetUserName).arg(timeStr);
+    
+    m_titleLabel->setText(title);
+}
+
 void VideoWindow::setMicChecked(bool checked)
 {
     if (m_micButton) m_micButton->setChecked(checked);

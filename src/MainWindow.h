@@ -144,7 +144,7 @@ private:
     void sendLoginRequest();
     void sendHeartbeat();
     void updateUserList(const QJsonArray& users);
-    void sendWatchRequest(const QString& targetDeviceId);
+    void sendWatchRequest(const QString& targetDeviceId, const QString& targetName = QString());
     void startVideoReceiving(const QString& targetDeviceId);
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
     void showUserOnlineToast(const QString& userId, const QString& userName, int iconId);

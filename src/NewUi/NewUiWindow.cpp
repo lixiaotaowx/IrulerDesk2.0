@@ -1011,6 +1011,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         // [Interaction Fix] Install event filter on local card to allow double-click testing
         card->installEventFilter(this);
         card->setProperty("userId", id);
+        card->setProperty("userName", name.isEmpty() ? id : name);
         // m_localCard = card; // REMOVED: Incorrectly assigning remote card to local pointer
 
         card->setStyleSheet(
@@ -1076,8 +1077,8 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
             tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
             tabBtn->setIconSize(QSize(14, 14));
 
-            connect(tabBtn, &QPushButton::clicked, this, [this, id]() {
-                emit startWatchingRequested(id);
+            connect(tabBtn, &QPushButton::clicked, this, [this, id, name]() {
+                emit startWatchingRequested(id, name);
             });
         }
         
@@ -1727,7 +1728,19 @@ void NewUiWindow::setupUi()
         QString userId = item->data(Qt::UserRole).toString();
         // Ignore if it's local user (empty or self ID) or invalid
         if (!userId.isEmpty() && userId != m_myStreamId) {
-             emit startWatchingRequested(userId);
+             QString name = item->data(Qt::UserRole + 1).toString();
+             // Fallback to widget property if data not set
+             if (name.isEmpty()) {
+                 if (QWidget *iw = m_listWidget->itemWidget(item)) {
+                     if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                         name = card->property("userName").toString();
+                     }
+                 }
+             }
+             if (name.isEmpty()) {
+                 name = userId; // Fallback to ID if name is missing
+             }
+             emit startWatchingRequested(userId, name);
         }
     });
 
@@ -2712,7 +2725,8 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
             if (m_farRightPanel) {
                 m_farRightPanel->setVisible(false);
             }
-            emit startWatchingRequested(userId);
+            QString name = watched->property("userName").toString();
+            emit startWatchingRequested(userId, name);
             return true; // Event handled
         }
     }
@@ -3646,6 +3660,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
     // Create List Item
     QListWidgetItem *item = new QListWidgetItem(m_listWidget);
+    item->setData(Qt::UserRole + 1, displayName);
     item->setSizeHint(QSize(m_totalItemWidth, m_totalItemHeight));
     item->setData(Qt::UserRole, userId); 
 
@@ -3749,8 +3764,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
         tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
         tabBtn->setIconSize(QSize(14, 14));
 
-        connect(tabBtn, &QPushButton::clicked, this, [this, userId]() {
-            emit startWatchingRequested(userId);
+        connect(tabBtn, &QPushButton::clicked, this, [this, userId, displayName]() {
+            emit startWatchingRequested(userId, displayName);
         });
     }
 

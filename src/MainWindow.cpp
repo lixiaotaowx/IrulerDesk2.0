@@ -457,8 +457,11 @@ NewUiWindow* MainWindow::transparentImageList() const
     return m_transparentImageList;
 }
 
-void MainWindow::sendWatchRequest(const QString& targetDeviceId)
+void MainWindow::sendWatchRequest(const QString& targetDeviceId, const QString& targetName)
 {
+    if (m_videoWindow) {
+        m_videoWindow->startTitleTimer(targetName);
+    }
     sendWatchRequestWithVideo(targetDeviceId);
 }
 

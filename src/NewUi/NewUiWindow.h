@@ -71,7 +71,7 @@ public:
     QString getCurrentUserId() const; // Returns the local user ID
 
 signals:
-    void startWatchingRequested(const QString &targetId);
+    void startWatchingRequested(const QString &targetId, const QString &targetName = QString());
     void systemSettingsRequested();
     void micToggleRequested(bool enabled);
     void clearMarksRequested();

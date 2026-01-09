@@ -26,6 +26,7 @@ public:
     
     // 获取视频显示组件
     VideoDisplayWidget* getVideoDisplayWidget() const;
+    void startTitleTimer(const QString &userName); // Start title timer with user name
     void setMicChecked(bool checked);
     void setMicCheckedSilently(bool checked);
     void setSpeakerChecked(bool checked);
@@ -95,12 +96,21 @@ private:
     QIcon m_speakerIconOff;
     VideoDisplayWidget *m_videoDisplayWidget;
     
+    // Title Timer
+    QTimer *m_titleTimer = nullptr;
+    QString m_targetUserName;
+    qint64 m_startTime = 0;
+    void updateTitle(); // Update title slot
+
+private:
+    // Helper to update color button visual state
+    void updateColorButtonVisual(int colorId);
+
     // 窗口拖拽相关
     bool m_dragging;
     QPoint m_dragPosition;
     bool m_isMaximized;
     QRect m_normalGeometry;
-    void updateColorButtonVisual(int colorId);
     void updateTextSizeFloatLabelPos();
     bool m_volumeDragActive = false;
     QPoint m_volumeDragStartPos;

@@ -16,6 +16,7 @@
 #include <QNetworkInterface>
 #include <QUdpSocket>
 #include <QUrl>
+#include <QCryptographicHash>
 #include <algorithm>
 
 namespace AppConfig {
@@ -122,6 +123,37 @@ inline QString serverAddress()
 inline QString wsBaseUrl()
 {
     return normalizeWsBaseUrl(serverAddress());
+}
+
+inline QString janusWsUrl()
+{
+    const QString v = readConfigValue(QStringLiteral("janus_ws_url")).trimmed();
+    if (!v.isEmpty()) {
+        return normalizeWsBaseUrl(v);
+    }
+    return QStringLiteral("ws://115.159.43.237:8188/janus");
+}
+
+inline quint32 stableHash32(const QString &value)
+{
+    const QByteArray h = QCryptographicHash::hash(value.toUtf8(), QCryptographicHash::Md5);
+    if (h.size() < 4) return 0;
+    const quint32 b0 = static_cast<quint8>(h[0]);
+    const quint32 b1 = static_cast<quint8>(h[1]);
+    const quint32 b2 = static_cast<quint8>(h[2]);
+    const quint32 b3 = static_cast<quint8>(h[3]);
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+}
+
+inline qint64 janusAudioRoomForUserId(const QString &userId)
+{
+    bool ok = false;
+    const qint64 room = userId.trimmed().toLongLong(&ok);
+    if (ok && room > 0) {
+        return room;
+    }
+    const quint32 h = stableHash32(userId);
+    return 100000 + static_cast<qint64>(h % 2000000000u);
 }
 
 inline bool lanWsEnabled()

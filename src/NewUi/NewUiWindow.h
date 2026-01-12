@@ -50,6 +50,9 @@ public:
     void setTalkRemoteActive(const QString &userId, bool active);
     void setViewerMicState(const QString &viewerId, bool enabled);
     void setGlobalMicCheckedSilently(bool enabled);
+    void janusSwitchToUserRoom(const QString &userId);
+    void janusSwitchToMyRoom();
+    void janusSetMuted(bool muted);
 
     // Viewer List Management
     void addViewer(const QString &id, const QString &name);
@@ -122,6 +125,8 @@ private:
     void resumeSelectedStreamForUser(const QString &userId);
     void updateResizeGrips();
     void setResizeGripsVisible(bool visible);
+    void ensureJanusAudioLoaded();
+    void applyJanusAudioState();
     
     // Dragging support
     bool m_dragging = false;
@@ -230,4 +235,9 @@ private:
     qint64 m_lastPreviewCaptureAtMs = 0;
     qint64 m_lastPreviewResendAtMs = 0;
     qint64 m_lastPreviewLogAtMs = 0;
+
+    bool m_globalMicEnabled = true;
+    bool m_janusAudioLoaded = false;
+    QString m_janusDesiredRoomOwnerId;
+    QString m_janusActiveRoomOwnerId;
 };

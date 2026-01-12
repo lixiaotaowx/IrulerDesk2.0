@@ -905,8 +905,8 @@ void MainWindow::setupUI()
             m_videoWindow->setSpeakerChecked(spkEnabled);
             m_videoWindow->setMicChecked(micEnabled);
             vd->setSpeakerEnabled(spkEnabled);
-            vd->setTalkEnabled(micEnabled);
-            vd->setMicSendEnabled(micEnabled);
+            vd->setTalkEnabled(false);
+            vd->setMicSendEnabled(false);
         }
     }
     connect(m_videoWindow, &VideoWindow::micToggled, this, &MainWindow::onMicToggleRequested);
@@ -974,102 +974,30 @@ void MainWindow::setupUI()
 
     connect(m_transparentImageList, &NewUiWindow::talkToggleRequested,
             this, [this](const QString &targetId, bool enabled) {
-        auto sendViewerMicState = [this](const QString &toTargetId, bool on) {
-            if (toTargetId.isEmpty()) return;
-            if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) return;
-            QJsonObject msg;
-            msg["type"] = "viewer_mic_state";
-            msg["viewer_id"] = getDeviceId();
-            msg["target_id"] = toTargetId;
-            msg["enabled"] = on;
-            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
-        };
-
-        auto applyTalk = [this](bool on) {
-            if (!m_videoWindow) return;
-            auto *vd = m_videoWindow->getVideoDisplayWidget();
-            if (!vd) return;
-            vd->setTalkEnabled(on);
-            vd->setMicSendEnabled(on);
-            m_videoWindow->setMicCheckedSilently(on);
-        };
-
         if (enabled) {
-            sendViewerMicState(targetId, true);
             m_pendingTalkTargetId = targetId;
             m_pendingTalkEnabled = true;
-            bool hasSession = false;
-            if (m_videoWindow) {
-                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
-                    hasSession = vd->isReceiving() && (m_currentTargetId == targetId);
-                }
-            }
-            if (hasSession) {
-                applyTalk(true);
-                if (m_transparentImageList) {
-                    m_transparentImageList->setTalkConnected(targetId, true);
-                }
-            } else {
-                m_currentTargetId = targetId;
-                m_audioOnlyTargetId = targetId;
-                startVideoReceiving(targetId);
-                if (m_transparentImageList) {
-                    m_transparentImageList->setTalkPending(targetId, true);
-                }
-                sendWatchRequestAudioOnly(targetId);
+            if (m_transparentImageList) {
+                m_transparentImageList->setTalkPending(targetId, true);
+                m_transparentImageList->janusSwitchToUserRoom(targetId);
+                m_transparentImageList->setTalkPending(targetId, false);
+                m_transparentImageList->setTalkConnected(targetId, true);
             }
         } else {
-            sendViewerMicState(targetId, false);
             if (m_transparentImageList) {
+                m_transparentImageList->janusSwitchToMyRoom();
                 m_transparentImageList->setTalkConnected(targetId, false);
             }
             if (m_pendingTalkTargetId == targetId) {
                 m_pendingTalkTargetId.clear();
                 m_pendingTalkEnabled = false;
             }
-            applyTalk(false);
-
-            const bool shouldStopSession = (m_audioOnlyTargetId == targetId);
-            if (shouldStopSession && m_videoWindow) {
-                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
-                    if (vd->isReceiving()) {
-                        vd->stopReceiving(false);
-                    }
-                }
-            }
-            if (shouldStopSession) {
-                m_audioOnlyTargetId.clear();
-                if (m_currentTargetId == targetId) {
-                    m_currentTargetId.clear();
-                }
-            }
         }
     });
 
     connect(m_videoWindow, &VideoWindow::closeClicked, this, [this]() {
-        auto sendViewerMicState = [this](const QString &toTargetId, bool on) {
-            if (toTargetId.isEmpty()) return;
-            if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) return;
-            QJsonObject msg;
-            msg["type"] = "viewer_mic_state";
-            msg["viewer_id"] = getDeviceId();
-            msg["target_id"] = toTargetId;
-            msg["enabled"] = on;
-            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
-        };
-
-        QSet<QString> ids;
-        if (!m_pendingTalkTargetId.isEmpty()) ids.insert(m_pendingTalkTargetId);
-        if (!m_audioOnlyTargetId.isEmpty()) ids.insert(m_audioOnlyTargetId);
-        if (!m_currentTargetId.isEmpty()) ids.insert(m_currentTargetId);
-        for (const QString &id : ids) {
-            if (m_transparentImageList) {
-                m_transparentImageList->talkToggleRequested(id, false);
-            } else {
-                sendViewerMicState(id, false);
-            }
+        if (!m_pendingTalkTargetId.isEmpty() && m_transparentImageList) {
+            m_transparentImageList->talkToggleRequested(m_pendingTalkTargetId, false);
         }
 
         if (m_videoWindow) {
@@ -3546,33 +3474,10 @@ void MainWindow::onMicToggleRequested(bool enabled)
     saveMicEnabledToConfig(enabled);
     if (m_videoWindow) {
         m_videoWindow->setMicCheckedSilently(enabled);
-        auto *vd = m_videoWindow->getVideoDisplayWidget();
-        if (vd) {
-            vd->setTalkEnabled(enabled);
-            vd->setMicSendEnabled(enabled);
-        }
     }
     if (m_transparentImageList) {
         m_transparentImageList->setGlobalMicCheckedSilently(enabled);
-    }
-    {
-        QString targetId = m_currentTargetId;
-        if (targetId.isEmpty()) targetId = m_pendingTalkTargetId;
-        if (targetId.isEmpty()) targetId = m_audioOnlyTargetId;
-        if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
-            QJsonObject msg;
-            msg["type"] = "viewer_mic_state";
-            msg["viewer_id"] = getDeviceId();
-            msg["target_id"] = targetId;
-            msg["enabled"] = enabled;
-            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
-        }
-    }
-    if (m_isStreaming && m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
-        const QString cmd = QString("CMD_AUDIO_TOGGLE:%1").arg(enabled ? 1 : 0);
-        m_currentWatchdogSocket->write(cmd.toUtf8());
-        m_currentWatchdogSocket->flush();
+        m_transparentImageList->janusSetMuted(!enabled);
     }
 }
 

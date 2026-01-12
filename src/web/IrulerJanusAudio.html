@@ -29,6 +29,7 @@
       pc: null,
       localStream: null,
       muted: true,
+      speakerEnabled: true,
       room: 0,
       display: "",
       participants: [],
@@ -46,7 +47,9 @@
       diagLocalSrc: null,
       diagRemoteSrc: null,
       aloneSinceMs: 0,
-      aloneCheckTimer: null
+      aloneCheckTimer: null,
+      lastStopReason: "",
+      lastStopAtMs: 0
     };
 
     function logLine(line) {
@@ -81,6 +84,13 @@
         if (d && Array.isArray(d.participants)) {
           state.participants = normalizeParticipants(d.participants);
         }
+      } catch (_) {}
+    }
+
+    function applySpeakerToElement() {
+      try {
+        remoteAudio.muted = !state.speakerEnabled;
+        remoteAudio.volume = state.speakerEnabled ? 1.0 : 0.0;
       } catch (_) {}
     }
 
@@ -207,7 +217,6 @@
         const cb = state.pending.get(msg.transaction);
         state.pending.delete(msg.transaction);
         cb(msg);
-        return;
       }
       if (msg.janus === "event" && msg.plugindata && msg.plugindata.data && msg.plugindata.plugin === "janus.plugin.audiobridge") {
         const d = msg.plugindata.data || {};
@@ -330,8 +339,7 @@
         if (ev.streams && ev.streams[0]) {
           remoteAudio.srcObject = ev.streams[0];
           try {
-            remoteAudio.muted = false;
-            remoteAudio.volume = 1.0;
+            applySpeakerToElement();
             logLine("remote track received muted=" + remoteAudio.muted + " vol=" + remoteAudio.volume);
           } catch (_) {}
           try {
@@ -464,6 +472,8 @@
       state.room = 0;
       state.display = "";
       state.muted = true;
+      state.lastStopReason = String(reason || "");
+      state.lastStopAtMs = Date.now();
       try { setStatus("idle"); } catch (_) {}
     }
 
@@ -521,6 +531,12 @@
       logLine("muted=" + state.muted);
     }
 
+    function setSpeakerEnabled(enabled) {
+      state.speakerEnabled = !!enabled;
+      applySpeakerToElement();
+      try { logLine("speaker=" + state.speakerEnabled); } catch (_) {}
+    }
+
     async function listParticipantsNow() {
       if (!state.sessionId || !state.handleId || !state.room) return [];
       try {
@@ -533,10 +549,18 @@
     window.IrulerJanusAudio = {
       switchRoom: (room, display, muted) => switchRoom(Number(room), String(display || ""), !!muted),
       setMuted: (muted) => setMuted(!!muted),
+      setSpeakerEnabled: (enabled) => setSpeakerEnabled(!!enabled),
       stop: (reason) => stopAll(String(reason || "")),
       getParticipants: () => (Array.isArray(state.participants) ? state.participants.slice() : []),
       listParticipantsNow: () => listParticipantsNow(),
-      getState: () => ({room: state.room, muted: state.muted, sessionId: state.sessionId, handleId: state.handleId})
+      getState: () => ({
+        room: state.room,
+        muted: state.muted,
+        sessionId: state.sessionId,
+        handleId: state.handleId,
+        lastStopReason: state.lastStopReason || "",
+        lastStopAtMs: state.lastStopAtMs || 0
+      })
     };
 
     logLine("page ready");

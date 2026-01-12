@@ -46,6 +46,8 @@
 #include <QWebEngineSettings>
 #include <QSignalBlocker>
 #include <QDialog>
+#include <QLayout>
+#include <QSizePolicy>
 #include <climits>
 #include <QAbstractButton>
 #ifdef _WIN32
@@ -2474,67 +2476,149 @@ void NewUiWindow::ensureAudioCallUi()
 
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(QStringLiteral("通话"));
-    dlg->setWindowFlags(Qt::Tool | Qt::WindowStaysOnTopHint);
+    dlg->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    dlg->setAttribute(Qt::WA_TranslucentBackground, true);
     dlg->setModal(false);
     dlg->setMinimumSize(320, 180);
 
-    auto *layout = new QVBoxLayout(dlg);
-    layout->setContentsMargins(16, 16, 16, 16);
+    auto *outerLayout = new QVBoxLayout(dlg);
+    outerLayout->setContentsMargins(10, 10, 10, 10);
+    outerLayout->setSpacing(0);
+
+    auto *panel = new QFrame(dlg);
+    panel->setObjectName(QStringLiteral("AudioCallPanel"));
+    panel->setStyleSheet(QStringLiteral("QFrame#AudioCallPanel { background: #2b2b2b; border-radius: 12px; }"));
+    auto *shadow = new QGraphicsDropShadowEffect(panel);
+    shadow->setBlurRadius(18);
+    shadow->setOffset(0, 6);
+    shadow->setColor(QColor(0, 0, 0, 160));
+    panel->setGraphicsEffect(shadow);
+    outerLayout->addWidget(panel);
+
+    auto *layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(16, 12, 16, 16);
     layout->setSpacing(12);
 
-    auto *names = new QLabel(QStringLiteral(""), dlg);
-    names->setWordWrap(true);
-    names->setAlignment(Qt::AlignCenter);
-    QFont f = names->font();
-    f.setPointSize(qMax(10, f.pointSize() + 2));
-    f.setBold(true);
-    names->setFont(f);
-    layout->addWidget(names);
+    const QString appDir = QCoreApplication::applicationDirPath();
+
+    auto *topRow = new QHBoxLayout();
+    topRow->setContentsMargins(0, 0, 0, 0);
+    topRow->setSpacing(0);
+    topRow->addStretch(1);
+    auto *minBtn = new QPushButton(panel);
+    minBtn->setFixedSize(28, 28);
+    minBtn->setIcon(QIcon(appDir + "/maps/logo/mini.png"));
+    minBtn->setIconSize(QSize(18, 18));
+    minBtn->setFlat(true);
+    minBtn->setCursor(Qt::PointingHandCursor);
+    minBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { border: none; background: transparent; }"
+        "QPushButton:hover { background: rgba(255,255,255,0.06); border-radius: 6px; }"
+        "QPushButton:pressed { background: rgba(255,255,255,0.10); border-radius: 6px; }"));
+    connect(minBtn, &QPushButton::clicked, dlg, &QWidget::showMinimized);
+    topRow->addWidget(minBtn);
+    layout->addLayout(topRow);
+
+    auto *area = new QScrollArea(dlg);
+    area->setFrameShape(QFrame::NoFrame);
+    area->setWidgetResizable(true);
+    area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    area->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    area->setFixedHeight(86);
+    if (area->horizontalScrollBar()) {
+        area->horizontalScrollBar()->setStyleSheet(QStringLiteral("QScrollBar:horizontal{height:0px;}"));
+    }
+
+    auto *people = new QWidget(area);
+    people->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    auto *peopleLayout = new QHBoxLayout(people);
+    peopleLayout->setContentsMargins(0, 0, 0, 0);
+    peopleLayout->setSpacing(12);
+    peopleLayout->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+    peopleLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    people->setLayout(peopleLayout);
+    area->setWidget(people);
+
+    m_audioCallParticipantsArea = area;
+    m_audioCallParticipantsWidget = people;
+    m_audioCallParticipantsLayout = peopleLayout;
+
+    layout->addWidget(area);
 
     layout->addStretch();
 
     auto *btnRow = new QHBoxLayout();
-    btnRow->setSpacing(16);
-    auto *muteBtn = new QPushButton(QStringLiteral("静音"), dlg);
-    muteBtn->setCheckable(true);
-    muteBtn->setChecked(!m_globalMicEnabled);
-    auto *hangupBtn = new QPushButton(QStringLiteral("挂断"), dlg);
+    btnRow->setSpacing(22);
+
+    const QIcon micOn(appDir + "/maps/logo/Mic_oN2.png");
+    const QIcon micOff(appDir + "/maps/logo/Mic_oFF2.png");
+    const QIcon hangupIcon(appDir + "/maps/logo/guaduan.png");
+    const QIcon spkOn(appDir + "/maps/logo/laba_on2.png");
+    const QIcon spkOff(appDir + "/maps/logo/laba_oFF2.png");
+
+    auto styleIconBtn = [](QPushButton *b) {
+        b->setFlat(true);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setStyleSheet("QPushButton { border: none; background: transparent; }");
+    };
+
+    auto *micBtn = new QPushButton(dlg);
+    micBtn->setCheckable(true);
+    micBtn->setChecked(m_globalMicEnabled);
+    micBtn->setIcon(m_globalMicEnabled ? micOn : micOff);
+    micBtn->setIconSize(QSize(44, 44));
+    micBtn->setFixedSize(56, 56);
+    styleIconBtn(micBtn);
+
+    auto *hangupBtn = new QPushButton(dlg);
+    hangupBtn->setIcon(hangupIcon);
+    hangupBtn->setIconSize(QSize(44, 44));
+    hangupBtn->setFixedSize(56, 56);
     hangupBtn->setDefault(true);
+    styleIconBtn(hangupBtn);
+
+    auto *speakerBtn = new QPushButton(dlg);
+    speakerBtn->setCheckable(true);
+    speakerBtn->setChecked(true);
+    speakerBtn->setIcon(spkOn);
+    speakerBtn->setIconSize(QSize(44, 44));
+    speakerBtn->setFixedSize(56, 56);
+    styleIconBtn(speakerBtn);
+
     btnRow->addStretch();
-    btnRow->addWidget(muteBtn);
+    btnRow->addWidget(micBtn);
     btnRow->addWidget(hangupBtn);
+    btnRow->addWidget(speakerBtn);
     btnRow->addStretch();
     layout->addLayout(btnRow);
 
     auto *timer = new QTimer(dlg);
     timer->setInterval(1000);
 
-    connect(muteBtn, &QPushButton::toggled, this, [this](bool muted) {
-        const bool enabled = !muted;
+    connect(micBtn, &QPushButton::toggled, this, [this, micBtn, micOn, micOff](bool enabled) {
+        micBtn->setIcon(enabled ? micOn : micOff);
         setGlobalMicCheckedSilently(enabled);
         emit micToggleRequested(enabled);
     });
 
-    auto hangupNow = [this]() {
-        const QString peerId = m_audioCallPeerId;
-        if (!peerId.isEmpty()) {
-            setTalkConnected(peerId, false);
-            setTalkRemoteActive(peerId, false);
-            emit talkToggleRequested(peerId, false);
-        } else {
-            janusStop();
+    connect(speakerBtn, &QPushButton::toggled, this, [this, speakerBtn, spkOn, spkOff](bool enabled) {
+        m_audioCallSpeakerEnabled = enabled;
+        speakerBtn->setIcon(enabled ? spkOn : spkOff);
+        if (m_function1WebView && m_function1WebView->page()) {
+            const QString js = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.setSpeakerEnabled && IrulerJanusAudio.setSpeakerEnabled(%1);")
+                                   .arg(enabled ? QStringLiteral("true") : QStringLiteral("false"));
+            m_function1WebView->page()->runJavaScript(js);
         }
-        hideAudioCallUi();
-    };
+    });
 
-    connect(hangupBtn, &QPushButton::clicked, this, hangupNow);
-    connect(dlg, &QDialog::rejected, this, hangupNow);
+    connect(hangupBtn, &QPushButton::clicked, this, &NewUiWindow::hangupAudioCallUi);
+    connect(dlg, &QDialog::rejected, this, &NewUiWindow::hangupAudioCallUi);
     connect(timer, &QTimer::timeout, this, &NewUiWindow::refreshAudioCallParticipants);
 
     m_audioCallDialog = dlg;
-    m_audioCallNamesLabel = names;
-    m_audioCallMuteBtn = muteBtn;
+    m_audioCallMuteBtn = micBtn;
     m_audioCallHangupBtn = hangupBtn;
+    m_audioCallSpeakerBtn = speakerBtn;
     m_audioCallPollTimer = timer;
 }
 
@@ -2550,10 +2634,21 @@ void NewUiWindow::showAudioCallUi(const QString &peerId)
     if (!m_globalMicEnabled) {
         setGlobalMicCheckedSilently(true);
     }
+    m_audioCallSpeakerEnabled = true;
     m_audioCallPeerId = peerId;
     if (m_audioCallMuteBtn) {
         QSignalBlocker blocker(m_audioCallMuteBtn);
-        m_audioCallMuteBtn->setChecked(!m_globalMicEnabled);
+        m_audioCallMuteBtn->setChecked(m_globalMicEnabled);
+    }
+    if (m_audioCallSpeakerBtn) {
+        QSignalBlocker blocker(m_audioCallSpeakerBtn);
+        m_audioCallSpeakerBtn->setChecked(true);
+        const QString appDir = QCoreApplication::applicationDirPath();
+        m_audioCallSpeakerBtn->setIcon(QIcon(appDir + "/maps/logo/laba_on2.png"));
+    }
+    if (m_function1WebView && m_function1WebView->page()) {
+        const QString js = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.setSpeakerEnabled && IrulerJanusAudio.setSpeakerEnabled(true);");
+        m_function1WebView->page()->runJavaScript(js);
     }
     refreshAudioCallParticipants();
     if (m_audioCallPollTimer && !m_audioCallPollTimer->isActive()) {
@@ -2577,9 +2672,127 @@ void NewUiWindow::hideAudioCallUi()
     }
 }
 
+void NewUiWindow::hangupAudioCallUi()
+{
+    const QString peerId = m_audioCallPeerId;
+    if (!peerId.isEmpty()) {
+        setTalkConnected(peerId, false);
+        setTalkRemoteActive(peerId, false);
+        emit talkToggleRequested(peerId, false);
+    } else {
+        janusStop();
+    }
+    hideAudioCallUi();
+}
+
+void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
+{
+    if (!m_audioCallParticipantsLayout) {
+        return;
+    }
+
+    while (QLayoutItem *it = m_audioCallParticipantsLayout->takeAt(0)) {
+        if (QWidget *w = it->widget()) {
+            w->deleteLater();
+        }
+        delete it;
+    }
+
+    QStringList finalNames;
+    for (const QString &n : names) {
+        const QString s = n.trimmed();
+        if (!s.isEmpty()) {
+            finalNames.append(s);
+        }
+    }
+    if (finalNames.isEmpty()) {
+        const QString me = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
+        if (!me.isEmpty()) {
+            finalNames.append(me);
+        }
+    }
+
+    auto findUserIdByDisplayName = [this](const QString &displayName) -> QString {
+        if (displayName.isEmpty()) return QString();
+        const QString meName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
+        if (!meName.isEmpty() && displayName == meName) return m_myStreamId;
+        if (displayName == m_myStreamId) return m_myStreamId;
+        for (auto it = m_userItems.begin(); it != m_userItems.end(); ++it) {
+            const QString userId = it.key();
+            QListWidgetItem *item = it.value();
+            if (!item) continue;
+            const QString n = item->data(Qt::UserRole + 1).toString();
+            if (!n.isEmpty() && n == displayName) return userId;
+            if (userId == displayName) return userId;
+        }
+        return QString();
+    };
+
+    const int cellWidth = 72;
+    const int avatarSize = 44;
+    const int spacing = m_audioCallParticipantsLayout->spacing();
+    const int count = finalNames.size();
+    const int totalWidth = (count <= 0) ? 0 : (count * cellWidth + qMax(0, count - 1) * spacing);
+    const int viewportWidth = (m_audioCallParticipantsArea && m_audioCallParticipantsArea->viewport())
+                                  ? m_audioCallParticipantsArea->viewport()->width()
+                                  : 0;
+    const bool shouldCenter = (viewportWidth > 0 && totalWidth > 0 && totalWidth <= viewportWidth);
+
+    m_audioCallParticipantsLayout->setAlignment((shouldCenter ? Qt::AlignHCenter : Qt::AlignLeft) | Qt::AlignVCenter);
+    if (shouldCenter) {
+        m_audioCallParticipantsLayout->addStretch(1);
+    }
+    for (const QString &name : finalNames) {
+        auto *cell = new QWidget(m_audioCallParticipantsWidget);
+        cell->setFixedWidth(cellWidth);
+        cell->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+        auto *vl = new QVBoxLayout(cell);
+        vl->setContentsMargins(0, 0, 0, 0);
+        vl->setSpacing(6);
+        vl->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+
+        auto *av = new QLabel(cell);
+        av->setFixedSize(avatarSize, avatarSize);
+        av->setAlignment(Qt::AlignCenter);
+
+        QPixmap avatar = QPixmap();
+        const QString uid = findUserIdByDisplayName(name);
+        if (!uid.isEmpty()) {
+            QPixmap cached(avatarCacheFilePath(uid));
+            if (!cached.isNull()) {
+                avatar = makeCircularPixmap(cached, avatarSize);
+            }
+        }
+        if (avatar.isNull()) {
+            avatar = buildHeadAvatarPixmap(avatarSize);
+        }
+        if (!avatar.isNull()) {
+            av->setPixmap(avatar.scaled(avatarSize, avatarSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        }
+
+        auto *lb = new QLabel(name, cell);
+        lb->setAlignment(Qt::AlignCenter);
+        lb->setStyleSheet("color: #e0e0e0; font-size: 12px; background: transparent;");
+        lb->setFixedWidth(cellWidth);
+        lb->setWordWrap(true);
+
+        vl->addWidget(av);
+        vl->addWidget(lb);
+
+        m_audioCallParticipantsLayout->addWidget(cell);
+    }
+
+    if (shouldCenter) {
+        m_audioCallParticipantsLayout->addStretch(1);
+    }
+    if (m_audioCallParticipantsWidget) {
+        m_audioCallParticipantsWidget->adjustSize();
+    }
+}
+
 void NewUiWindow::refreshAudioCallParticipants()
 {
-    if (!m_function1WebView || !m_function1WebView->page() || !m_audioCallNamesLabel) {
+    if (!m_function1WebView || !m_function1WebView->page() || !m_audioCallDialog) {
         return;
     }
     const QString js = QStringLiteral(
@@ -2587,32 +2800,39 @@ void NewUiWindow::refreshAudioCallParticipants()
         "  if (window.IrulerJanusAudio && IrulerJanusAudio.listParticipantsNow) {"
         "    try { IrulerJanusAudio.listParticipantsNow(); } catch (e) {}"
         "  }"
-        "  return (window.IrulerJanusAudio && IrulerJanusAudio.getParticipants) ? IrulerJanusAudio.getParticipants() : [];"
-        "} catch (e) { return []; } })();");
+        "  const ps = (window.IrulerJanusAudio && IrulerJanusAudio.getParticipants) ? IrulerJanusAudio.getParticipants() : [];"
+        "  const st = (window.IrulerJanusAudio && IrulerJanusAudio.getState) ? IrulerJanusAudio.getState() : {};"
+        "  return {participants: ps, state: st};"
+        "} catch (e) { return {participants: [], state: {}}; } })();");
     m_function1WebView->page()->runJavaScript(js, [this](const QVariant &v) {
-        if (!this || !m_audioCallNamesLabel) {
+        if (!this) {
             return;
         }
+        QVariantList list;
+        QVariantMap state;
+        if (v.userType() == QMetaType::QVariantMap) {
+            const QVariantMap obj = v.toMap();
+            list = obj.value(QStringLiteral("participants")).toList();
+            state = obj.value(QStringLiteral("state")).toMap();
+        } else if (v.userType() == QMetaType::QVariantList) {
+            list = v.toList();
+        }
+
+        const int room = state.value(QStringLiteral("room")).toInt();
+        const QString stopReason = state.value(QStringLiteral("lastStopReason")).toString();
+        if (room == 0 && stopReason == QStringLiteral("alone_30s")) {
+            hangupAudioCallUi();
+            return;
+        }
+
         QStringList names;
-        if (v.userType() == QMetaType::QVariantList) {
-            const QVariantList list = v.toList();
-            for (const QVariant &it : list) {
-                const QString s = it.toString().trimmed();
-                if (!s.isEmpty()) {
-                    names.append(s);
-                }
+        for (const QVariant &it : list) {
+            const QString s = it.toString().trimmed();
+            if (!s.isEmpty()) {
+                names.append(s);
             }
         }
-        if (names.isEmpty()) {
-            const QString me = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
-            if (!me.isEmpty()) {
-                m_audioCallNamesLabel->setText(me);
-            } else {
-                m_audioCallNamesLabel->setText(QStringLiteral("通话中"));
-            }
-            return;
-        }
-        m_audioCallNamesLabel->setText(names.join(QStringLiteral("、")));
+        rebuildAudioCallParticipantsUi(names);
     });
 }
 

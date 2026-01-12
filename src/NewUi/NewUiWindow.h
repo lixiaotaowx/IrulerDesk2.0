@@ -16,6 +16,8 @@ class QStackedWidget;
 class QWebEngineView;
 class QDialog;
 class QTimer;
+class QScrollArea;
+class QHBoxLayout;
 
 class NewUiWindow : public QWidget
 {
@@ -134,6 +136,8 @@ private:
     void showAudioCallUi(const QString &peerId);
     void hideAudioCallUi();
     void refreshAudioCallParticipants();
+    void rebuildAudioCallParticipantsUi(const QStringList &names);
+    void hangupAudioCallUi();
     
     // Dragging support
     bool m_dragging = false;
@@ -249,9 +253,13 @@ private:
     QString m_janusActiveRoomOwnerId;
 
     QDialog *m_audioCallDialog = nullptr;
-    QLabel *m_audioCallNamesLabel = nullptr;
     QPushButton *m_audioCallMuteBtn = nullptr;
     QPushButton *m_audioCallHangupBtn = nullptr;
+    QPushButton *m_audioCallSpeakerBtn = nullptr;
     QTimer *m_audioCallPollTimer = nullptr;
     QString m_audioCallPeerId;
+    QScrollArea *m_audioCallParticipantsArea = nullptr;
+    QWidget *m_audioCallParticipantsWidget = nullptr;
+    QHBoxLayout *m_audioCallParticipantsLayout = nullptr;
+    bool m_audioCallSpeakerEnabled = true;
 };

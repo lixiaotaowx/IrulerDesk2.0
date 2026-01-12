@@ -3059,8 +3059,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_transparentImageList->setTalkRemoteActive(viewerId, enabled);
             if (enabled) {
                 m_transparentImageList->janusSwitchToUserRoom(targetId);
-            } else {
-                m_transparentImageList->janusStop();
             }
         }
     } else if (type == "viewer_exit" || type == "viewer_exited" || type == "viewer_left" || type == "stop_streaming") {

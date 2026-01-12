@@ -134,6 +134,25 @@ inline QString janusWsUrl()
     return QStringLiteral("ws://115.159.43.237:8188/janus");
 }
 
+inline QString janusAudioHtmlPath()
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates{
+        QDir(appDir).filePath(QStringLiteral("src/web/IrulerJanusAudio.html")),
+        QDir(appDir).filePath(QStringLiteral("../src/web/IrulerJanusAudio.html")),
+        QDir(appDir).filePath(QStringLiteral("../../src/web/IrulerJanusAudio.html")),
+        QDir(appDir).filePath(QStringLiteral("../../../src/web/IrulerJanusAudio.html")),
+    };
+
+    for (const QString &candidate : candidates) {
+        const QFileInfo fi(QDir::cleanPath(candidate));
+        if (fi.exists() && fi.isFile()) {
+            return fi.absoluteFilePath();
+        }
+    }
+    return QString();
+}
+
 inline quint32 stableHash32(const QString &value)
 {
     const QByteArray h = QCryptographicHash::hash(value.toUtf8(), QCryptographicHash::Md5);

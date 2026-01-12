@@ -14,6 +14,8 @@
 
 class QStackedWidget;
 class QWebEngineView;
+class QDialog;
+class QTimer;
 
 class NewUiWindow : public QWidget
 {
@@ -53,6 +55,7 @@ public:
     void janusSwitchToUserRoom(const QString &userId);
     void janusSwitchToMyRoom();
     void janusSetMuted(bool muted);
+    void janusStop();
 
     // Viewer List Management
     void addViewer(const QString &id, const QString &name);
@@ -127,6 +130,10 @@ private:
     void setResizeGripsVisible(bool visible);
     void ensureJanusAudioLoaded();
     void applyJanusAudioState();
+    void ensureAudioCallUi();
+    void showAudioCallUi(const QString &peerId);
+    void hideAudioCallUi();
+    void refreshAudioCallParticipants();
     
     // Dragging support
     bool m_dragging = false;
@@ -240,4 +247,11 @@ private:
     bool m_janusAudioLoaded = false;
     QString m_janusDesiredRoomOwnerId;
     QString m_janusActiveRoomOwnerId;
+
+    QDialog *m_audioCallDialog = nullptr;
+    QLabel *m_audioCallNamesLabel = nullptr;
+    QPushButton *m_audioCallMuteBtn = nullptr;
+    QPushButton *m_audioCallHangupBtn = nullptr;
+    QTimer *m_audioCallPollTimer = nullptr;
+    QString m_audioCallPeerId;
 };

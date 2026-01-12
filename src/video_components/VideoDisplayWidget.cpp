@@ -126,19 +126,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
 
 
 
-    // Initialize AudioPlayer
-    m_audioPlayer = std::make_unique<AudioPlayer>(this);
-    connect(m_audioPlayer.get(), &AudioPlayer::audioOutputSelectionChanged, this, 
-        [this](bool followSystem, const QString &deviceId) {
-            emit audioOutputSelectionChanged(followSystem, deviceId);
-        });
-
-    connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
-        this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
-            if (m_audioPlayer) {
-                m_audioPlayer->processAudioData(pcmData, sampleRate, channels, bitsPerSample);
-            }
-        });
+    m_audioPlayer.reset();
     
     // 统计定时器
     m_statsTimer = new QTimer(this);

@@ -165,7 +165,6 @@ private:
 private:
     void sendWatchRequestInternal(const QString& targetDeviceId, bool audioOnly);
     void sendWatchRequestWithVideo(const QString& targetDeviceId);
-    void sendWatchRequestAudioOnly(const QString& targetDeviceId);
     
     // UI组件
     QWidget *m_centralWidget;

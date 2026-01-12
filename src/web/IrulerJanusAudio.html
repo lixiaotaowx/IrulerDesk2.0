@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #202020; color: #e0e0e0; font-family: sans-serif; }
+    #status { padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
+    audio { display: none; }
+  </style>
+  <title>Iruler Janus Audio</title>
+</head>
+<body>
+  <div id="status">init</div>
+  <audio id="remote" autoplay playsinline></audio>
+  <script>
+  (function(){
+    const statusEl = document.getElementById('status');
+    const remoteAudio = document.getElementById('remote');
+    function setStatus(s) { statusEl.textContent = s; }
+    function now() { return new Date().toISOString(); }
+    function tx() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
+    const state = {
+      wsUrl: __WS_URL__,
+      ws: null,
+      sessionId: 0,
+      handleId: 0,
+      pc: null,
+      localStream: null,
+      muted: true,
+      room: 0,
+      display: "",
+      participants: [],
+      pending: new Map(),
+      keepAliveTimer: null,
+      remoteAnswerWaiter: null,
+      remoteAnswerTx: null,
+      joinWaiter: null,
+      audioDiagTimer: null,
+      audioCtx: null,
+      localAnalyser: null,
+      remoteAnalyser: null,
+      diagLocalStream: null,
+      diagRemoteStream: null,
+      diagLocalSrc: null,
+      diagRemoteSrc: null,
+      aloneSinceMs: 0,
+      aloneCheckTimer: null
+    };
+
+    function logLine(line) {
+      setStatus(now() + " " + line + "\n" + statusEl.textContent.split("\n").slice(0, 8).join("\n"));
+      console.log("janus", line);
+    }
+
+    function normalizeParticipants(arr) {
+      if (!Array.isArray(arr)) return [];
+      const out = [];
+      const seen = new Set();
+      for (const it of arr) {
+        let s = "";
+        if (typeof it === "string") s = it;
+        else if (it && typeof it === "object") {
+          if (typeof it.display === "string") s = it.display;
+          else if (typeof it.name === "string") s = it.name;
+          else if (typeof it.id !== "undefined") s = String(it.id);
+        }
+        s = String(s || "").trim();
+        if (!s) continue;
+        if (seen.has(s)) continue;
+        seen.add(s);
+        out.push(s);
+      }
+      return out;
+    }
+
+    function updateParticipantsFromReply(reply) {
+      try {
+        const d = reply && reply.plugindata && reply.plugindata.data ? reply.plugindata.data : null;
+        if (d && Array.isArray(d.participants)) {
+          state.participants = normalizeParticipants(d.participants);
+        }
+      } catch (_) {}
+    }
+
+    function isTerminalIceState(s) { return s === "connected" || s === "failed" || s === "disconnected"; }
+    function isTerminalPcState(s) { return s === "connected" || s === "failed" || s === "disconnected" || s === "closed"; }
+
+    function rmsDb(analyser) {
+      if (!analyser) return null;
+      const buf = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const x = (buf[i] - 128) / 128;
+        sum += x * x;
+      }
+      const rms = Math.sqrt(sum / buf.length);
+      const db = 20 * Math.log10(rms + 1e-9);
+      return Math.max(-120, Math.min(0, db));
+    }
+
+    async function ensureAudioDiag() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) {
+        logLine("audioCtx missing");
+        return;
+      }
+
+      if (!state.audioCtx) {
+        try {
+          state.audioCtx = new AC();
+          if (state.audioCtx.state === "suspended") {
+            try { await state.audioCtx.resume(); } catch (_) {}
+          }
+          logLine("audioCtx state=" + state.audioCtx.state);
+        } catch (e) {
+          logLine("audioCtx create failed: " + (e && e.message ? e.message : String(e)));
+          return;
+        }
+      }
+
+      const updateLocal = () => {
+        const s = state.localStream;
+        if (state.diagLocalStream === s) return;
+        state.diagLocalStream = s;
+        state.localAnalyser = null;
+        if (state.diagLocalSrc) {
+          try { state.diagLocalSrc.disconnect(); } catch (_) {}
+          state.diagLocalSrc = null;
+        }
+        if (!s) return;
+        try {
+          const src = state.audioCtx.createMediaStreamSource(s);
+          const an = state.audioCtx.createAnalyser();
+          an.fftSize = 2048;
+          src.connect(an);
+          state.diagLocalSrc = src;
+          state.localAnalyser = an;
+        } catch (e) {
+          logLine("local analyser failed: " + (e && e.message ? e.message : String(e)));
+        }
+      };
+
+      const updateRemote = () => {
+        const rs = remoteAudio.srcObject;
+        if (state.diagRemoteStream === rs) return;
+        state.diagRemoteStream = rs;
+        state.remoteAnalyser = null;
+        if (state.diagRemoteSrc) {
+          try { state.diagRemoteSrc.disconnect(); } catch (_) {}
+          state.diagRemoteSrc = null;
+        }
+        if (!rs) return;
+        try {
+          const src = state.audioCtx.createMediaStreamSource(rs);
+          const an = state.audioCtx.createAnalyser();
+          an.fftSize = 2048;
+          src.connect(an);
+          state.diagRemoteSrc = src;
+          state.remoteAnalyser = an;
+        } catch (e) {
+          logLine("remote analyser failed: " + (e && e.message ? e.message : String(e)));
+        }
+      };
+
+      updateLocal();
+      updateRemote();
+    }
+
+    window.addEventListener("error", (e) => {
+      try { logLine("window error: " + (e && e.message ? e.message : "unknown")); } catch (_) {}
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      let reason = "";
+      try {
+        if (e && e.reason) reason = (e.reason && e.reason.message) ? e.reason.message : String(e.reason);
+      } catch (_) {}
+      try { logLine("unhandledrejection: " + reason); } catch (_) {}
+    });
+    try {
+      remoteAudio.onplaying = () => logLine("remote audio playing");
+      remoteAudio.onpause = () => logLine("remote audio paused");
+      remoteAudio.onerror = () => logLine("remote audio error");
+    } catch (_) {}
+
+    function wsSend(obj) {
+      if (!state.ws || state.ws.readyState !== 1) throw new Error("ws not open");
+      state.ws.send(JSON.stringify(obj));
+    }
+
+    function waitTx(t) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          state.pending.delete(t);
+          reject(new Error("timeout " + t));
+        }, 12000);
+        state.pending.set(t, (msg) => { clearTimeout(timer); resolve(msg); });
+      });
+    }
+
+    function onWsMessage(ev) {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg && msg.transaction && state.pending.has(msg.transaction)) {
+        const cb = state.pending.get(msg.transaction);
+        state.pending.delete(msg.transaction);
+        cb(msg);
+        return;
+      }
+      if (msg.janus === "event" && msg.plugindata && msg.plugindata.data && msg.plugindata.plugin === "janus.plugin.audiobridge") {
+        const d = msg.plugindata.data || {};
+        const evName = d.audiobridge || d.event || "";
+        let extra = "";
+        if (Array.isArray(d.participants)) state.participants = normalizeParticipants(d.participants);
+        if (Array.isArray(d.participants)) extra += " participants=" + d.participants.length;
+        if (typeof d.muted === "boolean") extra += " muted=" + d.muted;
+        if (typeof d.room === "number") extra += " room=" + d.room;
+        if (evName) {
+          logLine("ab " + evName + extra);
+          if ((evName === "joined" || evName === "roomchanged") && state.joinWaiter) {
+            const w = state.joinWaiter;
+            state.joinWaiter = null;
+            w(d);
+          }
+        } else if (d.room || d.participants) {
+          logLine("ab event" + extra);
+        }
+      }
+      if (msg.janus === "event" && msg.sender === state.handleId && msg.jsep) {
+        if (state.remoteAnswerWaiter) {
+          const w = state.remoteAnswerWaiter;
+          state.remoteAnswerWaiter = null;
+          w(msg);
+          return;
+        }
+      }
+      if (msg.janus === "trickle" && msg.sender === state.handleId && msg.candidate) {
+        if (state.pc && msg.candidate.candidate) {
+          state.pc.addIceCandidate(msg.candidate).catch(() => {});
+        }
+        return;
+      }
+      if (msg.janus === "hangup" && msg.sender === state.handleId) {
+        logLine("hangup");
+        return;
+      }
+      if (msg.janus === "webrtcup" && msg.sender === state.handleId) {
+        logLine("webrtcup");
+        return;
+      }
+    }
+
+    async function wsOpen() {
+      if (state.ws && (state.ws.readyState === 0 || state.ws.readyState === 1)) return;
+      const ws = new WebSocket(state.wsUrl, "janus-protocol");
+      state.ws = ws;
+      ws.onmessage = onWsMessage;
+      await new Promise((resolve, reject) => {
+        ws.onopen = resolve;
+        ws.onerror = () => { try { logLine("ws error"); } catch (_) {} reject(new Error("ws error")); };
+      });
+      ws.onclose = () => {
+        logLine("ws closed");
+        stopKeepAlive();
+      };
+      logLine("ws open");
+    }
+
+    async function janusCreateSession() {
+      const t = tx();
+      wsSend({janus:"create", transaction:t});
+      const reply = await waitTx(t);
+      if (reply.janus !== "success" || !reply.data || !reply.data.id) throw new Error("create session failed");
+      state.sessionId = reply.data.id;
+      logLine("session " + state.sessionId);
+    }
+
+    async function janusAttach() {
+      const t = tx();
+      wsSend({janus:"attach", plugin:"janus.plugin.audiobridge", session_id:state.sessionId, transaction:t});
+      const reply = await waitTx(t);
+      if (reply.janus !== "success" || !reply.data || !reply.data.id) throw new Error("attach failed");
+      state.handleId = reply.data.id;
+      logLine("handle " + state.handleId);
+    }
+
+    async function janusMessage(body, jsep) {
+      const t = tx();
+      const msg = {janus:"message", session_id:state.sessionId, handle_id:state.handleId, transaction:t, body:body};
+      if (jsep) msg.jsep = jsep;
+      wsSend(msg);
+      return waitTx(t);
+    }
+
+    function startKeepAlive() {
+      stopKeepAlive();
+      state.keepAliveTimer = setInterval(() => {
+        if (!state.sessionId) return;
+        try { wsSend({janus:"keepalive", session_id:state.sessionId, transaction:tx()}); } catch (e) {}
+      }, 25000);
+    }
+
+    function stopKeepAlive() {
+      if (state.keepAliveTimer) { clearInterval(state.keepAliveTimer); state.keepAliveTimer = null; }
+    }
+
+    async function createPeer() {
+      const pc = new RTCPeerConnection({iceServers: [{urls: ["stun:stun.l.google.com:19302"]}]});
+      state.pc = pc;
+      pc.onconnectionstatechange = () => {
+        try {
+          if (isTerminalPcState(pc.connectionState)) logLine("pc connectionState=" + pc.connectionState);
+        } catch (_) {}
+      };
+      pc.oniceconnectionstatechange = () => {
+        try {
+          if (isTerminalIceState(pc.iceConnectionState)) logLine("pc iceConnectionState=" + pc.iceConnectionState);
+        } catch (_) {}
+      };
+      pc.onicecandidate = (ev) => {
+        if (!ev.candidate) {
+          try { wsSend({janus:"trickle", session_id:state.sessionId, handle_id:state.handleId, transaction:tx(), candidate:{completed:true}}); } catch (e) {}
+          return;
+        }
+        try { wsSend({janus:"trickle", session_id:state.sessionId, handle_id:state.handleId, transaction:tx(), candidate:ev.candidate}); } catch (e) {}
+      };
+      pc.ontrack = (ev) => {
+        if (ev.streams && ev.streams[0]) {
+          remoteAudio.srcObject = ev.streams[0];
+          try {
+            remoteAudio.muted = false;
+            remoteAudio.volume = 1.0;
+            logLine("remote track received muted=" + remoteAudio.muted + " vol=" + remoteAudio.volume);
+          } catch (_) {}
+          try {
+            const p = remoteAudio.play();
+            if (p && typeof p.catch === "function") p.catch(() => {});
+          } catch (_) {}
+        }
+      };
+
+      const local = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+      state.localStream = local;
+      try {
+        const t = local.getAudioTracks && local.getAudioTracks()[0];
+        if (t) {
+          let dev = "";
+          try {
+            const s = t.getSettings ? t.getSettings() : null;
+            if (s && s.deviceId) dev = " deviceId=" + s.deviceId;
+          } catch (_) {}
+          logLine("gotUserMedia track_enabled=" + t.enabled + " muted=" + state.muted + dev);
+        }
+      } catch (_) {}
+      for (const track of local.getTracks()) {
+        track.enabled = !state.muted;
+        pc.addTrack(track, local);
+      }
+      return pc;
+    }
+
+    async function negotiate() {
+      if (!state.pc) throw new Error("pc missing");
+      const offer = await state.pc.createOffer({offerToReceiveAudio:true, offerToReceiveVideo:false});
+      await state.pc.setLocalDescription(offer);
+      const waiter = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("answer timeout")), 12000);
+        state.remoteAnswerWaiter = (msg) => { clearTimeout(timer); resolve(msg); };
+      });
+      await janusMessage({request:"configure", muted: state.muted}, {type:"offer", sdp: offer.sdp});
+      const ev = await waiter;
+      await state.pc.setRemoteDescription(new RTCSessionDescription(ev.jsep));
+    }
+
+    async function createRoomIfNeeded(room) {
+      try {
+        await janusMessage({request:"create", room: room, permanent: false, sampling_rate: 48000});
+      } catch (e) {}
+    }
+
+    function participantsCountFromReply(reply) {
+      try {
+        const d = reply && reply.plugindata && reply.plugindata.data ? reply.plugindata.data : null;
+        if (d && Array.isArray(d.participants)) return d.participants.length;
+      } catch (_) {}
+      return null;
+    }
+
+    async function joinRoom(room, display) {
+      await createRoomIfNeeded(room);
+      const joinEvent = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("join timeout")), 12000);
+        state.joinWaiter = (d) => { clearTimeout(timer); resolve(d); };
+      });
+      const joinReply = await janusMessage({request:"join", room: room, display: display, muted: state.muted});
+      try {
+        let extra = " janus=" + (joinReply && joinReply.janus ? joinReply.janus : "-");
+        if (joinReply && joinReply.error) {
+          if (typeof joinReply.error.code !== "undefined") extra += " err_code=" + joinReply.error.code;
+          if (typeof joinReply.error.reason !== "undefined") extra += " err_reason=" + joinReply.error.reason;
+        }
+        logLine("join sent room=" + room + extra);
+      } catch (_) {}
+      let joined;
+      try { joined = await joinEvent; } catch (e) { state.joinWaiter = null; throw e; }
+      try {
+        let msg = "joined_ack room=" + room;
+        if (joined && typeof joined.id !== "undefined") msg += " id=" + joined.id;
+        if (joined && typeof joined.room !== "undefined") msg += " server_room=" + joined.room;
+        if (joined && Array.isArray(joined.participants)) msg += " participants=" + joined.participants.length;
+        logLine(msg);
+      } catch (_) {}
+      try {
+        const lp = await janusMessage({request:"listparticipants", room: room});
+        updateParticipantsFromReply(lp);
+        const n = participantsCountFromReply(lp);
+        if (n !== null) logLine("listparticipants room=" + room + " count=" + n);
+        else logLine("listparticipants room=" + room + " janus=" + (lp && lp.janus ? lp.janus : "-"));
+      } catch (e) {
+        try { logLine("listparticipants failed: " + (e && e.message ? e.message : String(e))); } catch (_) {}
+      }
+      await createPeer();
+      await negotiate();
+      logLine("joined room " + room);
+    }
+
+    async function destroySession() {
+      if (!state.sessionId) return;
+      try { wsSend({janus:"destroy", session_id:state.sessionId, transaction:tx()}); } catch (e) {}
+      state.sessionId = 0;
+      state.handleId = 0;
+    }
+
+    function stopAloneWatch() {
+      if (state.aloneCheckTimer) {
+        clearInterval(state.aloneCheckTimer);
+        state.aloneCheckTimer = null;
+      }
+      state.aloneSinceMs = 0;
+    }
+
+    async function resetAll() {
+      stopKeepAlive();
+      stopAloneWatch();
+      if (state.pc) { try { state.pc.close(); } catch (e) {} state.pc = null; }
+      if (state.localStream) { try { state.localStream.getTracks().forEach(t => t.stop()); } catch (e) {} state.localStream = null; }
+      remoteAudio.srcObject = null;
+      state.joinWaiter = null;
+      state.participants = [];
+      if (state.sessionId && state.handleId) {
+        try { await janusMessage({request:"leave"}); } catch (e) {}
+      }
+      try { await destroySession(); } catch (e) {}
+      if (state.ws) { try { state.ws.close(); } catch (e) {} state.ws = null; }
+      state.pending.clear();
+      state.remoteAnswerWaiter = null;
+    }
+
+    async function stopAll(reason) {
+      try { logLine("stop" + (reason ? " reason=" + reason : "")); } catch (_) {}
+      try { await resetAll(); } catch (_) {}
+      state.room = 0;
+      state.display = "";
+      state.muted = true;
+      try { setStatus("idle"); } catch (_) {}
+    }
+
+    function startAloneWatch(room) {
+      stopAloneWatch();
+      state.aloneSinceMs = 0;
+      state.aloneCheckTimer = setInterval(async () => {
+        if (!state.sessionId || !state.handleId) return;
+        if (state.room !== room) return;
+        try {
+          const lp = await janusMessage({request:"listparticipants", room: room});
+          updateParticipantsFromReply(lp);
+          const n = participantsCountFromReply(lp);
+          if (typeof n !== "number") return;
+          if (n <= 1) {
+            const nowMs = Date.now();
+            if (!state.aloneSinceMs) state.aloneSinceMs = nowMs;
+            if (nowMs - state.aloneSinceMs >= 30000) {
+              await stopAll("alone_30s");
+            }
+          } else {
+            state.aloneSinceMs = 0;
+          }
+        } catch (_) {}
+      }, 5000);
+    }
+
+    async function switchRoom(room, display, muted) {
+      state.room = room;
+      state.display = display || "";
+      state.muted = !!muted;
+      logLine("switch room=" + room + " display=" + state.display + " muted=" + state.muted + " wsUrl=" + state.wsUrl);
+      try {
+        await resetAll();
+        await wsOpen();
+        await janusCreateSession();
+        startKeepAlive();
+        await janusAttach();
+        await joinRoom(room, state.display);
+        startAloneWatch(room);
+      } catch (e) {
+        try { logLine("switchRoom failed: " + (e && e.message ? e.message : String(e))); } catch (_) {}
+        throw e;
+      }
+    }
+
+    async function setMuted(m) {
+      state.muted = !!m;
+      if (state.localStream) {
+        for (const track of state.localStream.getTracks()) track.enabled = !state.muted;
+      }
+      if (state.sessionId && state.handleId) {
+        try { await janusMessage({request:"configure", muted: state.muted}); } catch (e) {}
+      }
+      logLine("muted=" + state.muted);
+    }
+
+    async function listParticipantsNow() {
+      if (!state.sessionId || !state.handleId || !state.room) return [];
+      try {
+        const lp = await janusMessage({request:"listparticipants", room: state.room});
+        updateParticipantsFromReply(lp);
+      } catch (_) {}
+      return Array.isArray(state.participants) ? state.participants.slice() : [];
+    }
+
+    window.IrulerJanusAudio = {
+      switchRoom: (room, display, muted) => switchRoom(Number(room), String(display || ""), !!muted),
+      setMuted: (muted) => setMuted(!!muted),
+      stop: (reason) => stopAll(String(reason || "")),
+      getParticipants: () => (Array.isArray(state.participants) ? state.participants.slice() : []),
+      listParticipantsNow: () => listParticipantsNow(),
+      getState: () => ({room: state.room, muted: state.muted, sessionId: state.sessionId, handleId: state.handleId})
+    };
+
+    logLine("page ready");
+    setStatus("ready");
+  })();
+  </script>
+  <script>window.__JANUS_READY__ = true;</script>
+</body>
+</html>
+

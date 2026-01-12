@@ -47,16 +47,26 @@ namespace {
             case QtCriticalMsg: level = "ERROR"; break;
             case QtFatalMsg: level = "FATAL"; break;
         }
-        QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
-        QByteArray text = msg.toUtf8();
+        QString ts = QDateTime::currentDateTime().toString("mm:ss.zzz");
+        QString cleanMsg = msg;
+        cleanMsg.replace(QStringLiteral("[KickDiag][Janus]"), QString());
+        cleanMsg.replace(QStringLiteral("[KickDiag]"), QString());
+        cleanMsg = cleanMsg.trimmed();
+        QByteArray text = cleanMsg.toUtf8();
         const char *file = ctx.file ? ctx.file : "";
         const char *func = ctx.function ? ctx.function : "";
         int line = ctx.line;
         
         // 1. 输出到控制台
         FILE *out = (type == QtCriticalMsg || type == QtFatalMsg) ? stderr : stdout;
-        std::fprintf(out, "[%s] [%s] %s (%s:%d %s)\n",
-                     ts.toUtf8().constData(), level, text.constData(), file, line, func);
+        const bool includeContext = (type == QtCriticalMsg || type == QtFatalMsg);
+        if (includeContext) {
+            std::fprintf(out, "[%s] [%s] %s (%s:%d %s)\n",
+                         ts.toUtf8().constData(), level, text.constData(), file, line, func);
+        } else {
+            std::fprintf(out, "[%s] [%s] %s\n",
+                         ts.toUtf8().constData(), level, text.constData());
+        }
         std::fflush(out);
 
         // 2. 输出到文件
@@ -71,7 +81,11 @@ namespace {
         }
         if (logFile && logFile->isOpen()) {
             QTextStream stream(logFile);
-            stream << "[" << ts << "] [" << level << "] " << msg << " (" << file << ":" << line << " " << func << ")\n";
+            if (includeContext) {
+                stream << "[" << ts << "] [" << level << "] " << cleanMsg << " (" << file << ":" << line << " " << func << ")\n";
+            } else {
+                stream << "[" << ts << "] [" << level << "] " << cleanMsg << "\n";
+            }
             stream.flush();
         }
 

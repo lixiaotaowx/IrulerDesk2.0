@@ -11,9 +11,11 @@
 #include <QScrollBar>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QSaveFile>
+#include <QStringList>
 #include "../common/AppConfig.h"
 #include <QDesktopServices>
 #include <QPointer>
@@ -43,6 +45,7 @@
 #include <QWebEnginePage>
 #include <QWebEngineSettings>
 #include <QSignalBlocker>
+#include <QDialog>
 #include <climits>
 #include <QAbstractButton>
 #ifdef _WIN32
@@ -814,6 +817,11 @@ void NewUiWindow::setTalkConnected(const QString &userId, bool connected)
     btn->setProperty("isOn", connected);
     setTalkPending(userId, false);
     updateTalkOverlay(userId);
+    if (connected) {
+        showAudioCallUi(userId);
+    } else if (m_audioCallPeerId == userId) {
+        hideAudioCallUi();
+    }
 }
 
 void NewUiWindow::setTalkRemoteActive(const QString &userId, bool active)
@@ -827,6 +835,11 @@ void NewUiWindow::setTalkRemoteActive(const QString &userId, bool active)
     btn->setProperty("isOn", active);
     setTalkPending(userId, false);
     updateTalkOverlay(userId);
+    if (active) {
+        showAudioCallUi(userId);
+    } else if (m_audioCallPeerId == userId) {
+        hideAudioCallUi();
+    }
 }
 
 void NewUiWindow::updateTalkOverlay(const QString &userId)
@@ -1117,7 +1130,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
                     setTalkRemoteActive(id, false);
                     if (id != m_myStreamId) {
                         setTalkConnected(id, false);
-                        emit kickViewerRequested(id);
+                        emit talkToggleRequested(id, false);
                         return;
                     }
                 }
@@ -1542,6 +1555,7 @@ void NewUiWindow::setupUi()
         return true;
     };
     const bool initialMicEnabled = loadMicEnabled();
+    m_globalMicEnabled = initialMicEnabled;
     menuBtn->setCheckable(true);
     menuBtn->setChecked(initialMicEnabled);
     menuBtn->setIcon(initialMicEnabled ? micIconOn : micIconOff);
@@ -2262,264 +2276,46 @@ static QString toJsStringLiteral(const QString &value)
     return QStringLiteral("\"\"");
 }
 
+static QString readTextFileUtf8(const QString &filePath)
+{
+    QFile f(filePath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        return QString();
+    }
+    return QString::fromUtf8(f.readAll());
+}
+
 static QString buildJanusAudioHtml()
 {
     const QString wsUrlLiteral = toJsStringLiteral(AppConfig::janusWsUrl());
-    const QString html = QStringLiteral(R"HTML(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    html, body { margin: 0; padding: 0; background: #202020; color: #e0e0e0; font-family: sans-serif; }
-    #status { padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
-    audio { display: none; }
-  </style>
-  <title>Iruler Janus Audio</title>
-</head>
-<body>
-  <div id="status">init</div>
-  <audio id="remote" autoplay playsinline></audio>
-  <script>
-  (function(){
-    const statusEl = document.getElementById('status');
-    const remoteAudio = document.getElementById('remote');
-    function setStatus(s) { statusEl.textContent = s; }
-    function now() { return new Date().toISOString(); }
-    function tx() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
-
-    const state = {
-      wsUrl: __WS_URL__,
-      ws: null,
-      sessionId: 0,
-      handleId: 0,
-      pc: null,
-      localStream: null,
-      muted: true,
-      room: 0,
-      display: "",
-      pending: new Map(),
-      keepAliveTimer: null,
-      remoteAnswerWaiter: null,
-      remoteAnswerTx: null
-    };
-
-    function logLine(line) {
-      setStatus(now() + " " + line + "\\n" + statusEl.textContent.split("\\n").slice(0, 8).join("\\n"));
-      console.log("[IrulerJanusAudio]", line);
+    const QString templatePath = AppConfig::janusAudioHtmlPath();
+    QString html = readTextFileUtf8(templatePath);
+    if (html.isEmpty()) {
+        html = QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head><body>IrulerJanusAudio.html missing</body></html>");
     }
+    return html.replace(QStringLiteral("__WS_URL__"), wsUrlLiteral);
+}
 
-    function wsSend(obj) {
-      if (!state.ws || state.ws.readyState !== 1) throw new Error("ws not open");
-      state.ws.send(JSON.stringify(obj));
-    }
+namespace {
+class JanusLogPage final : public QWebEnginePage
+{
+public:
+    explicit JanusLogPage(QObject *parent = nullptr) : QWebEnginePage(parent) {}
 
-    function waitTx(t) {
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          state.pending.delete(t);
-          reject(new Error("timeout " + t));
-        }, 12000);
-        state.pending.set(t, (msg) => { clearTimeout(timer); resolve(msg); });
-      });
-    }
-
-    function onWsMessage(ev) {
-      let msg;
-      try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      if (msg && msg.transaction && state.pending.has(msg.transaction)) {
-        const cb = state.pending.get(msg.transaction);
-        state.pending.delete(msg.transaction);
-        cb(msg);
-        return;
-      }
-      if (msg.janus === "event" && msg.sender === state.handleId && msg.jsep) {
-        if (state.remoteAnswerWaiter) {
-          const w = state.remoteAnswerWaiter;
-          state.remoteAnswerWaiter = null;
-          w(msg);
-          return;
+protected:
+    void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level,
+                                  const QString &message,
+                                  int lineNumber,
+                                  const QString &sourceID) override
+    {
+        if (level == QWebEnginePage::ErrorMessageLevel) {
+            qInfo().noquote() << message << "line=" << lineNumber << "src=" << sourceID;
+        } else {
+            qInfo().noquote() << message;
         }
-      }
-      if (msg.janus === "trickle" && msg.sender === state.handleId && msg.candidate) {
-        if (state.pc && msg.candidate.candidate) {
-          state.pc.addIceCandidate(msg.candidate).catch(() => {});
-        }
-        return;
-      }
-      if (msg.janus === "hangup" && msg.sender === state.handleId) {
-        logLine("hangup");
-        return;
-      }
-      if (msg.janus === "webrtcup" && msg.sender === state.handleId) {
-        logLine("webrtcup");
-        return;
-      }
+        QWebEnginePage::javaScriptConsoleMessage(level, message, lineNumber, sourceID);
     }
-
-    async function wsOpen() {
-      if (state.ws && (state.ws.readyState === 0 || state.ws.readyState === 1)) return;
-      const ws = new WebSocket(state.wsUrl, "janus-protocol");
-      state.ws = ws;
-      ws.onmessage = onWsMessage;
-      await new Promise((resolve, reject) => {
-        ws.onopen = resolve;
-        ws.onerror = reject;
-      });
-      ws.onclose = () => {
-        logLine("ws closed");
-        stopKeepAlive();
-      };
-      logLine("ws open");
-    }
-
-    async function janusCreateSession() {
-      const t = tx();
-      wsSend({janus:"create", transaction:t});
-      const reply = await waitTx(t);
-      if (reply.janus !== "success" || !reply.data || !reply.data.id) throw new Error("create session failed");
-      state.sessionId = reply.data.id;
-      logLine("session " + state.sessionId);
-    }
-
-    async function janusAttach() {
-      const t = tx();
-      wsSend({janus:"attach", plugin:"janus.plugin.audiobridge", session_id:state.sessionId, transaction:t});
-      const reply = await waitTx(t);
-      if (reply.janus !== "success" || !reply.data || !reply.data.id) throw new Error("attach failed");
-      state.handleId = reply.data.id;
-      logLine("handle " + state.handleId);
-    }
-
-    async function janusMessage(body, jsep) {
-      const t = tx();
-      const msg = {janus:"message", session_id:state.sessionId, handle_id:state.handleId, transaction:t, body:body};
-      if (jsep) msg.jsep = jsep;
-      wsSend(msg);
-      return waitTx(t);
-    }
-
-    function startKeepAlive() {
-      stopKeepAlive();
-      state.keepAliveTimer = setInterval(() => {
-        if (!state.sessionId) return;
-        try { wsSend({janus:"keepalive", session_id:state.sessionId, transaction:tx()}); } catch (e) {}
-      }, 25000);
-    }
-
-    function stopKeepAlive() {
-      if (state.keepAliveTimer) { clearInterval(state.keepAliveTimer); state.keepAliveTimer = null; }
-    }
-
-    async function createPeer() {
-      const pc = new RTCPeerConnection({iceServers: [{urls: ["stun:stun.l.google.com:19302"]}]});
-      state.pc = pc;
-      pc.onicecandidate = (ev) => {
-        if (!ev.candidate) {
-          try { wsSend({janus:"trickle", session_id:state.sessionId, handle_id:state.handleId, transaction:tx(), candidate:{completed:true}}); } catch (e) {}
-          return;
-        }
-        try { wsSend({janus:"trickle", session_id:state.sessionId, handle_id:state.handleId, transaction:tx(), candidate:ev.candidate}); } catch (e) {}
-      };
-      pc.ontrack = (ev) => {
-        if (ev.streams && ev.streams[0]) {
-          remoteAudio.srcObject = ev.streams[0];
-        }
-      };
-
-      const local = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
-      state.localStream = local;
-      for (const track of local.getTracks()) {
-        track.enabled = !state.muted;
-        pc.addTrack(track, local);
-      }
-      return pc;
-    }
-
-    async function negotiate() {
-      if (!state.pc) throw new Error("pc missing");
-      const offer = await state.pc.createOffer({offerToReceiveAudio:true, offerToReceiveVideo:false});
-      await state.pc.setLocalDescription(offer);
-      const waiter = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("answer timeout")), 12000);
-        state.remoteAnswerWaiter = (msg) => { clearTimeout(timer); resolve(msg); };
-      });
-      await janusMessage({request:"configure", muted: state.muted}, {type:"offer", sdp: offer.sdp});
-      const ev = await waiter;
-      await state.pc.setRemoteDescription(new RTCSessionDescription(ev.jsep));
-    }
-
-    async function createRoomIfNeeded(room) {
-      try {
-        await janusMessage({request:"create", room: room, permanent: false, sampling_rate: 48000});
-      } catch (e) {}
-    }
-
-    async function joinRoom(room, display) {
-      await createRoomIfNeeded(room);
-      await janusMessage({request:"join", room: room, display: display, muted: state.muted});
-      await createPeer();
-      await negotiate();
-      logLine("joined room " + room);
-    }
-
-    async function destroySession() {
-      if (!state.sessionId) return;
-      try { wsSend({janus:"destroy", session_id:state.sessionId, transaction:tx()}); } catch (e) {}
-      state.sessionId = 0;
-      state.handleId = 0;
-    }
-
-    async function resetAll() {
-      stopKeepAlive();
-      if (state.pc) { try { state.pc.close(); } catch (e) {} state.pc = null; }
-      if (state.localStream) { try { state.localStream.getTracks().forEach(t => t.stop()); } catch (e) {} state.localStream = null; }
-      remoteAudio.srcObject = null;
-      try { await destroySession(); } catch (e) {}
-      if (state.ws) { try { state.ws.close(); } catch (e) {} state.ws = null; }
-      state.pending.clear();
-      state.remoteAnswerWaiter = null;
-    }
-
-    async function switchRoom(room, display, muted) {
-      state.room = room;
-      state.display = display || "";
-      state.muted = !!muted;
-      logLine("switch room=" + room + " muted=" + state.muted);
-      await resetAll();
-      await wsOpen();
-      await janusCreateSession();
-      startKeepAlive();
-      await janusAttach();
-      await joinRoom(room, state.display);
-    }
-
-    async function setMuted(m) {
-      state.muted = !!m;
-      if (state.localStream) {
-        for (const track of state.localStream.getTracks()) track.enabled = !state.muted;
-      }
-      if (state.sessionId && state.handleId) {
-        try { await janusMessage({request:"configure", muted: state.muted}); } catch (e) {}
-      }
-      logLine("muted=" + state.muted);
-    }
-
-    window.IrulerJanusAudio = {
-      switchRoom: (room, display, muted) => switchRoom(Number(room), String(display || ""), !!muted),
-      setMuted: (muted) => setMuted(!!muted),
-      getState: () => ({room: state.room, muted: state.muted, sessionId: state.sessionId, handleId: state.handleId})
-    };
-
-    setStatus("ready");
-  })();
-  </script>
-  <script>window.__JANUS_READY__ = true;</script>
-</body>
-</html>
-)HTML").replace(QStringLiteral("__WS_URL__"), wsUrlLiteral);
-    return html;
+};
 }
 
 void NewUiWindow::ensureJanusAudioLoaded()
@@ -2532,12 +2328,19 @@ void NewUiWindow::ensureJanusAudioLoaded()
     }
 
     auto *page = m_function1WebView->page();
+    if (!dynamic_cast<JanusLogPage*>(page)) {
+        auto *p = new JanusLogPage(m_function1WebView);
+        m_function1WebView->setPage(p);
+        page = p;
+    }
     if (m_function1WebView->settings()) {
         m_function1WebView->settings()->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, false);
     }
+    page->setAudioMuted(false);
     connect(page, &QWebEnginePage::featurePermissionRequested, this,
             [page](const QUrl &securityOrigin, QWebEnginePage::Feature feature) {
-                if (feature == QWebEnginePage::MediaAudioCapture) {
+                if (feature == QWebEnginePage::MediaAudioCapture ||
+                    feature == QWebEnginePage::MediaAudioVideoCapture) {
                     page->setFeaturePermission(securityOrigin, feature, QWebEnginePage::PermissionGrantedByUser);
                 }
             });
@@ -2549,6 +2352,23 @@ void NewUiWindow::ensureJanusAudioLoaded()
         applyJanusAudioState();
     });
 
+    const QString templatePath = AppConfig::janusAudioHtmlPath();
+    if (!templatePath.isEmpty()) {
+        const QFileInfo fi(templatePath);
+        qInfo().noquote() << "[KickDiag] janus template"
+                          << " path=" << fi.absoluteFilePath()
+                          << " bytes=" << fi.size();
+    } else {
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QString expected = QDir(appDir).filePath(QStringLiteral("src/web/IrulerJanusAudio.html"));
+        const QFileInfo expectedFi(QDir::cleanPath(expected));
+        qInfo().noquote()
+            << QStringLiteral("[KickDiag] janus template missing app_dir=%1 cwd=%2 expect=%3 exist=%4")
+                   .arg(appDir,
+                        QDir::currentPath(),
+                        expectedFi.absoluteFilePath(),
+                        expectedFi.exists() && expectedFi.isFile() ? QStringLiteral("true") : QStringLiteral("false"));
+    }
     m_function1WebView->setHtml(buildJanusAudioHtml(), QUrl(QStringLiteral("http://localhost/")));
     m_janusAudioLoaded = true;
 }
@@ -2561,14 +2381,45 @@ void NewUiWindow::applyJanusAudioState()
     if (m_janusDesiredRoomOwnerId.isEmpty()) {
         return;
     }
-    const qint64 room = AppConfig::janusAudioRoomForUserId(m_janusDesiredRoomOwnerId);
+    const QString desiredOwnerId = m_janusDesiredRoomOwnerId;
+    const qint64 room = AppConfig::janusAudioRoomForUserId(desiredOwnerId);
     const QString display = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
-    const QString js = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.switchRoom(%1, %2, %3);")
-                           .arg(QString::number(room),
-                                toJsStringLiteral(display),
-                                m_globalMicEnabled ? QStringLiteral("false") : QStringLiteral("true"));
-    m_function1WebView->page()->runJavaScript(js);
-    m_janusActiveRoomOwnerId = m_janusDesiredRoomOwnerId;
+    const bool muted = !m_globalMicEnabled;
+
+    const QString readyJs = QStringLiteral(
+        "(() => { try { return !!(window.__JANUS_READY__ && window.IrulerJanusAudio); } catch (e) { return false; } })();");
+
+    m_function1WebView->page()->runJavaScript(
+        readyJs,
+        [this, desiredOwnerId, room, display, muted](const QVariant &ret) {
+            if (!this) {
+                return;
+            }
+            if (m_janusDesiredRoomOwnerId != desiredOwnerId) {
+                return;
+            }
+            if (!ret.toBool()) {
+                return;
+            }
+
+            if (m_janusActiveRoomOwnerId == desiredOwnerId) {
+                const QString setMutedJs = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.setMuted(%1);")
+                                               .arg(muted ? QStringLiteral("true") : QStringLiteral("false"));
+                m_function1WebView->page()->runJavaScript(setMutedJs);
+                return;
+            }
+
+            qInfo().noquote() << "[KickDiag] janus state"
+                              << " owner=" << desiredOwnerId
+                              << " room=" << room
+                              << " muted=" << (muted ? "true" : "false");
+            const QString switchJs = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.switchRoom(%1, %2, %3);")
+                                         .arg(QString::number(room),
+                                              toJsStringLiteral(display),
+                                              muted ? QStringLiteral("true") : QStringLiteral("false"));
+            m_function1WebView->page()->runJavaScript(switchJs);
+            m_janusActiveRoomOwnerId = desiredOwnerId;
+        });
 }
 
 void NewUiWindow::janusSwitchToUserRoom(const QString &userId)
@@ -2600,6 +2451,169 @@ void NewUiWindow::janusSetMuted(bool muted)
     const QString js = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.setMuted(%1);")
                            .arg(muted ? QStringLiteral("true") : QStringLiteral("false"));
     m_function1WebView->page()->runJavaScript(js);
+}
+
+void NewUiWindow::janusStop()
+{
+    if (!m_function1WebView || !m_function1WebView->page()) {
+        return;
+    }
+    ensureJanusAudioLoaded();
+    m_janusDesiredRoomOwnerId.clear();
+    m_janusActiveRoomOwnerId.clear();
+    hideAudioCallUi();
+    const QString js = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.stop && IrulerJanusAudio.stop('hangup');");
+    m_function1WebView->page()->runJavaScript(js);
+}
+
+void NewUiWindow::ensureAudioCallUi()
+{
+    if (m_audioCallDialog) {
+        return;
+    }
+
+    auto *dlg = new QDialog(this);
+    dlg->setWindowTitle(QStringLiteral("通话"));
+    dlg->setWindowFlags(Qt::Tool | Qt::WindowStaysOnTopHint);
+    dlg->setModal(false);
+    dlg->setMinimumSize(320, 180);
+
+    auto *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(12);
+
+    auto *names = new QLabel(QStringLiteral(""), dlg);
+    names->setWordWrap(true);
+    names->setAlignment(Qt::AlignCenter);
+    QFont f = names->font();
+    f.setPointSize(qMax(10, f.pointSize() + 2));
+    f.setBold(true);
+    names->setFont(f);
+    layout->addWidget(names);
+
+    layout->addStretch();
+
+    auto *btnRow = new QHBoxLayout();
+    btnRow->setSpacing(16);
+    auto *muteBtn = new QPushButton(QStringLiteral("静音"), dlg);
+    muteBtn->setCheckable(true);
+    muteBtn->setChecked(!m_globalMicEnabled);
+    auto *hangupBtn = new QPushButton(QStringLiteral("挂断"), dlg);
+    hangupBtn->setDefault(true);
+    btnRow->addStretch();
+    btnRow->addWidget(muteBtn);
+    btnRow->addWidget(hangupBtn);
+    btnRow->addStretch();
+    layout->addLayout(btnRow);
+
+    auto *timer = new QTimer(dlg);
+    timer->setInterval(1000);
+
+    connect(muteBtn, &QPushButton::toggled, this, [this](bool muted) {
+        const bool enabled = !muted;
+        setGlobalMicCheckedSilently(enabled);
+        emit micToggleRequested(enabled);
+    });
+
+    auto hangupNow = [this]() {
+        const QString peerId = m_audioCallPeerId;
+        if (!peerId.isEmpty()) {
+            setTalkConnected(peerId, false);
+            setTalkRemoteActive(peerId, false);
+            emit talkToggleRequested(peerId, false);
+        } else {
+            janusStop();
+        }
+        hideAudioCallUi();
+    };
+
+    connect(hangupBtn, &QPushButton::clicked, this, hangupNow);
+    connect(dlg, &QDialog::rejected, this, hangupNow);
+    connect(timer, &QTimer::timeout, this, &NewUiWindow::refreshAudioCallParticipants);
+
+    m_audioCallDialog = dlg;
+    m_audioCallNamesLabel = names;
+    m_audioCallMuteBtn = muteBtn;
+    m_audioCallHangupBtn = hangupBtn;
+    m_audioCallPollTimer = timer;
+}
+
+void NewUiWindow::showAudioCallUi(const QString &peerId)
+{
+    if (peerId.isEmpty()) {
+        return;
+    }
+    ensureAudioCallUi();
+    if (!m_audioCallDialog) {
+        return;
+    }
+    if (!m_globalMicEnabled) {
+        setGlobalMicCheckedSilently(true);
+    }
+    m_audioCallPeerId = peerId;
+    if (m_audioCallMuteBtn) {
+        QSignalBlocker blocker(m_audioCallMuteBtn);
+        m_audioCallMuteBtn->setChecked(!m_globalMicEnabled);
+    }
+    refreshAudioCallParticipants();
+    if (m_audioCallPollTimer && !m_audioCallPollTimer->isActive()) {
+        m_audioCallPollTimer->start();
+    }
+    if (!m_audioCallDialog->isVisible()) {
+        m_audioCallDialog->show();
+    }
+    m_audioCallDialog->raise();
+    m_audioCallDialog->activateWindow();
+}
+
+void NewUiWindow::hideAudioCallUi()
+{
+    if (m_audioCallPollTimer) {
+        m_audioCallPollTimer->stop();
+    }
+    m_audioCallPeerId.clear();
+    if (m_audioCallDialog) {
+        m_audioCallDialog->hide();
+    }
+}
+
+void NewUiWindow::refreshAudioCallParticipants()
+{
+    if (!m_function1WebView || !m_function1WebView->page() || !m_audioCallNamesLabel) {
+        return;
+    }
+    const QString js = QStringLiteral(
+        "(() => { try {"
+        "  if (window.IrulerJanusAudio && IrulerJanusAudio.listParticipantsNow) {"
+        "    try { IrulerJanusAudio.listParticipantsNow(); } catch (e) {}"
+        "  }"
+        "  return (window.IrulerJanusAudio && IrulerJanusAudio.getParticipants) ? IrulerJanusAudio.getParticipants() : [];"
+        "} catch (e) { return []; } })();");
+    m_function1WebView->page()->runJavaScript(js, [this](const QVariant &v) {
+        if (!this || !m_audioCallNamesLabel) {
+            return;
+        }
+        QStringList names;
+        if (v.userType() == QMetaType::QVariantList) {
+            const QVariantList list = v.toList();
+            for (const QVariant &it : list) {
+                const QString s = it.toString().trimmed();
+                if (!s.isEmpty()) {
+                    names.append(s);
+                }
+            }
+        }
+        if (names.isEmpty()) {
+            const QString me = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
+            if (!me.isEmpty()) {
+                m_audioCallNamesLabel->setText(me);
+            } else {
+                m_audioCallNamesLabel->setText(QStringLiteral("通话中"));
+            }
+            return;
+        }
+        m_audioCallNamesLabel->setText(names.join(QStringLiteral("、")));
+    });
 }
 
 void NewUiWindow::toggleFunction1Maximize()
@@ -4156,7 +4170,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
                 setTalkRemoteActive(userId, false);
                 if (userId != m_myStreamId) {
                     setTalkConnected(userId, false);
-                    emit kickViewerRequested(userId);
+                    emit talkToggleRequested(userId, false);
                     return;
                 }
             }

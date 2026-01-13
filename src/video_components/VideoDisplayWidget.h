@@ -140,6 +140,9 @@ private slots:
 private:
     // 重新创建并连接WebSocket接收器，防止旧实例卡死或残留状态
     void recreateReceiver();
+    void scheduleAutoReconnect();
+    void cancelAutoReconnect();
+    void performAutoReconnect();
     void setupUI();
     void updateButtonText();
     void drawMouseCursor(QPixmap &pixmap, const QPoint &position, const QString &name = QString()); // 保留旧接口（不再使用远端叠加）
@@ -193,6 +196,8 @@ private:
     bool m_audioOnlySession = false;
     bool m_micSendEnabled = false;
     int m_micGainPercent = 100;
+    QTimer *m_autoReconnectTimer = nullptr;
+    int m_autoReconnectAttempts = 0;
     
     std::unique_ptr<AudioPlayer> m_audioPlayer;
 
@@ -218,6 +223,7 @@ private:
     QString m_lastViewerId;
     QString m_lastTargetId;
     QString m_viewerName;
+    bool m_watchRequestDeferred = false;
     bool m_annotationEnabled = false;
     int m_toolMode = 0;
     bool m_isAnnotating = false; // 是否处于批注绘制中（鼠标按下）

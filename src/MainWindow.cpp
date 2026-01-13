@@ -469,6 +469,9 @@ void MainWindow::sendWatchRequestWithVideo(const QString& targetDeviceId)
 {
     m_pendingShowVideoWindow = true;
     m_audioOnlyTargetId.clear();
+    if (m_transparentImageList && !targetDeviceId.isEmpty() && targetDeviceId != getDeviceId()) {
+        m_transparentImageList->setWatchingTarget(targetDeviceId);
+    }
     sendWatchRequestInternal(targetDeviceId, false);
 }
 
@@ -523,8 +526,8 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
         videoWidget->setAnnotationColorId(initialColorId);
         videoWidget->setViewerName(m_userName);
         videoWidget->setAudioOnlySession(false);
-        videoWidget->startReceiving(serverUrl);
         videoWidget->setSessionInfo(myId, targetDeviceId);
+        videoWidget->startReceiving(serverUrl);
 
         m_videoWindow->setSpeakerChecked(false);
         m_videoWindow->setMicCheckedSilently(false);
@@ -535,6 +538,24 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
     }
 
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
+        m_currentTargetId = targetDeviceId;
+        m_deferredWatchTargetId = targetDeviceId;
+        m_deferredWatchAudioOnly = audioOnly;
+        if (m_loginWebSocket) {
+            if (m_deferredWatchConn) {
+                QObject::disconnect(m_deferredWatchConn);
+                m_deferredWatchConn = QMetaObject::Connection();
+            }
+            m_deferredWatchConn = connect(m_loginWebSocket, &QWebSocket::connected, this, [this]() {
+                const QString targetId = m_deferredWatchTargetId;
+                const bool audioOnly = m_deferredWatchAudioOnly;
+                if (targetId.isEmpty()) {
+                    return;
+                }
+                sendWatchRequestInternal(targetId, audioOnly);
+            }, Qt::SingleShotConnection);
+        }
+        connectToLoginServer();
         return;
     }
     // 记录当前正在观看的目标设备ID，便于在源切换后重发
@@ -589,6 +610,9 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
         if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
             m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
         }
+        if (m_transparentImageList && m_transparentImageList->getCurrentUserId() != targetDeviceId) {
+            m_transparentImageList->setWatchingTarget(QString());
+        }
 
         // 关闭对话框
         if (m_waitingDialog) {
@@ -628,9 +652,9 @@ void MainWindow::startVideoReceiving(const QString& targetDeviceId)
     videoWidget->setAudioOnlySession(false);
     // 使用VideoDisplayWidget开始接收视频流
     
-    videoWidget->startReceiving(serverUrl);
     QString viewerId = getDeviceId();
     videoWidget->setSessionInfo(viewerId, targetDeviceId);
+    videoWidget->startReceiving(serverUrl);
 
     m_videoWindow->setSpeakerChecked(false);
     m_videoWindow->setMicCheckedSilently(false);
@@ -1000,6 +1024,21 @@ void MainWindow::setupUI()
             }
             sendViewerMicState(targetId, true);
         } else {
+            auto sendKickViewer = [this](const QString &viewerId) {
+                if (viewerId.isEmpty()) {
+                    return;
+                }
+                if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
+                    return;
+                }
+                QJsonObject msg;
+                msg["type"] = "kick_viewer";
+                msg["viewer_id"] = viewerId;
+                msg["target_id"] = getDeviceId();
+                msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+            };
+
             if (m_transparentImageList) {
                 m_transparentImageList->janusStop();
                 m_transparentImageList->setTalkConnected(targetId, false);
@@ -1009,6 +1048,15 @@ void MainWindow::setupUI()
                 m_pendingTalkEnabled = false;
             }
             sendViewerMicState(targetId, false);
+
+            if (m_isStreaming && m_transparentImageList) {
+                const QStringList viewerIds = m_transparentImageList->getViewerIds();
+                for (const QString &viewerId : viewerIds) {
+                    sendKickViewer(viewerId);
+                    m_transparentImageList->removeViewer(viewerId);
+                    m_transparentImageList->sendKickToSubscribers(viewerId);
+                }
+            }
 
             if (!m_currentTargetId.isEmpty() && m_currentTargetId == targetId && m_videoWindow) {
                 m_videoWindow->setMicCheckedSilently(false);
@@ -2156,7 +2204,7 @@ void MainWindow::initializeLoginSystem()
     m_reconnectTimer->setSingleShot(true);
     connect(m_reconnectTimer, &QTimer::timeout, this, &MainWindow::connectToLoginServer);
 
-    QTimer::singleShot(3000, this, &MainWindow::connectToLoginServer);
+    QTimer::singleShot(0, this, &MainWindow::connectToLoginServer);
 }
 
 void MainWindow::connectToLoginServer()
@@ -3001,6 +3049,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (m_audioOnlyTargetId == targetId) {
             m_audioOnlyTargetId.clear();
         }
+        if (m_transparentImageList && m_transparentImageList->getCurrentUserId() != targetId) {
+            m_transparentImageList->setWatchingTarget(QString());
+        }
 
         if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
             QJsonObject msg;
@@ -3019,7 +3070,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         // [Fix] 移除重复的等待弹窗
     } else if (type == "watch_request_accepted") {
         QString viewerId = obj["viewer_id"].toString();
-        // QString targetId = obj["target_id"].toString();
+        QString targetId = obj["target_id"].toString();
         if (viewerId == getDeviceId()) {
             // Close the waiting dialog if any
             if (m_waitingDialog) {
@@ -3029,6 +3080,24 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
             
             // startVideoReceiving(targetId); // 移除此处调用，等待 streaming_ok 信号再开始接收，避免重复初始化
+            if (!targetId.isEmpty()) {
+                QTimer::singleShot(1200, this, [this, targetId]() {
+                    if (m_currentTargetId != targetId) {
+                        return;
+                    }
+                    if (!m_videoWindow) {
+                        return;
+                    }
+                    auto *vd = m_videoWindow->getVideoDisplayWidget();
+                    if (!vd) {
+                        return;
+                    }
+                    if (vd->isReceiving()) {
+                        return;
+                    }
+                    startVideoReceiving(targetId);
+                });
+            }
         }
     } else if (type == "watch_request_rejected") {
         QString viewerId = obj["viewer_id"].toString();
@@ -3056,6 +3125,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
             if (m_audioOnlyTargetId == targetId) {
                 m_audioOnlyTargetId.clear();
+            }
+            if (m_transparentImageList && m_transparentImageList->getCurrentUserId() != targetId) {
+                m_transparentImageList->setWatchingTarget(QString());
             }
 
             if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
@@ -3155,6 +3227,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             if (m_transparentImageList && !targetId.isEmpty()) {
                 m_transparentImageList->setTalkConnected(targetId, false);
                 m_transparentImageList->setTalkRemoteActive(targetId, false);
+                m_transparentImageList->janusStop();
             }
 
             if (m_videoWindow) {
@@ -3202,6 +3275,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_audioOnlyTargetId.clear();
             }
             startVideoReceiving(targetId);
+            if (showVideoWindow && m_transparentImageList) {
+                m_transparentImageList->setWatchingTarget(targetId);
+            }
             if (showVideoWindow && m_transparentImageList) {
                 m_transparentImageList->talkToggleRequested(targetId, true);
             }

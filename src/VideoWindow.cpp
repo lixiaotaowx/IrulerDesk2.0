@@ -16,6 +16,7 @@
 #include <QPropertyAnimation>
 #include <QClipboard>
 #include <QGuiApplication>
+#include "common/AppConfig.h"
 #ifdef _WIN32
 #define NOMINMAX
 #endif
@@ -978,9 +979,8 @@ void VideoWindow::onMicToggled(bool checked)
         // m_videoDisplayWidget->sendAudioToggle(checked);
         m_videoDisplayWidget->setTalkEnabled(checked);
     }
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString path = appDir + "/config/app_config.txt";
-    QFile f(path);
+    const QString configPath = AppConfig::configFilePathInAppDir();
+    QFile f(configPath);
     QStringList lines;
     if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) { QTextStream in(&f); while (!in.atEnd()) lines << in.readLine(); f.close(); }
     bool rep = false; for (int i = 0; i < lines.size(); ++i) { if (lines[i].startsWith("mic_enabled=")) { lines[i] = QString("mic_enabled=%1").arg(checked ? "true" : "false"); rep = true; break; } }
@@ -997,9 +997,8 @@ void VideoWindow::onSpeakerToggled(bool checked)
     if (m_videoDisplayWidget) {
         m_videoDisplayWidget->setSpeakerEnabled(checked);
     }
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString path = appDir + "/config/app_config.txt";
-    QFile f(path);
+    const QString configPath = AppConfig::configFilePathInAppDir();
+    QFile f(configPath);
     QStringList lines;
     if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) { QTextStream in(&f); while (!in.atEnd()) lines << in.readLine(); f.close(); }
     bool rep = false; for (int i = 0; i < lines.size(); ++i) { if (lines[i].startsWith("speaker_enabled=")) { lines[i] = QString("speaker_enabled=%1").arg(checked ? "true" : "false"); rep = true; break; } }

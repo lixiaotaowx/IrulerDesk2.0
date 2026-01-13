@@ -114,7 +114,12 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
         });
     });
 
+    connect(m_receiver.get(), &WebSocketReceiver::disconnected, this, [this]() {
+        scheduleAutoReconnect();
+    });
+
     connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
+        cancelAutoReconnect();
         if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
             // WebSocketReceiver已内置自动重发机制(m_autoResendWatchRequest)，
             // 此处移除重复发送，防止双重请求导致目标端推流服务冻结
@@ -212,6 +217,8 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     if (m_isReceiving && m_serverUrl == serverUrl) {
         return;
     }
+
+    cancelAutoReconnect();
     
     // 如果正在接收但URL不同，或者需要重新连接，先断开之前的连接
     if (m_isReceiving) {
@@ -248,7 +255,6 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     if (m_continuePromptTimer) {
         m_continuePromptTimer->stop();
         m_continuePromptTimer->setInterval(m_promptIntervalMinutes * 60 * 1000);
-        // 测试时可通过环境变量将分钟设为1
         m_continuePromptTimer->start();
     }
 
@@ -276,6 +282,8 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
     
     // [Optimization] Emit signal immediately to update UI
     emit receivingStopped(m_lastViewerId, m_lastTargetId);
+
+    cancelAutoReconnect();
 
     if (m_receiver) {
         m_receiver->setTalkEnabled(false);
@@ -345,7 +353,24 @@ void VideoDisplayWidget::sendWatchRequest(const QString &viewerId, const QString
         if (!m_viewerName.isEmpty()) {
             m_receiver->setViewerName(m_viewerName);
         }
-        m_receiver->sendWatchRequest(viewerId, targetId);
+        if (m_receiver->isConnected()) {
+            m_receiver->sendWatchRequest(viewerId, targetId);
+            m_watchRequestDeferred = false;
+            return;
+        }
+        if (!m_watchRequestDeferred) {
+            m_watchRequestDeferred = true;
+            connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
+                if (!m_receiver) {
+                    return;
+                }
+                if (m_lastViewerId.isEmpty() || m_lastTargetId.isEmpty()) {
+                    return;
+                }
+                m_receiver->sendWatchRequest(m_lastViewerId, m_lastTargetId);
+                m_watchRequestDeferred = false;
+            }, Qt::SingleShotConnection);
+        }
     } else {
     }
 }
@@ -517,6 +542,14 @@ void VideoDisplayWidget::updateConnectionStatus(const QString &status)
         }
         if (m_offlineHideTimer) {
             m_offlineHideTimer->stop();
+        }
+    }
+
+    if (m_isReceiving) {
+        const bool disconnected = (status == "Disconnected") || status.contains(QStringLiteral("已断开")) || status.contains(QStringLiteral("断开"));
+        const bool failed = status.contains(QStringLiteral("失败")) || status.contains(QStringLiteral("error")) || status.contains(QStringLiteral("Error"));
+        if (disconnected || failed) {
+            scheduleAutoReconnect();
         }
     }
     
@@ -1246,7 +1279,6 @@ void VideoDisplayWidget::setupContinuePrompt()
     if (!m_continuePromptTimer) {
         m_continuePromptTimer = new QTimer(this);
         m_continuePromptTimer->setSingleShot(false);
-        // 读取环境变量 IRULER_PROMPT_MINUTES（整数，单位分钟），用于测试覆盖
         bool ok = false;
         int envMin = qEnvironmentVariableIntValue("IRULER_PROMPT_MINUTES", &ok);
         if (ok && envMin > 0) {
@@ -1403,14 +1435,9 @@ void VideoDisplayWidget::onPromptCountdownTick()
         if (m_promptDialog) {
             m_promptDialog->hide();
         }
-        // 倒计时结束：将自动关闭此窗口
-        stopReceiving(false);
-        QWidget *top = this->window();
-        // 统一改为隐藏顶层窗口，避免关闭整个主程序
-        if (top) {
-            top->hide();
-        } else {
-            this->hide();
+        if (m_continuePromptTimer) {
+            m_continuePromptTimer->setInterval(m_promptIntervalMinutes * 60 * 1000);
+            m_continuePromptTimer->start();
         }
     }
 }
@@ -1461,6 +1488,10 @@ void VideoDisplayWidget::recreateReceiver()
         });
     });
 
+    connect(m_receiver.get(), &WebSocketReceiver::disconnected, this, [this]() {
+        scheduleAutoReconnect();
+    });
+
 
 
     connect(m_receiver.get(), &WebSocketReceiver::avatarUpdateReceived,
@@ -1468,7 +1499,9 @@ void VideoDisplayWidget::recreateReceiver()
         emit avatarUpdateReceived(userId, iconId);
     });
 
-    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() { });
+    connect(m_receiver.get(), &WebSocketReceiver::connected, this, [this]() {
+        cancelAutoReconnect();
+    });
 
     connect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived,
         this, [this](const QByteArray &pcmData, int sampleRate, int channels, int bitsPerSample, qint64) {
@@ -1479,6 +1512,58 @@ void VideoDisplayWidget::recreateReceiver()
 
     // [Fix] 禁用VideoDisplayWidget内部的等待同意弹窗，由MainWindow统一管理
     // 移除旧的 approvalRequired/watchRequestRejected/watchRequestAccepted 连接
+}
+
+void VideoDisplayWidget::scheduleAutoReconnect()
+{
+    if (!m_isReceiving) {
+        return;
+    }
+    if (m_serverUrl.isEmpty()) {
+        return;
+    }
+    if (!m_autoReconnectTimer) {
+        m_autoReconnectTimer = new QTimer(this);
+        m_autoReconnectTimer->setSingleShot(true);
+        connect(m_autoReconnectTimer, &QTimer::timeout, this, &VideoDisplayWidget::performAutoReconnect);
+    }
+    if (m_autoReconnectTimer->isActive()) {
+        return;
+    }
+    if (m_autoReconnectAttempts < 0) {
+        m_autoReconnectAttempts = 0;
+    }
+    int delayMs = 500 + (m_autoReconnectAttempts * 700);
+    if (delayMs > 15000) {
+        delayMs = 15000;
+    }
+    m_autoReconnectAttempts++;
+    m_autoReconnectTimer->start(delayMs);
+}
+
+void VideoDisplayWidget::cancelAutoReconnect()
+{
+    m_autoReconnectAttempts = 0;
+    if (m_autoReconnectTimer) {
+        m_autoReconnectTimer->stop();
+    }
+}
+
+void VideoDisplayWidget::performAutoReconnect()
+{
+    if (!m_isReceiving) {
+        return;
+    }
+    if (m_serverUrl.isEmpty()) {
+        return;
+    }
+    recreateReceiver();
+    m_stats.connectionStatus = "Connecting...";
+    emit connectionStatusChanged(m_stats.connectionStatus);
+    showWaitingSplash();
+    if (m_receiver) {
+        m_receiver->connectToServer(m_serverUrl);
+    }
 }
 void VideoDisplayWidget::setVolumePercent(int percent)
 {
@@ -1514,6 +1599,8 @@ void VideoDisplayWidget::pauseReceiving()
     // [Optimization] Emit signal immediately to update UI (remove viewer from list)
     // This must be done first to ensure the UI is responsive even if network operations take time
     emit receivingStopped(m_lastViewerId, m_lastTargetId);
+
+    cancelAutoReconnect();
 
     // 保留WebSocket连接，仅通知采集端停止推流，便于下次快速恢复
     if (m_receiver && m_isReceiving) {

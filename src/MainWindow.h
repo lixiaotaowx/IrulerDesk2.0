@@ -233,6 +233,9 @@ private:
     
     // 当前正在观看的目标设备ID（用于在源切换后重发watch_request）
     QString m_currentTargetId;
+    QString m_deferredWatchTargetId;
+    bool m_deferredWatchAudioOnly = false;
+    QMetaObject::Connection m_deferredWatchConn;
     QString m_pendingTalkTargetId;
     bool m_pendingTalkEnabled = false;
     bool m_pendingShowVideoWindow = true;

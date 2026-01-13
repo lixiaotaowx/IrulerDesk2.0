@@ -826,30 +826,9 @@ void WebSocketSender::onSendTimer()
 }
 bool WebSocketSender::isManualApprovalEnabled() const
 {
-    QStringList paths;
-    paths << QCoreApplication::applicationDirPath() + "/config/app_config.txt";
-    paths << QDir::currentPath() + "/config/app_config.txt";
-    QString configPath;
-    for (const QString &p : paths) {
-        QFile f(p);
-        if (f.exists()) { configPath = p; break; }
-    }
-    if (configPath.isEmpty()) return true;
-    QFile f(configPath);
-    if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&f);
-        while (!in.atEnd()) {
-            QString line = in.readLine();
-            if (line.startsWith("manual_approval_enabled=")) {
-                QString v = line.mid(QString("manual_approval_enabled=").length()).trimmed();
-                f.close();
-                return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
-            }
-        }
-        f.close();
-        return true;
-    }
-    return true;
+    const QString v = AppConfig::readConfigValue(QStringLiteral("manual_approval_enabled")).trimmed();
+    if (v.isEmpty()) return true;
+    return v.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0 || v == QStringLiteral("1");
 }
 
 void WebSocketSender::sendApprovalRequired(const QString &viewerId, const QString &targetId)

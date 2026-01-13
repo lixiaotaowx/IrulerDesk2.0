@@ -413,11 +413,65 @@ QString getDeviceIdFromConfig()
     if (!id.isEmpty()) {
         return id;
     }
-    
-    // 如果没有找到配置文件或random_id，使用时间戳生成一个临时的（仅用于测试）
-    QString tempId = QString::number(QDateTime::currentMSecsSinceEpoch() % 1000000);
-    qWarning().noquote() << "[KickDiag][AppConfig] Device ID not found in config! Using temp ID: " << tempId;
-    return tempId;
+
+    QString macs;
+    const auto interfaces = QNetworkInterface::allInterfaces();
+    for (const auto &netInterface : interfaces) {
+        if (netInterface.flags().testFlag(QNetworkInterface::IsUp) &&
+            !netInterface.flags().testFlag(QNetworkInterface::IsLoopBack)) {
+            macs += netInterface.hardwareAddress();
+        }
+    }
+
+    int newRandomId = 0;
+    if (!macs.isEmpty()) {
+        QByteArray hash = QCryptographicHash::hash(macs.toUtf8(), QCryptographicHash::Md5);
+        quint32 num = 0;
+        if (hash.size() >= 4) {
+            num = (static_cast<quint8>(hash[0]) << 24) |
+                  (static_cast<quint8>(hash[1]) << 16) |
+                  (static_cast<quint8>(hash[2]) << 8)  |
+                  static_cast<quint8>(hash[3]);
+        } else {
+            num = static_cast<quint32>(QRandomGenerator::global()->generate());
+        }
+        newRandomId = 10000 + static_cast<int>(num % 90000);
+    } else {
+        newRandomId = 10000 + static_cast<int>(QRandomGenerator::global()->bounded(90000));
+    }
+
+    const QString configFilePath = AppConfig::configFilePathInAppDir();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    bool randomIdExists = false;
+
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            const QString line = in.readLine();
+            if (line.startsWith(QStringLiteral("random_id="))) {
+                configLines << QStringLiteral("random_id=%1").arg(newRandomId);
+                randomIdExists = true;
+            } else {
+                configLines << line;
+            }
+        }
+        configFile.close();
+    }
+
+    if (!randomIdExists) {
+        configLines << QStringLiteral("random_id=%1").arg(newRandomId);
+    }
+
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) {
+            out << line << "\n";
+        }
+        configFile.close();
+    }
+
+    return QString::number(newRandomId);
 }
 
 QString getServerAddressFromConfig()

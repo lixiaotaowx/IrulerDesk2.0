@@ -373,6 +373,7 @@ void NewUiWindow::setMyStreamId(const QString &id, const QString &name)
     const QString oldId = m_myStreamId;
     m_myStreamId = id;
     m_myUserName = name;
+    updateLocalWatchedOverlay();
 
     // Update local user label if it exists
     if (m_localNameLabel) {
@@ -805,7 +806,7 @@ void NewUiWindow::setTalkPending(const QString &userId, bool pending)
 
     const QString appDir = QCoreApplication::applicationDirPath();
     const bool isOn = btn->property("isOn").toBool();
-    const QString iconName = isOn ? "get.png" : "end.png";
+    const QString iconName = isOn ? "end.png" : "get.png";
     btn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
     updateTalkOverlay(userId);
 }
@@ -851,15 +852,75 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
     if (!overlay) {
         return;
     }
-    QPushButton *btn = m_talkButtons.value(userId, nullptr);
-    if (!btn) {
-        overlay->setVisible(false);
-        return;
+    overlay->setWordWrap(true);
+    overlay->setAlignment(Qt::AlignCenter);
+
+    auto applyOverlayTextAutoFit = [](QLabel *lbl, const QString &text) {
+        if (!lbl) {
+            return;
+        }
+        lbl->setText(text);
+        const int w = qMax(1, lbl->width() - 12);
+        const int h = qMax(1, lbl->height() - 12);
+
+        QFont f = lbl->font();
+        f.setBold(true);
+
+        const int maxPx = qBound(12, lbl->height() / 4, 22);
+        const int minPx = 10;
+
+        bool ok = false;
+        for (int px = maxPx; px >= minPx; --px) {
+            f.setPixelSize(px);
+            QFontMetrics fm(f);
+            const QRect br = fm.boundingRect(QRect(0, 0, w, h), Qt::TextWordWrap | Qt::AlignCenter, text);
+            if (br.width() <= w && br.height() <= h) {
+                lbl->setFont(f);
+                ok = true;
+                break;
+            }
+        }
+        if (!ok) {
+            f.setPixelSize(minPx);
+            lbl->setFont(f);
+            QFontMetrics fm(f);
+            lbl->setWordWrap(false);
+            lbl->setText(fm.elidedText(text, Qt::ElideRight, w));
+            lbl->setWordWrap(true);
+        }
+    };
+
+    const bool watching = (!m_watchingTargetId.isEmpty() && userId == m_watchingTargetId);
+    const bool beingWatchedBy = isInMyRoomViewerList(userId);
+    QString myName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
+    if (myName.isEmpty()) {
+        myName = QStringLiteral("我");
     }
-    const bool pending = btn->property("isPending").toBool();
-    const bool on = btn->property("isOn").toBool();
-    const bool visible = (pending || on);
-    overlay->setVisible(visible);
+    if (watching) {
+        QString targetName = userId;
+        if (QListWidgetItem *it = m_userItems.value(userId, nullptr)) {
+            const QString n = it->data(Qt::UserRole + 1).toString();
+            if (!n.isEmpty()) {
+                targetName = n;
+            }
+        }
+        applyOverlayTextAutoFit(overlay, QStringLiteral("%1在观看%2").arg(myName, targetName));
+        overlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-weight: bold; background-color: rgba(0, 200, 83, 90); border-radius: 8px;");
+        overlay->setVisible(true);
+    } else if (beingWatchedBy) {
+        QString viewerName = userId;
+        if (QListWidgetItem *it = m_userItems.value(userId, nullptr)) {
+            const QString n = it->data(Qt::UserRole + 1).toString();
+            if (!n.isEmpty()) {
+                viewerName = n;
+            }
+        }
+        applyOverlayTextAutoFit(overlay, QStringLiteral("%1在观看%2").arg(viewerName, myName));
+        overlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-weight: bold; background-color: rgba(0, 120, 212, 95); border-radius: 8px;");
+        overlay->setVisible(true);
+    } else {
+        overlay->setVisible(false);
+    }
 
     if (m_listWidget) {
         QListWidgetItem *item = m_userItems.value(userId, nullptr);
@@ -867,7 +928,6 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
         QFrame *card = w ? w->findChild<QFrame*>("CardFrame") : nullptr;
         if (card) {
             const bool selected = item && item->isSelected();
-            const bool talking = visible;
             if (selected) {
                 card->setStyleSheet(
                     "#CardFrame {"
@@ -876,7 +936,7 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
                     "   border-radius: 15px;"
                     "}"
                 );
-            } else if (talking) {
+            } else if (watching) {
                 card->setStyleSheet(
                     "#CardFrame {"
                     "   background-color: rgba(0, 200, 83, 55);"
@@ -885,6 +945,17 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
                     "}"
                     "#CardFrame:hover {"
                     "   background-color: rgba(0, 200, 83, 70);"
+                    "}"
+                );
+            } else if (beingWatchedBy) {
+                card->setStyleSheet(
+                    "#CardFrame {"
+                    "   background-color: rgba(0, 120, 212, 45);"
+                    "   border: 1px solid #0078D4;"
+                    "   border-radius: 15px;"
+                    "}"
+                    "#CardFrame:hover {"
+                    "   background-color: rgba(0, 120, 212, 60);"
                     "}"
                 );
             } else {
@@ -900,6 +971,70 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
                 );
             }
         }
+    }
+}
+
+bool NewUiWindow::isInMyRoomViewerList(const QString &userId) const
+{
+    if (userId.isEmpty()) {
+        return false;
+    }
+    if (userId == m_myStreamId) {
+        return false;
+    }
+
+    QString displayName = userId;
+    if (QListWidgetItem *it = m_userItems.value(userId, nullptr)) {
+        const QString n = it->data(Qt::UserRole + 1).toString();
+        if (!n.isEmpty()) {
+            displayName = n;
+        }
+    }
+
+    if (m_viewerList) {
+        for (int i = 0; i < m_viewerList->count(); ++i) {
+            QListWidgetItem *vit = m_viewerList->item(i);
+            if (!vit) {
+                continue;
+            }
+            const QString vid = vit->data(Qt::UserRole).toString();
+            if (!vid.isEmpty() && vid == userId) {
+                return true;
+            }
+
+            QString text;
+            if (QWidget *vw = m_viewerList->itemWidget(vit)) {
+                const QList<QLabel*> labels = vw->findChildren<QLabel*>();
+                if (!labels.isEmpty() && labels.first()) {
+                    text = labels.first()->text().trimmed();
+                }
+            }
+            if (text.isEmpty()) {
+                text = vit->text().trimmed();
+            }
+            if (!text.isEmpty()) {
+                if (text == userId) {
+                    return true;
+                }
+                if (!displayName.isEmpty() && text == displayName) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return m_viewerItems.contains(userId);
+}
+
+void NewUiWindow::setWatchingTarget(const QString &targetId)
+{
+    if (m_watchingTargetId == targetId) {
+        return;
+    }
+    m_watchingTargetId = targetId;
+    const QStringList userIds = m_userItems.keys();
+    for (const QString &userId : userIds) {
+        updateTalkOverlay(userId);
     }
 }
 
@@ -1070,8 +1205,8 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
         imgLabel->setStyleSheet("color: #888; font-size: 10px;");
         imgLabel->installEventFilter(this);
 
-        QLabel *talkOverlay = new QLabel(imgLabel);
-        talkOverlay->setText(QStringLiteral("通话中"));
+    QLabel *talkOverlay = new QLabel(imgLabel);
+        talkOverlay->setText(QString());
         talkOverlay->setAlignment(Qt::AlignCenter);
         talkOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
         talkOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
@@ -1574,7 +1709,9 @@ void NewUiWindow::setupUi()
     const QIcon micIconOn(appDir + "/maps/logo/Mic_on.png");
     const QIcon micIconOff(appDir + "/maps/logo/Mic_off.png");
     auto loadMicEnabled = [&appDir]() -> bool {
-        QFile f(appDir + "/config/app_config.txt");
+        Q_UNUSED(appDir);
+        const QString configPath = AppConfig::configFilePathInAppDir();
+        QFile f(configPath);
         if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
             QTextStream in(&f);
             while (!in.atEnd()) {
@@ -1683,6 +1820,11 @@ void NewUiWindow::setupUi()
     connect(m_listWidget, &QListWidget::customContextMenuRequested, [this](const QPoint &pos) {
         QListWidgetItem *item = m_listWidget->itemAt(pos);
         if (!item) return; // Only show menu on items
+        const int row = m_listWidget->row(item);
+        QString itemUserId = item->data(Qt::UserRole).toString();
+        if (itemUserId.isEmpty() && row == 0) {
+            itemUserId = m_myStreamId;
+        }
 
         QMenu contextMenu(m_listWidget);
         // Enable transparency for rounded corners
@@ -1715,12 +1857,47 @@ void NewUiWindow::setupUi()
             "}"
         );
 
-        // Add Actions
-        contextMenu.addAction("打开 (Open)");
-        contextMenu.addAction("重命名 (Rename)");
-        contextMenu.addSeparator();
-        contextMenu.addAction("删除 (Delete)");
-        contextMenu.addAction("属性 (Properties)");
+        if (!itemUserId.isEmpty() && itemUserId == m_myStreamId && row == 0) {
+            const QStringList viewerIds = getViewerIds();
+            QMenu *kickMenu = contextMenu.addMenu(QStringLiteral("踢出观看者"));
+            kickMenu->setStyleSheet(contextMenu.styleSheet());
+            if (viewerIds.isEmpty()) {
+                QAction *none = kickMenu->addAction(QStringLiteral("暂无观看者"));
+                none->setEnabled(false);
+            } else {
+                QAction *kickAll = contextMenu.addAction(QStringLiteral("踢出全部观看者"));
+                connect(kickAll, &QAction::triggered, this, [this, viewerIds]() {
+                    for (const QString &viewerId : viewerIds) {
+                        emit kickViewerRequested(viewerId);
+                    }
+                });
+                contextMenu.addSeparator();
+                for (const QString &viewerId : viewerIds) {
+                    QString display = viewerId;
+                    if (QListWidgetItem *vit = m_viewerItems.value(viewerId, nullptr)) {
+                        if (QWidget *vw = m_viewerList ? m_viewerList->itemWidget(vit) : nullptr) {
+                            const QList<QLabel*> labels = vw->findChildren<QLabel*>();
+                            if (!labels.isEmpty() && labels.first() && !labels.first()->text().isEmpty()) {
+                                display = labels.first()->text();
+                            }
+                        }
+                    }
+                    QAction *a = kickMenu->addAction(display);
+                    connect(a, &QAction::triggered, this, [this, viewerId]() {
+                        emit kickViewerRequested(viewerId);
+                    });
+                }
+            }
+        } else {
+            if (!itemUserId.isEmpty() && isInMyRoomViewerList(itemUserId)) {
+                QAction *kickOne = contextMenu.addAction(QStringLiteral("踢出"));
+                connect(kickOne, &QAction::triggered, this, [this, itemUserId]() {
+                    emit kickViewerRequested(itemUserId);
+                });
+            } else {
+                return;
+            }
+        }
 
         contextMenu.exec(m_listWidget->mapToGlobal(pos));
     });
@@ -2039,6 +2216,15 @@ void NewUiWindow::setupUi()
             m_userAvatarLabels.insert(m_myStreamId, m_localAvatarLabel);
         }
 
+    QLabel *watchedOverlay = new QLabel(imageContainer);
+        watchedOverlay->setText(QString());
+        watchedOverlay->setAlignment(Qt::AlignCenter);
+        watchedOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+        watchedOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
+        watchedOverlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-size: 34px; font-weight: bold; background-color: rgba(0, 120, 212, 95); border-radius: 8px;");
+        watchedOverlay->setVisible(false);
+        m_localWatchedOverlay = watchedOverlay;
+
         // Bottom Controls Layout
         QHBoxLayout *bottomLayout = new QHBoxLayout();
         // Zero side margins because parent cardLayout already provides MARGIN_X
@@ -2047,20 +2233,6 @@ void NewUiWindow::setupUi()
         bottomLayout->setContentsMargins(0, 0, 0, 5); 
         bottomLayout->setSpacing(5);
 
-        QPushButton *tabBtn = new QPushButton();
-        tabBtn->setFixedSize(14, 14);
-        tabBtn->setCursor(Qt::PointingHandCursor);
-        tabBtn->setFlat(true);
-        tabBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        tabBtn->setIcon(QIcon(appDir + "/maps/logo/in.png"));
-        tabBtn->setIconSize(QSize(14, 14));
-        connect(tabBtn, &QPushButton::clicked, this, [this]() {
-            if (m_myStreamId.isEmpty()) {
-                return;
-            }
-            emit startWatchingRequested(m_myStreamId);
-        });
-        
         // Text Label (Middle)
     QString displayName = m_myUserName.isEmpty() ? m_myStreamId : m_myUserName;
     // Format: Name only (ID removed as requested)
@@ -2070,7 +2242,6 @@ void NewUiWindow::setupUi()
     m_localNameLabel = txtLabel; // Store pointer for updates
     txtLabel->setStyleSheet("color: #e0e0e0; font-size: 12px; border: none; background: transparent;");
     txtLabel->setAlignment(Qt::AlignCenter);
-        bottomLayout->addWidget(tabBtn);
         bottomLayout->addStretch();
         bottomLayout->addWidget(txtLabel);
         bottomLayout->addStretch();
@@ -2125,13 +2296,11 @@ void NewUiWindow::setupUi()
                     if (userId.isEmpty()) {
                         userId = item->data(Qt::UserRole).toString();
                     }
-                    bool talking = false;
-                    if (!userId.isEmpty()) {
-                        QPushButton *btn = m_talkButtons.value(userId, nullptr);
-                        if (btn) {
-                            talking = btn->property("isOn").toBool() || btn->property("isPending").toBool();
-                        }
-                    }
+                    const bool watching = (!userId.isEmpty() &&
+                                           userId != m_myStreamId &&
+                                           !m_watchingTargetId.isEmpty() &&
+                                           userId == m_watchingTargetId);
+                    const bool beingWatchedBy = (!userId.isEmpty() && isInMyRoomViewerList(userId));
                     if (item->isSelected()) {
                         // Tech Orange Selection Style
                         card->setStyleSheet(
@@ -2141,7 +2310,7 @@ void NewUiWindow::setupUi()
                             "   border-radius: 15px;"
                             "}"
                         );
-                    } else if (talking) {
+                    } else if (watching) {
                         card->setStyleSheet(
                             "#CardFrame {"
                             "   background-color: rgba(0, 200, 83, 55);"
@@ -2150,6 +2319,17 @@ void NewUiWindow::setupUi()
                             "}"
                             "#CardFrame:hover {"
                             "   background-color: rgba(0, 200, 83, 70);"
+                            "}"
+                        );
+                    } else if (beingWatchedBy) {
+                        card->setStyleSheet(
+                            "#CardFrame {"
+                            "   background-color: rgba(0, 120, 212, 45);"
+                            "   border: 1px solid #0078D4;"
+                            "   border-radius: 15px;"
+                            "}"
+                            "#CardFrame:hover {"
+                            "   background-color: rgba(0, 120, 212, 60);"
                             "}"
                         );
                     } else {
@@ -2170,119 +2350,9 @@ void NewUiWindow::setupUi()
         }
     });
 
-    // --- Far Right Panel (New Interface) ---
-    m_farRightPanel = new QWidget(this);
-    m_farRightPanel->setObjectName("FarRightPanel");
-    m_farRightPanel->setFixedWidth(240); // Wider than left panel (80px)
-    m_farRightPanel->setVisible(false); // Default hidden
-    m_farRightPanel->setStyleSheet(
-        "QWidget#FarRightPanel {"
-        "   background-color: #2b2b2b;"
-        "   border-radius: 20px;"
-        "}"
-    );
-
-    QVBoxLayout *farRightLayout = new QVBoxLayout(m_farRightPanel);
-    farRightLayout->setContentsMargins(20, 20, 20, 20);
-    farRightLayout->setSpacing(15);
-
-    // Title
-    QLabel *frTitle = new QLabel("我的房间"); 
-    frTitle->setStyleSheet("color: white; font-size: 16px; font-weight: bold; background: transparent;");
-    frTitle->setAlignment(Qt::AlignCenter);
-    farRightLayout->addWidget(frTitle);
-
-    // List
-    m_viewerList = new QListWidget();
-    m_viewerList->setFrameShape(QFrame::NoFrame);
-    // Enable auto-adjust to prevent horizontal scrollbar issues
-    m_viewerList->setResizeMode(QListWidget::Adjust); 
-    m_viewerList->setStyleSheet(
-        "QListWidget {"
-        "   background: transparent;"
-        "   border: none;"
-        "   outline: none;"
-        "}"
-        "QListWidget::item {"
-        "   background: transparent;"
-        "   border-bottom: 1px solid #444;"
-        "}"
-        "QListWidget::item:hover {"
-        "   background: rgba(255, 255, 255, 10);"
-        "}"
-        "QListWidget::item:selected {"
-        "   background: transparent;"
-        "}"
-        // Style the vertical scrollbar to be thin and unobtrusive
-        "QScrollBar:vertical {"
-        "    border: none;"
-        "    background: transparent;"
-        "    width: 6px;"
-        "    margin: 0px;"
-        "}"
-        "QScrollBar::handle:vertical {"
-        "    background: #555;"
-        "    min-height: 20px;"
-        "    border-radius: 3px;"
-        "}"
-    );
-    m_viewerList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    m_viewerList->verticalScrollBar()->setSingleStep(10); // Small scroll step
-    m_viewerList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); 
-    
-    // Items will be added dynamically via addViewer()
-    
-    farRightLayout->addWidget(m_viewerList);
-
-    // Quit Button
-    QPushButton *quitBtn = new QPushButton("关闭房间");
-    quitBtn->setCursor(Qt::PointingHandCursor);
-    quitBtn->setFixedHeight(30);
-    quitBtn->setFixedWidth(80);
-    quitBtn->setStyleSheet(
-        "QPushButton {"
-        "   background-color: #220505ff;" // Dark Red
-        "   color: white;"
-        "   font-size: 14px;"
-        "   border-radius: 8px;"
-        "   border: none;"
-        "}"
-        "QPushButton:hover {"
-        "   background-color: #290505ff;" // Lighter Red (Brownish)
-        "}"
-        "QPushButton:pressed {"
-        "   background-color: #350909ff;" // Very Dark Red
-        "}"
-    );
-    connect(quitBtn, &QPushButton::clicked, this, [this]() {
-        const QStringList viewerIds = m_viewerItems.keys();
-        qInfo().noquote() << "[KickDiag] close_room clicked"
-                          << " my_id=" << m_myStreamId
-                          << " viewer_count=" << viewerIds.size();
-        for (const QString &viewerId : viewerIds) {
-            emit kickViewerRequested(viewerId);
-        }
-        emit closeRoomRequested();
-    });
-
-    // Center the button horizontally
-    farRightLayout->addWidget(quitBtn, 0, Qt::AlignHCenter);
-
     // Assemble Main Layout
     mainLayout->addWidget(leftPanel);
     mainLayout->addWidget(rightPanel);
-    if (m_farRightPanel) {
-        const int outerMargin = 10;
-        const int panelW = m_farRightPanel->width();
-        int yTop = outerMargin;
-        if (m_titleBar) {
-            const QPoint p = m_titleBar->mapTo(this, QPoint(0, 0));
-            yTop = p.y() + m_titleBar->height() + outerMargin;
-        }
-        const int panelH = qMax(0, height() - yTop - outerMargin);
-        m_farRightPanel->setGeometry(width() - outerMargin - panelW, yTop, panelW, panelH);
-        m_farRightPanel->raise();
-    }
 }
 
 void NewUiWindow::showFunction1Browser()
@@ -2532,6 +2602,11 @@ void NewUiWindow::ensureAudioCallUi()
     dlg->setWindowTitle(QStringLiteral("通话"));
     dlg->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     dlg->setAttribute(Qt::WA_TranslucentBackground, true);
+    dlg->setAttribute(Qt::WA_ShowWithoutActivating, true);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+    dlg->setWindowFlag(Qt::WindowDoesNotAcceptFocus, true);
+#endif
+    dlg->setFocusPolicy(Qt::NoFocus);
     dlg->setModal(false);
     dlg->setMinimumSize(320, 180);
     dlg->installEventFilter(this);
@@ -2543,6 +2618,7 @@ void NewUiWindow::ensureAudioCallUi()
     auto *panel = new QFrame(dlg);
     panel->setObjectName(QStringLiteral("AudioCallPanel"));
     panel->setStyleSheet(QStringLiteral("QFrame#AudioCallPanel { background: #3a3a3a; border-radius: 12px; }"));
+    panel->setFocusPolicy(Qt::NoFocus);
     panel->installEventFilter(this);
     auto *shadow = new QGraphicsDropShadowEffect(panel);
     shadow->setBlurRadius(18);
@@ -2900,6 +2976,22 @@ void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
 
         QPixmap avatar = QPixmap();
         const QString uid = findUserIdByDisplayName(name);
+        cell->setProperty("viewerId", uid);
+        if (!uid.isEmpty() && uid != m_myStreamId) {
+            cell->setContextMenuPolicy(Qt::CustomContextMenu);
+            connect(cell, &QWidget::customContextMenuRequested, this, [this, cell](const QPoint &pos) {
+                const QString viewerId = cell->property("viewerId").toString();
+                if (viewerId.isEmpty() || viewerId == m_myStreamId) {
+                    return;
+                }
+                QMenu menu(cell);
+                QAction *kickAct = menu.addAction(QStringLiteral("踢出"));
+                QAction *picked = menu.exec(cell->mapToGlobal(pos));
+                if (picked == kickAct) {
+                    emit kickViewerRequested(viewerId);
+                }
+            });
+        }
         if (!uid.isEmpty()) {
             QPixmap cached(avatarCacheFilePath(uid));
             if (!cached.isNull()) {
@@ -3248,6 +3340,56 @@ void NewUiWindow::resizeEvent(QResizeEvent *event)
 
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (m_audioCallDialog) {
+        bool insideCallDialog = false;
+        QObject *cur = watched;
+        while (cur) {
+            if (cur == m_audioCallDialog) {
+                insideCallDialog = true;
+                break;
+            }
+            cur = cur->parent();
+        }
+
+        if (insideCallDialog) {
+            bool insideButton = false;
+            cur = watched;
+            while (cur && cur != m_audioCallDialog) {
+                if (qobject_cast<QAbstractButton*>(cur)) {
+                    insideButton = true;
+                    break;
+                }
+                cur = cur->parent();
+            }
+
+            if (!insideButton) {
+                if (event->type() == QEvent::MouseButtonPress) {
+                    auto *me = static_cast<QMouseEvent*>(event);
+                    if (me->button() == Qt::LeftButton) {
+                        m_audioCallDialogDragging = true;
+                        m_audioCallDialogDragOffset = me->globalPosition().toPoint() - m_audioCallDialog->frameGeometry().topLeft();
+                        event->accept();
+                        return true;
+                    }
+                } else if (event->type() == QEvent::MouseMove) {
+                    if (m_audioCallDialogDragging) {
+                        auto *me = static_cast<QMouseEvent*>(event);
+                        m_audioCallDialog->move(me->globalPosition().toPoint() - m_audioCallDialogDragOffset);
+                        event->accept();
+                        return true;
+                    }
+                } else if (event->type() == QEvent::MouseButtonRelease) {
+                    auto *me = static_cast<QMouseEvent*>(event);
+                    if (me->button() == Qt::LeftButton) {
+                        m_audioCallDialogDragging = false;
+                        event->accept();
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
     if (m_audioCallMiniBar) {
         bool insideMini = false;
         QObject *cur = watched;
@@ -3393,10 +3535,6 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
                         insideList = false;
                     }
                 }
-                const bool insideLeftBlank = (watched && watched->objectName() == QStringLiteral("LeftPanel"));
-                if (insideTitleBar || insideList || insideLeftBlank) {
-                    m_farRightPanel->setVisible(false);
-                }
             }
         }
     }
@@ -3532,51 +3670,11 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
-    if (event->type() == QEvent::MouseButtonRelease && watched != m_localCard && m_farRightPanel && m_farRightPanel->isVisible()) {
-        auto *me = static_cast<QMouseEvent*>(event);
-        if (me->button() == Qt::LeftButton) {
-            const QString userId = watched->property("userId").toString();
-            if (!userId.isEmpty() && userId != m_myStreamId) {
-                m_farRightPanel->setVisible(false);
-            }
-        }
-    }
-
-    // Handle single click on local card to toggle "My Room" panel
-    if (watched == m_localCard && event->type() == QEvent::MouseButtonRelease) {
-        auto *me = static_cast<QMouseEvent*>(event);
-        if (me->button() != Qt::LeftButton) {
-            return false;
-        }
-        if (m_farRightPanel) {
-            const bool nextVisible = !m_farRightPanel->isVisible();
-            m_farRightPanel->setVisible(nextVisible);
-            if (nextVisible) {
-                const int outerMargin = 10;
-                const int panelW = m_farRightPanel->width();
-                int yTop = outerMargin;
-                if (m_titleBar) {
-                    const QPoint p = m_titleBar->mapTo(this, QPoint(0, 0));
-                    yTop = p.y() + m_titleBar->height() + outerMargin;
-                }
-                const int panelH = qMax(0, height() - yTop - outerMargin);
-                m_farRightPanel->setGeometry(width() - outerMargin - panelW, yTop, panelW, panelH);
-                m_farRightPanel->raise();
-            }
-        }
-        return true;
-    }
-
     if (event->type() == QEvent::MouseButtonDblClick) {
         QString userId = watched->property("userId").toString();
-        // [Interaction Fix] Allow any valid user ID
-        // For local user (m_localCard), we prevent double-click streaming because single-click handles side panel
         if (!userId.isEmpty()) {
             if (watched == m_localCard) {
-                return true; // Consume double click on self without action
-            }
-            if (m_farRightPanel) {
-                m_farRightPanel->setVisible(false);
+                return true;
             }
             QString name = watched->property("userName").toString();
             emit startWatchingRequested(userId, name);
@@ -3591,21 +3689,28 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     // [Fix] Prevent duplicate items but allow name updates
     if (m_viewerItems.contains(id)) {
         QListWidgetItem *existingItem = m_viewerItems.value(id);
-        if (existingItem) {
-             QWidget *w = m_viewerList->itemWidget(existingItem);
-             if (w) {
-                 QList<QLabel*> labels = w->findChildren<QLabel*>();
-                 for (auto label : labels) {
-                     // Update name if changed
-                     label->setText(name.isEmpty() ? id : name);
-                     break; 
-                 }
-             }
+        if (m_viewerList && existingItem) {
+            QWidget *w = m_viewerList->itemWidget(existingItem);
+            if (w) {
+                QList<QLabel*> labels = w->findChildren<QLabel*>();
+                for (auto label : labels) {
+                    label->setText(name.isEmpty() ? id : name);
+                    break;
+                }
+            }
         }
         return; 
     }
 
-    if (!m_viewerList) return;
+    if (!m_viewerList) {
+        m_viewerItems.insert(id, nullptr);
+        const QStringList userIds = m_userItems.keys();
+        for (const QString &userId : userIds) {
+            updateTalkOverlay(userId);
+        }
+        updateLocalWatchedOverlay();
+        return;
+    }
 
     QString appDir = QCoreApplication::applicationDirPath();
 
@@ -3662,6 +3767,11 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     m_viewerList->setItemWidget(item, w);
     m_viewerItems.insert(id, item);
     m_viewerMicButtons.insert(id, mic);
+    const QStringList userIds = m_userItems.keys();
+    for (const QString &userId : userIds) {
+        updateTalkOverlay(userId);
+    }
+    updateLocalWatchedOverlay();
 }
 
 void NewUiWindow::setViewerMicState(const QString &viewerId, bool enabled)
@@ -3720,6 +3830,7 @@ void NewUiWindow::updateViewerNameIfExists(const QString &id, const QString &nam
             }
         }
     }
+    updateTalkOverlay(id);
 }
 
 void NewUiWindow::sendKickToSubscribers(const QString &viewerId)
@@ -3747,7 +3858,7 @@ void NewUiWindow::removeViewer(const QString &id)
     // 1. Try to remove using the map
     if (m_viewerItems.contains(id)) {
         QListWidgetItem *item = m_viewerItems.take(id);
-        if (item) {
+        if (m_viewerList && item) {
             int row = m_viewerList->row(item);
             if (row >= 0) {
                 m_viewerList->takeItem(row);
@@ -3760,45 +3871,73 @@ void NewUiWindow::removeViewer(const QString &id)
     
     // 2. [Safety] Iterate to clean up any duplicates or map desyncs
     // Loop backwards to safely remove items
-    for(int i = m_viewerList->count() - 1; i >= 0; --i) {
-        QListWidgetItem* item = m_viewerList->item(i);
-        // Check UserRole first (most reliable)
-        if (item->data(Qt::UserRole).toString() == id) {
-             m_viewerList->takeItem(i);
-             delete item;
-             continue;
-        }
+    if (m_viewerList) {
+        for(int i = m_viewerList->count() - 1; i >= 0; --i) {
+            QListWidgetItem* item = m_viewerList->item(i);
+            if (!item) {
+                continue;
+            }
+            if (item->data(Qt::UserRole).toString() == id) {
+                m_viewerList->takeItem(i);
+                delete item;
+                continue;
+            }
 
-        // Fallback: Check label text if UserRole is missing (legacy items)
-        QWidget* w = m_viewerList->itemWidget(item);
-        if(w) {
-             QList<QLabel*> labels = w->findChildren<QLabel*>();
-             for(auto label : labels) {
-                 // Check if text exactly matches ID (fallback)
-                 if(label->text() == id) {
-                     m_viewerList->takeItem(i);
-                     delete item;
-                     break;
-                 }
-             }
+            QWidget* w = m_viewerList->itemWidget(item);
+            if(w) {
+                QList<QLabel*> labels = w->findChildren<QLabel*>();
+                for(auto label : labels) {
+                    if(label->text() == id) {
+                        m_viewerList->takeItem(i);
+                        delete item;
+                        break;
+                    }
+                }
+            }
         }
     }
+    updateTalkOverlay(id);
+    updateLocalWatchedOverlay();
 }
 
 void NewUiWindow::clearViewers()
 {
-    if (!m_viewerList) return;
+    const QStringList ids = getViewerIds();
     
-    m_viewerList->clear();
+    if (m_viewerList) {
+        m_viewerList->clear();
+    }
     m_viewerItems.clear();
     m_viewerMicButtons.clear();
     m_viewerMicStates.clear();
+    for (const QString &id : ids) {
+        updateTalkOverlay(id);
+    }
+    updateLocalWatchedOverlay();
 }
 
 int NewUiWindow::getViewerCount() const
 {
-    if (!m_viewerList) return 0;
     return m_viewerItems.size();
+}
+
+QStringList NewUiWindow::getViewerIds() const
+{
+    return m_viewerItems.keys();
+}
+
+void NewUiWindow::updateLocalWatchedOverlay()
+{
+    if (!m_localWatchedOverlay) {
+        return;
+    }
+    int c = getViewerCount();
+    if (c <= 0) {
+        m_localWatchedOverlay->setVisible(false);
+        return;
+    }
+    m_localWatchedOverlay->setText(QStringLiteral("%1人在看你").arg(c));
+    m_localWatchedOverlay->setVisible(true);
 }
 
 void NewUiWindow::startSelfPreviewFast()
@@ -4569,7 +4708,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     imgLabel->move(0, 0);
 
     QLabel *talkOverlay = new QLabel(imageContainer);
-    talkOverlay->setText(QStringLiteral("通话中"));
+    talkOverlay->setText(QString());
     talkOverlay->setAlignment(Qt::AlignCenter);
     talkOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
     talkOverlay->setGeometry(0, 0, m_imgWidth, m_imgHeight);
@@ -4700,6 +4839,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     m_userItems.insert(userId, item);
     m_userLabels.insert(userId, imgLabel);
     m_userAvatarLabels.insert(userId, avatarLabel);
+    updateTalkOverlay(userId);
 
     // Start Stream Subscription
     StreamClient *client = new StreamClient(this);
@@ -4910,6 +5050,9 @@ void NewUiWindow::onVideoReceivingStopped(const QString &targetId)
 {
     if (targetId.isEmpty() || targetId == m_myStreamId) {
         return;
+    }
+    if (targetId == m_watchingTargetId) {
+        setWatchingTarget(QString());
     }
     if (QApplication::applicationState() != Qt::ApplicationActive) {
         return;

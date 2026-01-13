@@ -67,8 +67,11 @@ public:
     void removeViewer(const QString &id);
     void clearViewers(); // Clear all viewers
     int getViewerCount() const; // Get current viewer count
+    QStringList getViewerIds() const;
     void updateViewerNameIfExists(const QString &id, const QString &name);
     void sendKickToSubscribers(const QString &viewerId);
+
+    void setWatchingTarget(const QString &targetId);
 
 public:
     // Main Program Integration Methods
@@ -147,6 +150,8 @@ private:
     void hideAudioCallMiniBar();
     void setAudioCallMiniHidden(bool hidden);
     void updateTalkButtonsAvailability();
+    void updateLocalWatchedOverlay();
+    bool isInMyRoomViewerList(const QString &userId) const;
     
     // Dragging support
     bool m_dragging = false;
@@ -166,6 +171,7 @@ private:
     QFrame *m_localCard = nullptr; // Local card frame (Index 0)
     QLabel *m_toolbarAvatarLabel = nullptr;
     QLabel *m_localAvatarLabel = nullptr;
+    QLabel *m_localWatchedOverlay = nullptr;
     QPushButton *m_titleMaximizeBtn = nullptr;
     QPushButton *m_titleMicBtn = nullptr;
     QIcon m_titleMicIconOn;
@@ -199,6 +205,7 @@ private:
     QTimer *m_selectionAutoPauseTimer = nullptr;
     QString m_selectionAutoPauseUserId;
     QString m_autoPausedUserId;
+    QString m_watchingTargetId;
 
     QWidget *m_titleBar = nullptr;
     bool m_titleBarDragging = false;

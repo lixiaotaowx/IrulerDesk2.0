@@ -25,6 +25,8 @@ signals:
     void userNameChanged(const QString& name);
     void manualApprovalEnabledChanged(bool enabled);
     void onlineNotificationEnabledChanged(bool enabled);
+    void storyboardUrlChanged(const QString& url);
+    void function2UrlChanged(const QString& url);
 
 public slots:
     void notifySwitchSucceeded();
@@ -35,6 +37,7 @@ private:
     void setupUserNameControls();
     QFrame* setupManualApprovalControls();
     QFrame* setupNotificationControls();
+    QFrame* setupConfigControls();
     QListWidget* m_list;
     QProgressDialog* m_progress = nullptr;
     // 质量选择控件
@@ -49,6 +52,12 @@ private:
     QPushButton* m_userNameConfirmBtn = nullptr;
     class QCheckBox* m_manualApprovalCheck = nullptr;
     class QCheckBox* m_onlineNotificationCheck = nullptr;
+    QLabel* m_storyboardUrlLabel = nullptr;
+    QLineEdit* m_storyboardUrlEdit = nullptr;
+    QPushButton* m_storyboardUrlConfirmBtn = nullptr;
+    QLabel* m_function2UrlLabel = nullptr;
+    QLineEdit* m_function2UrlEdit = nullptr;
+    QPushButton* m_function2UrlConfirmBtn = nullptr;
 };
 
 #endif // SYSTEMSETTINGSWINDOW_H

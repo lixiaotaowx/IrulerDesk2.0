@@ -104,6 +104,8 @@ public slots:
     void onMicInputSelectionChanged(bool followSystem, const QString &deviceId);
     void onManualApprovalEnabledChanged(bool enabled);
     void onOnlineNotificationEnabledChanged(bool enabled);
+    void onStoryboardUrlChanged(const QString& url);
+    void onFunction2UrlChanged(const QString& url);
 private:
     void saveLocalQualityToConfig(const QString& quality);
     int loadOrGenerateRandomId();
@@ -121,6 +123,8 @@ private:
     int loadScreenIndexFromConfig() const; // 新增：读取屏幕索引
     QString loadUserNameFromConfig() const;
     void saveUserNameToConfig(const QString &name);
+    void saveStoryboardUrlToConfig(const QString &url);
+    void saveFunction2UrlToConfig(const QString &url);
     bool loadAudioOutputFollowSystemFromConfig() const;
     QString loadAudioOutputDeviceIdFromConfig() const;
     void saveAudioOutputFollowSystemToConfig(bool followSystem);
@@ -145,7 +149,7 @@ private:
     void sendHeartbeat();
     void updateUserList(const QJsonArray& users);
     void sendWatchRequest(const QString& targetDeviceId, const QString& targetName = QString());
-    void startVideoReceiving(const QString& targetDeviceId);
+    void startVideoReceiving(const QString& targetDeviceId, const QString &serverUrlOverride = QString());
     void startPlayerProcess(const QString& targetDeviceId);  // 启动播放进程
     void showUserOnlineToast(const QString& userId, const QString& userName, int iconId);
     void showUserOfflineToast(const QString& userId, const QString& userName, int iconId);

@@ -459,9 +459,7 @@ NewUiWindow* MainWindow::transparentImageList() const
 
 void MainWindow::sendWatchRequest(const QString& targetDeviceId, const QString& targetName)
 {
-    if (m_videoWindow) {
-        m_videoWindow->startTitleTimer(targetName);
-    }
+    Q_UNUSED(targetName);
     sendWatchRequestWithVideo(targetDeviceId);
 }
 
@@ -471,6 +469,7 @@ void MainWindow::sendWatchRequestWithVideo(const QString& targetDeviceId)
     m_audioOnlyTargetId.clear();
     if (m_transparentImageList && !targetDeviceId.isEmpty() && targetDeviceId != getDeviceId()) {
         m_transparentImageList->setWatchingTarget(targetDeviceId);
+        m_transparentImageList->enterEmbeddedWatchingUi(targetDeviceId);
     }
     sendWatchRequestInternal(targetDeviceId, false);
 }
@@ -504,36 +503,11 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
             m_pendingApproval = true;
         }
 
-        if (!audioOnly && m_videoWindow) {
-            m_videoWindow->show();
-            m_videoWindow->raise();
-            m_videoWindow->activateWindow();
+        if (!audioOnly && m_transparentImageList) {
+            const QString serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId);
+            const int initialColorId = loadOrGenerateColorId();
+            m_transparentImageList->startEmbeddedReceiving(myId, targetDeviceId, m_userName, serverUrl, initialColorId);
         }
-
-        if (!m_videoWindow) {
-            return;
-        }
-
-        VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
-        if (!videoWidget) {
-            return;
-        }
-
-        QString serverUrl;
-        serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId);
-
-        int initialColorId = loadOrGenerateColorId();
-        videoWidget->setAnnotationColorId(initialColorId);
-        videoWidget->setViewerName(m_userName);
-        videoWidget->setAudioOnlySession(false);
-        videoWidget->setSessionInfo(myId, targetDeviceId);
-        videoWidget->startReceiving(serverUrl);
-
-        m_videoWindow->setSpeakerChecked(false);
-        m_videoWindow->setMicCheckedSilently(false);
-        videoWidget->setSpeakerEnabled(false);
-        videoWidget->setMicSendEnabled(false);
-        videoWidget->setTalkEnabled(false);
         return;
     }
 
@@ -612,6 +586,9 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
         }
         if (m_transparentImageList && m_transparentImageList->getCurrentUserId() != targetDeviceId) {
             m_transparentImageList->setWatchingTarget(QString());
+            if (m_transparentImageList->isEmbeddedWatchingTarget(targetDeviceId)) {
+                m_transparentImageList->stopEmbeddedWatching();
+            }
         }
 
         // 关闭对话框
@@ -628,39 +605,17 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
     m_waitingDialog->activateWindow();
 }
 
-void MainWindow::startVideoReceiving(const QString& targetDeviceId)
+void MainWindow::startVideoReceiving(const QString& targetDeviceId, const QString &serverUrlOverride)
 {
-    if (!m_videoWindow) {
+    if (!m_transparentImageList) {
         return;
     }
-    
-    VideoDisplayWidget* videoWidget = m_videoWindow->getVideoDisplayWidget();
-    if (!videoWidget) {
-        return;
-    }
-    
-    // 构建WebSocket连接URL，包含目标设备ID
-    QString serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId);
-    
-    
-    // 初始化批注颜色（从配置加载）
-    int initialColorId = loadOrGenerateColorId();
-    videoWidget->setAnnotationColorId(initialColorId);
-
-    // 传入用户名
-    videoWidget->setViewerName(m_userName);
-    videoWidget->setAudioOnlySession(false);
-    // 使用VideoDisplayWidget开始接收视频流
-    
-    QString viewerId = getDeviceId();
-    videoWidget->setSessionInfo(viewerId, targetDeviceId);
-    videoWidget->startReceiving(serverUrl);
-
-    m_videoWindow->setSpeakerChecked(false);
-    m_videoWindow->setMicCheckedSilently(false);
-    videoWidget->setSpeakerEnabled(false);
-    videoWidget->setMicSendEnabled(false);
-    videoWidget->setTalkEnabled(false);
+    const QString serverUrl = serverUrlOverride.isEmpty()
+        ? QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetDeviceId)
+        : serverUrlOverride;
+    const int initialColorId = loadOrGenerateColorId();
+    const QString viewerId = getDeviceId();
+    m_transparentImageList->startEmbeddedReceiving(viewerId, targetDeviceId, m_userName, serverUrl, initialColorId);
 }
 
 void MainWindow::startPlayerProcess(const QString& targetDeviceId)
@@ -723,15 +678,7 @@ void MainWindow::onWatchButtonClicked()
     QRegularExpressionMatch match = regex.match(selectedUser);
     if (match.hasMatch()) {
         QString targetDeviceId = match.captured(1);
-        
-        // 显示视频窗口
-        if (m_videoWindow) {
-            m_videoWindow->show();
-            m_videoWindow->raise();
-            m_videoWindow->activateWindow();
-        }
-        
-        // 发送观看请求并开始视频接收
+
         sendWatchRequest(targetDeviceId);
         
     } else {
@@ -3051,6 +2998,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
         if (m_transparentImageList && m_transparentImageList->getCurrentUserId() != targetId) {
             m_transparentImageList->setWatchingTarget(QString());
+            if (m_transparentImageList->isEmbeddedWatchingTarget(targetId)) {
+                m_transparentImageList->stopEmbeddedWatching();
+            }
         }
 
         if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
@@ -3085,16 +3035,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                     if (m_currentTargetId != targetId) {
                         return;
                     }
-                    if (!m_videoWindow) {
-                        return;
-                    }
-                    auto *vd = m_videoWindow->getVideoDisplayWidget();
-                    if (!vd) {
-                        return;
-                    }
-                    if (vd->isReceiving()) {
-                        return;
-                    }
+                    if (!m_transparentImageList) return;
+                    auto *vd = m_transparentImageList->embeddedVideoWidget();
+                    if (vd && vd->isReceiving()) return;
                     startVideoReceiving(targetId);
                 });
             }
@@ -3128,6 +3071,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
             if (m_transparentImageList && m_transparentImageList->getCurrentUserId() != targetId) {
                 m_transparentImageList->setWatchingTarget(QString());
+                if (m_transparentImageList->isEmbeddedWatchingTarget(targetId)) {
+                    m_transparentImageList->stopEmbeddedWatching();
+                }
             }
 
             if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
@@ -3229,21 +3175,15 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_transparentImageList->setTalkRemoteActive(targetId, false);
                 m_transparentImageList->janusStop();
             }
-
-            if (m_videoWindow) {
-                m_videoWindow->setMicCheckedSilently(false);
-                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+            if (m_transparentImageList) {
+                if (auto *vd = m_transparentImageList->embeddedVideoWidget()) {
                     vd->setTalkEnabled(false);
                     vd->setMicSendEnabled(false);
-                }
-            }
-
-            if (m_videoWindow) {
-                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
                     vd->notifyTargetOffline(QStringLiteral("你已被房主移除"));
-                    vd->stopReceiving(false);
                 }
-                m_videoWindow->hide();
+                if (!targetId.isEmpty() && m_transparentImageList->isEmbeddedWatchingTarget(targetId)) {
+                    m_transparentImageList->stopEmbeddedWatching();
+                }
             }
         } else {
             qInfo().noquote() << "[KickDiag] kick_viewer ignored on this client";
@@ -3267,21 +3207,17 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             const bool talkWasPending = (m_pendingTalkEnabled && m_pendingTalkTargetId == targetId);
             m_pendingShowVideoWindow = true;
             if (showVideoWindow) {
-                if (m_videoWindow) {
-                    m_videoWindow->show();
-                    m_videoWindow->raise();
-                    m_videoWindow->activateWindow();
-                }
                 m_audioOnlyTargetId.clear();
+                if (m_transparentImageList) {
+                    m_transparentImageList->enterEmbeddedWatchingUi(targetId);
+                }
             }
-            startVideoReceiving(targetId);
+            startVideoReceiving(targetId, streamUrl);
             if (showVideoWindow && m_transparentImageList) {
                 m_transparentImageList->setWatchingTarget(targetId);
             }
-            if (showVideoWindow && m_transparentImageList) {
-                m_transparentImageList->talkToggleRequested(targetId, true);
-            }
             if (talkWasPending && m_transparentImageList) {
+                m_transparentImageList->talkToggleRequested(targetId, true);
                 m_transparentImageList->setTalkConnected(targetId, true);
             }
             if (talkWasPending) {
@@ -3533,6 +3469,10 @@ void MainWindow::onSystemSettingsRequested()
                 this, &MainWindow::onManualApprovalEnabledChanged);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::onlineNotificationEnabledChanged,
                 this, &MainWindow::onOnlineNotificationEnabledChanged);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::storyboardUrlChanged,
+                this, &MainWindow::onStoryboardUrlChanged);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::function2UrlChanged,
+                this, &MainWindow::onFunction2UrlChanged);
     }
     const bool wasVisible = m_systemSettingsWindow->isVisible();
     const Qt::WindowFlags flags = m_systemSettingsWindow->windowFlags();
@@ -3641,6 +3581,16 @@ void MainWindow::onManualApprovalEnabledChanged(bool enabled)
 void MainWindow::onOnlineNotificationEnabledChanged(bool enabled)
 {
     saveOnlineNotificationEnabledToConfig(enabled);
+}
+
+void MainWindow::onStoryboardUrlChanged(const QString& url)
+{
+    saveStoryboardUrlToConfig(url.trimmed());
+}
+
+void MainWindow::onFunction2UrlChanged(const QString& url)
+{
+    saveFunction2UrlToConfig(url.trimmed());
 }
 
 void MainWindow::onScreenSelected(int index)
@@ -4282,6 +4232,62 @@ void MainWindow::saveUserNameToConfig(const QString &name)
         }
     }
     if (!replaced) configLines << QString("user_name=%1").arg(name);
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+void MainWindow::saveStoryboardUrlToConfig(const QString &url)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("storyboard_url=")) {
+            configLines[i] = QString("storyboard_url=%1").arg(url);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        configLines << QString("storyboard_url=%1").arg(url);
+    }
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+void MainWindow::saveFunction2UrlToConfig(const QString &url)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("function2_url=")) {
+            configLines[i] = QString("function2_url=%1").arg(url);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        configLines << QString("function2_url=%1").arg(url);
+    }
     if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&configFile);
         for (const QString &line : configLines) out << line << "\n";

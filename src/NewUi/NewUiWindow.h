@@ -18,6 +18,8 @@ class QDialog;
 class QTimer;
 class QScrollArea;
 class QHBoxLayout;
+class VideoDisplayWidget;
+class AnnotationToolbar;
 
 class NewUiWindow : public QWidget
 {
@@ -83,6 +85,16 @@ public:
     void restartUserStreamSubscription(const QString &userId);
     void onVideoReceivingStopped(const QString &targetId);
     QString getCurrentUserId() const; // Returns the local user ID
+    VideoDisplayWidget* embeddedVideoWidget() const;
+    void enterEmbeddedWatchingUi(const QString &targetId, const QString &targetName = QString());
+    void startEmbeddedReceiving(const QString &viewerId,
+                               const QString &targetId,
+                               const QString &viewerName,
+                               const QString &serverUrl,
+                               int initialColorId);
+    void stopEmbeddedWatching();
+    bool isEmbeddedWatching() const;
+    bool isEmbeddedWatchingTarget(const QString &targetId) const;
 
 signals:
     void startWatchingRequested(const QString &targetId, const QString &targetName = QString());
@@ -96,6 +108,8 @@ signals:
     void avatarPixmapUpdated(const QString &userId, const QPixmap &pixmap);
     void broadcastRequested(const QString &content);
     void audioCallRestoreAvailableChanged(bool available);
+    void stopWatchingRequested(const QString &targetId);
+    void videoReceivingStopped(const QString &targetId);
 
 private:
     void setupUi();
@@ -176,9 +190,11 @@ private:
     QPushButton *m_titleMicBtn = nullptr;
     QIcon m_titleMicIconOn;
     QIcon m_titleMicIconOff;
+    QPushButton *m_titleBackBtn = nullptr;
     QStackedWidget *m_rightContentStack = nullptr;
     QWidget *m_homeContentPage = nullptr;
     QWidget *m_function1BrowserPage = nullptr;
+    QWidget *m_videoContentPage = nullptr;
     QWebEngineView *m_function1WebView = nullptr;
     StreamClient *m_streamClient = nullptr;
     StreamClient *m_streamClientLan = nullptr;
@@ -206,6 +222,9 @@ private:
     QString m_selectionAutoPauseUserId;
     QString m_autoPausedUserId;
     QString m_watchingTargetId;
+    QString m_embeddedTargetId;
+    VideoDisplayWidget *m_embeddedVideoWidget = nullptr;
+    AnnotationToolbar *m_annotationToolbar = nullptr;
 
     QWidget *m_titleBar = nullptr;
     bool m_titleBarDragging = false;

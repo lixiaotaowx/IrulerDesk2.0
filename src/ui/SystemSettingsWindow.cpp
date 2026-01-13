@@ -11,6 +11,7 @@
 #include <QCoreApplication>
 #include <QCheckBox>
 #include <QPainter>
+#include "../common/AppConfig.h"
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     : QDialog(parent), m_list(new QListWidget(this))
@@ -135,6 +136,9 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
 
     QFrame* notifyCard = setupNotificationControls();
     layout->addWidget(notifyCard);
+
+    QFrame* configCard = setupConfigControls();
+    layout->addWidget(configCard);
 
     populateScreens();
 
@@ -364,6 +368,77 @@ QFrame* SystemSettingsWindow::setupNotificationControls()
 
     connect(m_onlineNotificationCheck, &QCheckBox::toggled, this, [this](bool checked){
         emit onlineNotificationEnabledChanged(checked);
+    });
+
+    return card;
+}
+
+QFrame* SystemSettingsWindow::setupConfigControls()
+{
+    QFrame* card = new QFrame(this);
+    card->setObjectName("card");
+    QVBoxLayout* box = new QVBoxLayout(card);
+    box->setContentsMargins(12, 12, 12, 12);
+    box->setSpacing(10);
+
+    QLabel* title = new QLabel(QStringLiteral("配置"), card);
+    title->setStyleSheet("QLabel { font-size: 13px; font-weight: 600; }");
+    box->addWidget(title);
+
+    QWidget* storyboardRow = new QWidget(card);
+    QHBoxLayout* storyboardLayout = new QHBoxLayout(storyboardRow);
+    storyboardLayout->setContentsMargins(0, 0, 0, 0);
+    storyboardLayout->setSpacing(10);
+    m_storyboardUrlLabel = new QLabel(QStringLiteral("故事板网址："), storyboardRow);
+    m_storyboardUrlEdit = new QLineEdit(storyboardRow);
+    m_storyboardUrlConfirmBtn = new QPushButton(QStringLiteral("确定"), storyboardRow);
+    storyboardLayout->addWidget(m_storyboardUrlLabel);
+    storyboardLayout->addWidget(m_storyboardUrlEdit, 1);
+    storyboardLayout->addWidget(m_storyboardUrlConfirmBtn);
+    box->addWidget(storyboardRow);
+
+    QWidget* function2Row = new QWidget(card);
+    QHBoxLayout* function2Layout = new QHBoxLayout(function2Row);
+    function2Layout->setContentsMargins(0, 0, 0, 0);
+    function2Layout->setSpacing(10);
+    m_function2UrlLabel = new QLabel(QStringLiteral("功能2网址："), function2Row);
+    m_function2UrlEdit = new QLineEdit(function2Row);
+    m_function2UrlConfirmBtn = new QPushButton(QStringLiteral("确定"), function2Row);
+    function2Layout->addWidget(m_function2UrlLabel);
+    function2Layout->addWidget(m_function2UrlEdit, 1);
+    function2Layout->addWidget(m_function2UrlConfirmBtn);
+    box->addWidget(function2Row);
+
+    {
+        QString v = AppConfig::readConfigValue(QStringLiteral("storyboard_url")).trimmed();
+        if (v.isEmpty()) {
+            v = QStringLiteral("http://124.221.247.99:9001/");
+        }
+        m_storyboardUrlEdit->setText(v);
+    }
+    {
+        const QString v = AppConfig::readConfigValue(QStringLiteral("function2_url")).trimmed();
+        m_function2UrlEdit->setText(v);
+    }
+
+    connect(m_storyboardUrlEdit, &QLineEdit::editingFinished, this, [this]() {
+        emit storyboardUrlChanged(m_storyboardUrlEdit->text().trimmed());
+    });
+    connect(m_storyboardUrlEdit, &QLineEdit::returnPressed, this, [this]() {
+        emit storyboardUrlChanged(m_storyboardUrlEdit->text().trimmed());
+    });
+    connect(m_storyboardUrlConfirmBtn, &QPushButton::clicked, this, [this]() {
+        emit storyboardUrlChanged(m_storyboardUrlEdit->text().trimmed());
+    });
+
+    connect(m_function2UrlEdit, &QLineEdit::editingFinished, this, [this]() {
+        emit function2UrlChanged(m_function2UrlEdit->text().trimmed());
+    });
+    connect(m_function2UrlEdit, &QLineEdit::returnPressed, this, [this]() {
+        emit function2UrlChanged(m_function2UrlEdit->text().trimmed());
+    });
+    connect(m_function2UrlConfirmBtn, &QPushButton::clicked, this, [this]() {
+        emit function2UrlChanged(m_function2UrlEdit->text().trimmed());
     });
 
     return card;

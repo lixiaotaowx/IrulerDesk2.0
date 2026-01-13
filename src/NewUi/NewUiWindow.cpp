@@ -41,6 +41,7 @@
 #include <QImage>
 #include <QStackedWidget>
 #include <QUrl>
+#include <QClipboard>
 #include <QWebEngineView>
 #include <QWebEnginePage>
 #include <QWebEngineSettings>
@@ -51,6 +52,9 @@
 #include <QtGlobal>
 #include <climits>
 #include <QAbstractButton>
+#include "../video_components/VideoDisplayWidget.h"
+#include "../ui/AnnotationToolbar.h"
+#include "../ui/SnippetOverlay.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -1297,6 +1301,74 @@ void NewUiWindow::onStreamLog(const QString &msg)
     qInfo().noquote() << msg;
 }
 
+VideoDisplayWidget* NewUiWindow::embeddedVideoWidget() const
+{
+    return m_embeddedVideoWidget;
+}
+
+bool NewUiWindow::isEmbeddedWatching() const
+{
+    return !m_embeddedTargetId.isEmpty();
+}
+
+bool NewUiWindow::isEmbeddedWatchingTarget(const QString &targetId) const
+{
+    if (targetId.isEmpty()) {
+        return false;
+    }
+    return m_embeddedTargetId == targetId;
+}
+
+void NewUiWindow::enterEmbeddedWatchingUi(const QString &targetId, const QString &targetName)
+{
+    Q_UNUSED(targetName);
+    m_embeddedTargetId = targetId;
+    if (m_rightContentStack && m_videoContentPage) {
+        m_rightContentStack->setCurrentWidget(m_videoContentPage);
+    }
+    if (m_embeddedVideoWidget) {
+        m_embeddedVideoWidget->showSwitchingIndicator(QStringLiteral("切换中..."));
+    }
+}
+
+void NewUiWindow::startEmbeddedReceiving(const QString &viewerId,
+                                        const QString &targetId,
+                                        const QString &viewerName,
+                                        const QString &serverUrl,
+                                        int initialColorId)
+{
+    m_embeddedTargetId = targetId;
+    setWatchingTarget(targetId);
+    if (m_rightContentStack && m_videoContentPage) {
+        m_rightContentStack->setCurrentWidget(m_videoContentPage);
+    }
+    if (!m_embeddedVideoWidget) {
+        return;
+    }
+    m_embeddedVideoWidget->setAnnotationColorId(initialColorId);
+    m_embeddedVideoWidget->setViewerName(viewerName);
+    m_embeddedVideoWidget->setAudioOnlySession(false);
+    m_embeddedVideoWidget->setSessionInfo(viewerId, targetId);
+    m_embeddedVideoWidget->startReceiving(serverUrl);
+    m_embeddedVideoWidget->setSpeakerEnabled(false);
+    m_embeddedVideoWidget->setMicSendEnabled(false);
+    m_embeddedVideoWidget->setTalkEnabled(false);
+}
+
+void NewUiWindow::stopEmbeddedWatching()
+{
+    const QString targetId = m_embeddedTargetId;
+    m_embeddedTargetId.clear();
+    setWatchingTarget(QString());
+    if (m_embeddedVideoWidget && m_embeddedVideoWidget->isReceiving()) {
+        m_embeddedVideoWidget->stopReceiving(false);
+    }
+    showHomeContent();
+    if (!targetId.isEmpty()) {
+        emit stopWatchingRequested(targetId);
+    }
+}
+
 void NewUiWindow::setupUi()
 {
     QString appDir = QCoreApplication::applicationDirPath();
@@ -1428,6 +1500,32 @@ void NewUiWindow::setupUi()
                 showFunction1Browser();
             });
         }
+        else if (i == 2) {
+            btn->setObjectName("Function2Button");
+            btn->setStyleSheet(
+                "QPushButton#Function2Button {"
+                "   background-color: transparent;"
+                "   border: none;"
+                "   border-radius: 20px;"
+                "}"
+                "QPushButton#Function2Button:hover { background-color: transparent; }"
+                "QPushButton#Function2Button:pressed { background-color: transparent; }"
+            );
+
+            connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
+                playIconBling(btn);
+                if (m_function1WebView) {
+                    QString v = AppConfig::readConfigValue(QStringLiteral("function2_url")).trimmed();
+                    if (v.isEmpty()) {
+                        v = QStringLiteral("about:blank");
+                    }
+                    m_function1WebView->load(QUrl::fromUserInput(v));
+                }
+                if (m_rightContentStack && m_function1BrowserPage) {
+                    m_rightContentStack->setCurrentWidget(m_function1BrowserPage);
+                }
+            });
+        }
         
         leftLayout->addWidget(btn);
     }
@@ -1478,84 +1576,58 @@ void NewUiWindow::setupUi()
     
     QHBoxLayout *titleLayout = new QHBoxLayout(titleBar);
     titleLayout->setContentsMargins(0, 0, 0, 0);
-    
-    // Title buttons (Menu, Min, Close) with background
-    
-    // --- New Tool Buttons Group (Left side of title bar) ---
-    // Use QFrame to ensure background styling works without custom paintEvent
+
     QFrame *toolsContainer = new QFrame(titleBar);
     toolsContainer->setObjectName("ToolsContainer");
     toolsContainer->setFixedSize(160, 40);
     toolsContainer->setFrameShape(QFrame::NoFrame);
     toolsContainer->installEventFilter(this);
-    // REMOVED: setAttribute(Qt::WA_TranslucentBackground); which was hiding the background
-    
-    // Style for the pill-shaped background
     toolsContainer->setStyleSheet(
         "#ToolsContainer {"
         "   background-color: #3b3b3b;"
-        "   border-radius: 20px;" 
+        "   border-radius: 20px;"
         "}"
         "QPushButton {"
         "   background-color: transparent;"
         "   border: none;"
-        "   margin: 3px;" // Margin to make hover effect smaller
+        "   margin: 3px;"
         "}"
         "QPushButton:hover {"
         "   background-color: rgba(255, 255, 255, 30);"
-        "   border-radius: 17px;" // Adjusted radius for smaller hover area (40-6)/2
+        "   border-radius: 17px;"
         "}"
-        // Pressed state handled by ResponsiveButton paintEvent for icon scaling
         "QPushButton:pressed {"
         "   background-color: rgba(255, 255, 255, 40);"
         "}"
     );
 
     QHBoxLayout *toolsLayout = new QHBoxLayout(toolsContainer);
-    toolsLayout->setContentsMargins(10, 0, 10, 0); // Increased margins to space out buttons
+    toolsLayout->setContentsMargins(10, 0, 10, 0);
     toolsLayout->setSpacing(5);
     toolsLayout->setAlignment(Qt::AlignCenter);
 
-    QLabel *toolbarAvatarLabel = new QLabel(titleBar);
-    toolbarAvatarLabel->setFixedSize(30, 30);
-    toolbarAvatarLabel->setAlignment(Qt::AlignCenter);
-    toolbarAvatarLabel->setCursor(Qt::PointingHandCursor);
-    toolbarAvatarLabel->setToolTip(QStringLiteral("更换头像"));
-    toolbarAvatarLabel->installEventFilter(this);
-    toolbarAvatarLabel->setStyleSheet(
-        "QLabel {"
-        "   background: transparent;"
-        "   border: none;"
-        "}"
-    );
-    m_toolbarAvatarLabel = toolbarAvatarLabel;
-    refreshLocalAvatarFromCache();
-
-    // d.png
     ResponsiveButton *toolBtn1 = new ResponsiveButton();
-    toolBtn1->setFixedSize(40, 40); 
+    toolBtn1->setFixedSize(40, 40);
     toolBtn1->setIcon(QIcon(appDir + "/maps/logo/d.png"));
-    toolBtn1->setIconSize(QSize(24, 24)); 
+    toolBtn1->setIconSize(QSize(24, 24));
     toolBtn1->setCursor(Qt::PointingHandCursor);
     toolBtn1->setToolTip("灵动岛");
     toolBtn1->installEventFilter(this);
     connect(toolBtn1, &QPushButton::clicked, this, &NewUiWindow::toggleStreamingIslandRequested);
 
-    // log.png
     ResponsiveButton *toolBtn2 = new ResponsiveButton();
-    toolBtn2->setFixedSize(40, 40); 
+    toolBtn2->setFixedSize(40, 40);
     toolBtn2->setIcon(QIcon(appDir + "/maps/logo/log.png"));
-    toolBtn2->setIconSize(QSize(24, 24)); 
+    toolBtn2->setIconSize(QSize(24, 24));
     toolBtn2->setCursor(Qt::PointingHandCursor);
     toolBtn2->setToolTip("日志");
     toolBtn2->installEventFilter(this);
     connect(toolBtn2, &QPushButton::clicked, this, &NewUiWindow::onBroadcastBtnClicked);
 
-    // clearn.png
     ResponsiveButton *toolBtn3 = new ResponsiveButton();
-    toolBtn3->setFixedSize(40, 40); 
+    toolBtn3->setFixedSize(40, 40);
     toolBtn3->setIcon(QIcon(appDir + "/maps/logo/clearn.png"));
-    toolBtn3->setIconSize(QSize(24, 24)); 
+    toolBtn3->setIconSize(QSize(24, 24));
     toolBtn3->setCursor(Qt::PointingHandCursor);
     toolBtn3->setToolTip("清空标注");
     toolBtn3->installEventFilter(this);
@@ -1566,9 +1638,9 @@ void NewUiWindow::setupUi()
     toolsLayout->addWidget(toolBtn3);
 
     titleLayout->addSpacing(8);
-    titleLayout->addWidget(toolbarAvatarLabel);
-    titleLayout->addSpacing(8);
     titleLayout->addWidget(toolsContainer);
+    titleLayout->addStretch();
+
     titleLayout->addStretch();
 
     QPushButton *callRestoreBtn = new QPushButton(titleBar);
@@ -1596,14 +1668,13 @@ void NewUiWindow::setupUi()
     });
     m_audioCallTitleRestoreBtn = callRestoreBtn;
     titleLayout->addWidget(callRestoreBtn, 0, Qt::AlignCenter);
-
     titleLayout->addStretch();
 
     QWidget *controlContainer = new QWidget(titleBar);
     // Size adjustment:
     // Buttons: 48x48 (Double size)
     // Container width: 48*5 = 240. Height: 48.
-    controlContainer->setFixedSize(240, 48); 
+    controlContainer->setFixedSize(144, 48); 
     // Important: Ensure the widget itself doesn't paint a background, only the stylesheet image
     controlContainer->setAttribute(Qt::WA_TranslucentBackground);
     controlContainer->setObjectName("TitleControlContainer");
@@ -1627,58 +1698,6 @@ void NewUiWindow::setupUi()
     controlLayout->setContentsMargins(0, 0, 0, 0); // No margins
     controlLayout->setSpacing(0); // No spacing
     controlLayout->setAlignment(Qt::AlignCenter);
-
-    ResponsiveButton *exitBtn = new ResponsiveButton();
-    exitBtn->setFixedSize(48, 48);
-    exitBtn->setText(QStringLiteral("测试退出"));
-    exitBtn->setStyleSheet("QPushButton { color: #e0e0e0; font-size: 12px; }");
-    exitBtn->setCursor(Qt::PointingHandCursor);
-    exitBtn->setToolTip(QStringLiteral("测试退出"));
-    exitBtn->installEventFilter(this);
-    connect(exitBtn, &QPushButton::clicked, qApp, &QCoreApplication::quit);
-    exitBtn->setVisible(true);
-
-    // Menu Button
-    ResponsiveButton *menuBtn = new ResponsiveButton();
-    menuBtn->setFixedSize(48, 48); 
-    const QIcon micIconOn(appDir + "/maps/logo/Mic_on.png");
-    const QIcon micIconOff(appDir + "/maps/logo/Mic_off.png");
-    auto loadMicEnabled = [&appDir]() -> bool {
-        Q_UNUSED(appDir);
-        const QString configPath = AppConfig::configFilePathInAppDir();
-        QFile f(configPath);
-        if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream in(&f);
-            while (!in.atEnd()) {
-                const QString line = in.readLine();
-                if (line.startsWith("mic_enabled=")) {
-                    const QString v = line.mid(QString("mic_enabled=").length()).trimmed();
-                    f.close();
-                    return v.compare("true", Qt::CaseInsensitive) == 0;
-                }
-            }
-            f.close();
-        }
-        return true;
-    };
-    const bool initialMicEnabled = loadMicEnabled();
-    m_globalMicEnabled = initialMicEnabled;
-    menuBtn->setCheckable(true);
-    menuBtn->setChecked(initialMicEnabled);
-    menuBtn->setIcon(initialMicEnabled ? micIconOn : micIconOff);
-    menuBtn->setIconSize(QSize(16, 16)); 
-    menuBtn->setCursor(Qt::PointingHandCursor);
-    menuBtn->setToolTip(initialMicEnabled ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
-    menuBtn->installEventFilter(this);
-    m_titleMicBtn = menuBtn;
-    m_titleMicIconOn = micIconOn;
-    m_titleMicIconOff = micIconOff;
-    connect(menuBtn, &QPushButton::toggled, this, [this, menuBtn, micIconOn, micIconOff](bool enabled) {
-        menuBtn->setIcon(enabled ? micIconOn : micIconOff);
-        menuBtn->setToolTip(enabled ? QStringLiteral("麦克风：开") : QStringLiteral("麦克风：关"));
-        m_globalMicEnabled = enabled;
-        emit micToggleRequested(enabled);
-    });
 
     // Minimize Button
     ResponsiveButton *minBtn = new ResponsiveButton();
@@ -1709,8 +1728,6 @@ void NewUiWindow::setupUi()
     closeBtn->installEventFilter(this);
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
 
-    controlLayout->addWidget(exitBtn);
-    controlLayout->addWidget(menuBtn);
     controlLayout->addWidget(minBtn);
     controlLayout->addWidget(maxBtn);
     controlLayout->addWidget(closeBtn);
@@ -2214,6 +2231,127 @@ void NewUiWindow::setupUi()
 
     m_function1BrowserPage = browserContainer;
     m_rightContentStack->addWidget(m_function1BrowserPage);
+
+    QFrame *videoContainer = new QFrame(rightPanel);
+    videoContainer->setObjectName("VideoContainer");
+    videoContainer->setStyleSheet(
+        "#VideoContainer {"
+        "   background-color: #404040;"
+        "   border-radius: 20px;"
+        "}"
+    );
+    QVBoxLayout *videoLayout = new QVBoxLayout(videoContainer);
+    videoLayout->setContentsMargins(0, 0, 0, 0);
+    videoLayout->setSpacing(0);
+
+    QWidget *videoTopBar = new QWidget(videoContainer);
+    videoTopBar->setFixedHeight(50);
+    videoTopBar->setStyleSheet("background-color: transparent;");
+    QHBoxLayout *videoTopLayout = new QHBoxLayout(videoTopBar);
+    videoTopLayout->setContentsMargins(0, 0, 0, 0);
+    videoTopLayout->setSpacing(8);
+
+    ResponsiveButton *backBtn = new ResponsiveButton(videoTopBar);
+    backBtn->setFixedSize(40, 40);
+    backBtn->setText(QStringLiteral("←"));
+    backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setToolTip(QStringLiteral("返回"));
+    backBtn->setStyleSheet(QStringLiteral(
+        "QPushButton {"
+        "  background-color: transparent;"
+        "  border: none;"
+        "  color: rgba(240,240,240,230);"
+        "  font-size: 18px;"
+        "  font-weight: 700;"
+        "}"
+        "QPushButton:hover { background-color: rgba(255,255,255,30); border-radius: 18px; }"
+        "QPushButton:pressed { background-color: rgba(255,255,255,50); border-radius: 18px; }"
+    ));
+    connect(backBtn, &QPushButton::clicked, this, [this]() { stopEmbeddedWatching(); });
+    m_titleBackBtn = backBtn;
+
+    QFrame *annotationContainer = new QFrame(videoTopBar);
+    annotationContainer->setObjectName("VideoAnnotationContainer");
+    annotationContainer->setFixedHeight(40);
+    annotationContainer->setFrameShape(QFrame::NoFrame);
+    annotationContainer->setStyleSheet(
+        "#VideoAnnotationContainer {"
+        "   background-color: #3b3b3b;"
+        "   border-radius: 20px;"
+        "}"
+    );
+    QHBoxLayout *annotationLayout = new QHBoxLayout(annotationContainer);
+    annotationLayout->setContentsMargins(10, 0, 10, 0);
+    annotationLayout->setSpacing(0);
+    m_annotationToolbar = new AnnotationToolbar(annotationContainer);
+    annotationLayout->addWidget(m_annotationToolbar);
+
+    if (m_annotationToolbar) {
+        connect(m_annotationToolbar, &AnnotationToolbar::toolSelected, this, [this](int mode) {
+            if (!m_embeddedVideoWidget) return;
+            if (mode == 0) {
+                m_embeddedVideoWidget->setAnnotationEnabled(false);
+                m_embeddedVideoWidget->setToolMode(0);
+                return;
+            }
+            m_embeddedVideoWidget->setAnnotationEnabled(true);
+            if (mode == 1) m_embeddedVideoWidget->setToolMode(0);
+            else if (mode == 2) m_embeddedVideoWidget->setToolMode(2);
+            else if (mode == 3) m_embeddedVideoWidget->setToolMode(3);
+            else if (mode == 4) m_embeddedVideoWidget->setToolMode(5);
+            else if (mode == 5) m_embeddedVideoWidget->setToolMode(4);
+            else if (mode == 6) m_embeddedVideoWidget->setToolMode(1);
+        });
+        connect(m_annotationToolbar, &AnnotationToolbar::colorChanged, this, [this](int colorId) {
+            if (m_embeddedVideoWidget) m_embeddedVideoWidget->setAnnotationColorId(colorId);
+        });
+        connect(m_annotationToolbar, &AnnotationToolbar::undoRequested, this, [this]() {
+            if (m_embeddedVideoWidget) m_embeddedVideoWidget->sendUndo();
+        });
+        connect(m_annotationToolbar, &AnnotationToolbar::cameraRequested, this, [this]() {
+            if (!m_embeddedVideoWidget) return;
+            QImage img = m_embeddedVideoWidget->captureToImage();
+            if (img.isNull()) return;
+            QClipboard *cb = QGuiApplication::clipboard();
+            if (cb) cb->setImage(img);
+        });
+        connect(m_annotationToolbar, &AnnotationToolbar::snippetRequested, this, [this]() {
+            QScreen *screen = this->screen();
+            if (!screen) return;
+            QPixmap fullPix = screen->grabWindow(0);
+            SnippetOverlay *overlay = new SnippetOverlay(fullPix);
+            overlay->setGeometry(screen->geometry());
+            overlay->show();
+        });
+        connect(m_annotationToolbar, &AnnotationToolbar::clearRequested, this, [this]() {
+            if (m_embeddedVideoWidget) m_embeddedVideoWidget->sendClear();
+        });
+    }
+
+    videoTopLayout->addSpacing(8);
+    videoTopLayout->addWidget(backBtn);
+    videoTopLayout->addWidget(annotationContainer);
+    videoTopLayout->addStretch();
+
+    videoLayout->addWidget(videoTopBar);
+    m_embeddedVideoWidget = new VideoDisplayWidget(videoContainer);
+    m_embeddedVideoWidget->setShowControls(false);
+    m_embeddedVideoWidget->setAutoResize(true);
+    m_embeddedVideoWidget->setStyleSheet(
+        "VideoDisplayWidget {"
+        "    background-color: #000000;"
+        "    border: none;"
+        "}"
+    );
+    connect(m_embeddedVideoWidget, &VideoDisplayWidget::receivingStopped, this, [this](const QString &, const QString &targetId) {
+        if (!targetId.isEmpty()) {
+            onVideoReceivingStopped(targetId);
+            emit videoReceivingStopped(targetId);
+        }
+    });
+    videoLayout->addWidget(m_embeddedVideoWidget);
+    m_videoContentPage = videoContainer;
+    m_rightContentStack->addWidget(m_videoContentPage);
     m_rightContentStack->setCurrentWidget(m_homeContentPage);
 
     rightLayout->addWidget(titleBar);
@@ -2294,6 +2432,13 @@ void NewUiWindow::showFunction1Browser()
 {
     if (!m_rightContentStack || !m_function1BrowserPage) {
         return;
+    }
+    if (m_function1WebView) {
+        QString v = AppConfig::readConfigValue(QStringLiteral("storyboard_url")).trimmed();
+        if (v.isEmpty()) {
+            v = QStringLiteral("http://124.221.247.99:9001/");
+        }
+        m_function1WebView->load(QUrl::fromUserInput(v));
     }
     m_rightContentStack->setCurrentWidget(m_function1BrowserPage);
 }

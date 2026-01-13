@@ -32,6 +32,7 @@ public:
     void setSpeakerChecked(bool checked);
     bool isMicChecked() const;
     bool isSpeakerChecked() const;
+    void setAudioCallRestoreVisible(bool visible);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -48,6 +49,7 @@ signals:
     void micToggled(bool checked);
     void speakerToggled(bool checked);
     void closeClicked();
+    void audioCallRestoreClicked();
 
 private slots:
     void onMinimizeClicked();
@@ -129,6 +131,7 @@ private:
     QHBoxLayout *m_fullscreenPillLayout = nullptr;
     QWidget *m_titleCenter = nullptr;
     QHBoxLayout *m_titleCenterLayout = nullptr;
+    QPushButton *m_audioCallRestoreButton = nullptr;
     void attachToolbarToFullscreenBar();
     void detachToolbarToTitleBar();
 };

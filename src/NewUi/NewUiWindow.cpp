@@ -48,6 +48,7 @@
 #include <QDialog>
 #include <QLayout>
 #include <QSizePolicy>
+#include <QtGlobal>
 #include <climits>
 #include <QAbstractButton>
 #ifdef _WIN32
@@ -1125,7 +1126,11 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
             micBtn->setIconSize(QSize(14, 14));
 
             m_talkButtons.insert(id, micBtn);
+            updateTalkButtonsAvailability();
             connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, id]() {
+                if (!m_audioCallPeerId.isEmpty() && id != m_audioCallPeerId) {
+                    return;
+                }
                 const bool remoteActive = micBtn->property("remoteActive").toBool();
                 bool isOn = micBtn->property("isOn").toBool();
                 if (remoteActive) {
@@ -1494,6 +1499,34 @@ void NewUiWindow::setupUi()
     titleLayout->addWidget(toolbarAvatarLabel);
     titleLayout->addSpacing(8);
     titleLayout->addWidget(toolsContainer);
+    titleLayout->addStretch();
+
+    QPushButton *callRestoreBtn = new QPushButton(titleBar);
+    callRestoreBtn->setText(QStringLiteral("通话"));
+    callRestoreBtn->setFixedHeight(26);
+    callRestoreBtn->setCursor(Qt::PointingHandCursor);
+    callRestoreBtn->setVisible(false);
+    callRestoreBtn->setStyleSheet(QStringLiteral(
+        "QPushButton{"
+        " background: rgba(0, 92, 54, 180);"
+        " color: rgba(240,240,240,230);"
+        " border: 1px solid rgba(0,0,0,60);"
+        " border-radius: 10px;"
+        " padding: 0 12px;"
+        "}"
+        "QPushButton:hover{ background: rgba(0, 92, 54, 210); }"
+        "QPushButton:pressed{ background: rgba(0, 92, 54, 235); }"));
+    connect(callRestoreBtn, &QPushButton::clicked, this, [this]() {
+        setAudioCallMiniHidden(false);
+        hideAudioCallMiniBar();
+        if (m_audioCallDialog && !m_audioCallPeerId.isEmpty()) {
+            m_audioCallDialog->show();
+            m_audioCallDialog->raise();
+        }
+    });
+    m_audioCallTitleRestoreBtn = callRestoreBtn;
+    titleLayout->addWidget(callRestoreBtn, 0, Qt::AlignCenter);
+
     titleLayout->addStretch();
 
     QWidget *controlContainer = new QWidget(titleBar);
@@ -2468,18 +2501,40 @@ void NewUiWindow::janusStop()
     m_function1WebView->page()->runJavaScript(js);
 }
 
+void NewUiWindow::showAudioCallUiForSession(const QString &peerId, bool forceEnableMic)
+{
+    showAudioCallUiInternal(peerId, forceEnableMic);
+}
+
+void NewUiWindow::restoreAudioCallUi()
+{
+    setAudioCallMiniHidden(false);
+    hideAudioCallMiniBar();
+    if (m_audioCallDialog && !m_audioCallPeerId.isEmpty()) {
+        m_audioCallDialog->show();
+        m_audioCallDialog->raise();
+    }
+}
+
+QString NewUiWindow::activeAudioCallPeerId() const
+{
+    return m_audioCallPeerId;
+}
+
 void NewUiWindow::ensureAudioCallUi()
 {
     if (m_audioCallDialog) {
         return;
     }
 
-    auto *dlg = new QDialog(this);
+    auto *dlg = new QDialog(nullptr);
+    static_cast<QObject*>(dlg)->setParent(this);
     dlg->setWindowTitle(QStringLiteral("通话"));
     dlg->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     dlg->setAttribute(Qt::WA_TranslucentBackground, true);
     dlg->setModal(false);
     dlg->setMinimumSize(320, 180);
+    dlg->installEventFilter(this);
 
     auto *outerLayout = new QVBoxLayout(dlg);
     outerLayout->setContentsMargins(10, 10, 10, 10);
@@ -2487,7 +2542,8 @@ void NewUiWindow::ensureAudioCallUi()
 
     auto *panel = new QFrame(dlg);
     panel->setObjectName(QStringLiteral("AudioCallPanel"));
-    panel->setStyleSheet(QStringLiteral("QFrame#AudioCallPanel { background: #2b2b2b; border-radius: 12px; }"));
+    panel->setStyleSheet(QStringLiteral("QFrame#AudioCallPanel { background: #3a3a3a; border-radius: 12px; }"));
+    panel->installEventFilter(this);
     auto *shadow = new QGraphicsDropShadowEffect(panel);
     shadow->setBlurRadius(18);
     shadow->setOffset(0, 6);
@@ -2507,15 +2563,21 @@ void NewUiWindow::ensureAudioCallUi()
     topRow->addStretch(1);
     auto *minBtn = new QPushButton(panel);
     minBtn->setFixedSize(28, 28);
-    minBtn->setIcon(QIcon(appDir + "/maps/logo/mini.png"));
-    minBtn->setIconSize(QSize(18, 18));
+    minBtn->setText(QStringLiteral("-"));
+    QFont f = minBtn->font();
+    f.setBold(true);
+    f.setPointSize(16);
+    minBtn->setFont(f);
     minBtn->setFlat(true);
     minBtn->setCursor(Qt::PointingHandCursor);
+    minBtn->setToolTip(QStringLiteral("最小化到通话条"));
     minBtn->setStyleSheet(QStringLiteral(
-        "QPushButton { border: none; background: transparent; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.06); border-radius: 6px; }"
-        "QPushButton:pressed { background: rgba(255,255,255,0.10); border-radius: 6px; }"));
-    connect(minBtn, &QPushButton::clicked, dlg, &QWidget::showMinimized);
+        "QPushButton { border: none; background: transparent; color: rgba(255,255,255,220); }"
+        "QPushButton:hover { background: rgba(255,255,255,0.08); border-radius: 6px; }"
+        "QPushButton:pressed { background: rgba(255,255,255,0.12); border-radius: 6px; }"));
+    connect(minBtn, &QPushButton::clicked, this, [this]() {
+        showAudioCallMiniBar();
+    });
     topRow->addWidget(minBtn);
     layout->addLayout(topRow);
 
@@ -2525,12 +2587,17 @@ void NewUiWindow::ensureAudioCallUi()
     area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     area->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     area->setFixedHeight(86);
+    area->installEventFilter(this);
+    if (area->viewport()) {
+        area->viewport()->installEventFilter(this);
+    }
     if (area->horizontalScrollBar()) {
         area->horizontalScrollBar()->setStyleSheet(QStringLiteral("QScrollBar:horizontal{height:0px;}"));
     }
 
     auto *people = new QWidget(area);
     people->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    people->installEventFilter(this);
     auto *peopleLayout = new QHBoxLayout(people);
     peopleLayout->setContentsMargins(0, 0, 0, 0);
     peopleLayout->setSpacing(12);
@@ -2559,7 +2626,10 @@ void NewUiWindow::ensureAudioCallUi()
     auto styleIconBtn = [](QPushButton *b) {
         b->setFlat(true);
         b->setCursor(Qt::PointingHandCursor);
-        b->setStyleSheet("QPushButton { border: none; background: transparent; }");
+        b->setStyleSheet(
+            "QPushButton { border: none; background: rgba(255,255,255,0.06); border-radius: 28px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.10); }"
+            "QPushButton:pressed { background: rgba(255,255,255,0.14); }");
     };
 
     auto *micBtn = new QPushButton(dlg);
@@ -2620,9 +2690,77 @@ void NewUiWindow::ensureAudioCallUi()
     m_audioCallHangupBtn = hangupBtn;
     m_audioCallSpeakerBtn = speakerBtn;
     m_audioCallPollTimer = timer;
+
+    if (!m_audioCallMiniBar) {
+        auto *mini = new QDialog(nullptr);
+        static_cast<QObject*>(mini)->setParent(this);
+        mini->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        mini->setAttribute(Qt::WA_TranslucentBackground, true);
+        mini->setAttribute(Qt::WA_ShowWithoutActivating, true);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+        mini->setWindowFlag(Qt::WindowDoesNotAcceptFocus, true);
+#endif
+        mini->setFocusPolicy(Qt::NoFocus);
+        mini->setModal(false);
+        mini->installEventFilter(this);
+
+        auto *miniOuter = new QVBoxLayout(mini);
+        const int panelSize = 64;
+        const int margin = 12;
+        mini->setFixedSize(panelSize + margin * 2, panelSize + margin * 2);
+        miniOuter->setContentsMargins(margin, margin, margin, margin);
+        miniOuter->setSpacing(0);
+
+        auto *miniPanel = new QFrame(mini);
+        miniPanel->setObjectName(QStringLiteral("AudioCallMiniPanel"));
+        miniPanel->setFixedSize(panelSize, panelSize);
+        miniPanel->setStyleSheet(QStringLiteral("QFrame#AudioCallMiniPanel{ background: #3a3a3a; border-radius: 14px; }"));
+        miniPanel->setFocusPolicy(Qt::NoFocus);
+        miniPanel->installEventFilter(this);
+        auto *miniShadow = new QGraphicsDropShadowEffect(miniPanel);
+        miniShadow->setBlurRadius(18);
+        miniShadow->setOffset(0, 6);
+        miniShadow->setColor(QColor(0, 0, 0, 140));
+        miniPanel->setGraphicsEffect(miniShadow);
+        miniOuter->addWidget(miniPanel);
+
+        auto *miniLayout = new QVBoxLayout(miniPanel);
+        miniLayout->setContentsMargins(0, 0, 0, 0);
+        miniLayout->setSpacing(0);
+
+        auto *logo = new QLabel(miniPanel);
+        logo->setAlignment(Qt::AlignCenter);
+        logo->setAttribute(Qt::WA_TransparentForMouseEvents);
+        logo->setFixedSize(panelSize, panelSize);
+        const QPixmap p(appDir + "/maps/logo/iruler.ico");
+        if (!p.isNull()) {
+            const int logoSize = 40;
+            logo->setPixmap(p.scaled(logoSize, logoSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
+        miniLayout->addWidget(logo, 0, Qt::AlignCenter);
+
+        mini->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(mini, &QDialog::customContextMenuRequested, this, [this](const QPoint &pos) {
+            if (!m_audioCallMiniBar || !m_audioCallMiniBar->isVisible()) return;
+            QMenu menu(m_audioCallMiniBar);
+            QAction *hideAct = menu.addAction(QStringLiteral("隐藏"));
+            QAction *picked = menu.exec(m_audioCallMiniBar->mapToGlobal(pos));
+            if (picked == hideAct) {
+                setAudioCallMiniHidden(true);
+            }
+        });
+
+        m_audioCallMiniBar = mini;
+        m_audioCallMiniLogoLabel = logo;
+    }
 }
 
 void NewUiWindow::showAudioCallUi(const QString &peerId)
+{
+    showAudioCallUiInternal(peerId, true);
+}
+
+void NewUiWindow::showAudioCallUiInternal(const QString &peerId, bool forceEnableMic)
 {
     if (peerId.isEmpty()) {
         return;
@@ -2631,11 +2769,14 @@ void NewUiWindow::showAudioCallUi(const QString &peerId)
     if (!m_audioCallDialog) {
         return;
     }
-    if (!m_globalMicEnabled) {
+    if (forceEnableMic && !m_globalMicEnabled) {
         setGlobalMicCheckedSilently(true);
     }
     m_audioCallSpeakerEnabled = true;
     m_audioCallPeerId = peerId;
+    setAudioCallMiniHidden(false);
+    hideAudioCallMiniBar();
+    updateTalkButtonsAvailability();
     if (m_audioCallMuteBtn) {
         QSignalBlocker blocker(m_audioCallMuteBtn);
         m_audioCallMuteBtn->setChecked(m_globalMicEnabled);
@@ -2658,7 +2799,6 @@ void NewUiWindow::showAudioCallUi(const QString &peerId)
         m_audioCallDialog->show();
     }
     m_audioCallDialog->raise();
-    m_audioCallDialog->activateWindow();
 }
 
 void NewUiWindow::hideAudioCallUi()
@@ -2667,9 +2807,12 @@ void NewUiWindow::hideAudioCallUi()
         m_audioCallPollTimer->stop();
     }
     m_audioCallPeerId.clear();
+    setAudioCallMiniHidden(false);
+    updateTalkButtonsAvailability();
     if (m_audioCallDialog) {
         m_audioCallDialog->hide();
     }
+    hideAudioCallMiniBar();
 }
 
 void NewUiWindow::hangupAudioCallUi()
@@ -2771,13 +2914,14 @@ void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
         }
 
         auto *lb = new QLabel(name, cell);
-        lb->setAlignment(Qt::AlignCenter);
+        lb->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
         lb->setStyleSheet("color: #e0e0e0; font-size: 12px; background: transparent;");
         lb->setFixedWidth(cellWidth);
+        lb->setFixedHeight(32);
         lb->setWordWrap(true);
 
-        vl->addWidget(av);
-        vl->addWidget(lb);
+        vl->addWidget(av, 0, Qt::AlignHCenter);
+        vl->addWidget(lb, 0, Qt::AlignHCenter);
 
         m_audioCallParticipantsLayout->addWidget(cell);
     }
@@ -2787,6 +2931,74 @@ void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
     }
     if (m_audioCallParticipantsWidget) {
         m_audioCallParticipantsWidget->adjustSize();
+    }
+}
+
+void NewUiWindow::showAudioCallMiniBar()
+{
+    if (!m_audioCallDialog || m_audioCallPeerId.isEmpty()) {
+        return;
+    }
+    ensureAudioCallUi();
+    if (!m_audioCallMiniBar) {
+        return;
+    }
+    setAudioCallMiniHidden(false);
+    m_audioCallMiniBarDragging = false;
+    if (m_audioCallDialog->isVisible()) {
+        m_audioCallDialog->hide();
+    }
+    if (!m_audioCallMiniBar->isVisible()) {
+        QScreen *screen = QGuiApplication::primaryScreen();
+        const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1280, 720);
+        const QSize s = m_audioCallMiniBar->size();
+        const int x = avail.right() - s.width() - 18;
+        const int y = avail.bottom() - s.height() - 18;
+        m_audioCallMiniBar->setGeometry(QRect(QPoint(x, y), s));
+    }
+    m_audioCallMiniBar->show();
+    m_audioCallMiniBar->raise();
+}
+
+void NewUiWindow::hideAudioCallMiniBar()
+{
+    if (m_audioCallMiniBar) {
+        m_audioCallMiniBar->hide();
+    }
+}
+
+void NewUiWindow::setAudioCallMiniHidden(bool hidden)
+{
+    m_audioCallMiniHidden = hidden;
+    if (m_audioCallTitleRestoreBtn) {
+        const bool visible = (m_audioCallMiniHidden && !m_audioCallPeerId.isEmpty());
+        m_audioCallTitleRestoreBtn->setVisible(visible);
+    }
+    const bool available = (m_audioCallMiniHidden && !m_audioCallPeerId.isEmpty());
+    if (available != m_audioCallRestoreAvailable) {
+        m_audioCallRestoreAvailable = available;
+        emit audioCallRestoreAvailableChanged(available);
+    }
+    if (m_audioCallMiniHidden) {
+        hideAudioCallMiniBar();
+    }
+}
+
+void NewUiWindow::updateTalkButtonsAvailability()
+{
+    const bool callBusy = !m_audioCallPeerId.isEmpty();
+    const QString activeId = m_audioCallPeerId;
+    for (auto it = m_talkButtons.begin(); it != m_talkButtons.end(); ++it) {
+        const QString userId = it.key();
+        QPushButton *btn = it.value();
+        if (!btn) continue;
+        const bool allowed = (!callBusy || userId == activeId);
+        btn->setCursor(allowed ? Qt::PointingHandCursor : Qt::ForbiddenCursor);
+        if (!allowed) {
+            btn->setToolTip(QStringLiteral("通话中，无法拨打其它人"));
+        } else if (btn->toolTip() == QStringLiteral("通话中，无法拨打其它人")) {
+            btn->setToolTip(QString());
+        }
     }
 }
 
@@ -3036,6 +3248,55 @@ void NewUiWindow::resizeEvent(QResizeEvent *event)
 
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (m_audioCallMiniBar) {
+        bool insideMini = false;
+        QObject *cur = watched;
+        while (cur) {
+            if (cur == m_audioCallMiniBar) {
+                insideMini = true;
+                break;
+            }
+            cur = cur->parent();
+        }
+        if (insideMini) {
+            if (event->type() == QEvent::MouseButtonDblClick) {
+                auto *me = static_cast<QMouseEvent*>(event);
+                if (me->button() == Qt::LeftButton) {
+                    m_audioCallMiniBarDragging = false;
+                    setAudioCallMiniHidden(false);
+                    hideAudioCallMiniBar();
+                    if (m_audioCallDialog && !m_audioCallPeerId.isEmpty()) {
+                        m_audioCallDialog->show();
+                        m_audioCallDialog->raise();
+                    }
+                    return true;
+                }
+            } else if (event->type() == QEvent::MouseButtonPress) {
+                auto *me = static_cast<QMouseEvent*>(event);
+                if (me->button() == Qt::LeftButton) {
+                    m_audioCallMiniBarDragging = true;
+                    m_audioCallMiniBarDragOffset = me->globalPosition().toPoint() - m_audioCallMiniBar->frameGeometry().topLeft();
+                    event->accept();
+                    return true;
+                }
+            } else if (event->type() == QEvent::MouseMove) {
+                if (m_audioCallMiniBarDragging) {
+                    auto *me = static_cast<QMouseEvent*>(event);
+                    m_audioCallMiniBar->move(me->globalPosition().toPoint() - m_audioCallMiniBarDragOffset);
+                    event->accept();
+                    return true;
+                }
+            } else if (event->type() == QEvent::MouseButtonRelease) {
+                auto *me = static_cast<QMouseEvent*>(event);
+                if (me->button() == Qt::LeftButton) {
+                    m_audioCallMiniBarDragging = false;
+                    event->accept();
+                    return true;
+                }
+            }
+        }
+    }
+
     if (watched == m_resizeGripLeft || watched == m_resizeGripRight || watched == m_resizeGripTop || watched == m_resizeGripBottom ||
         watched == m_resizeGripTopLeft || watched == m_resizeGripTopRight || watched == m_resizeGripBottomLeft || watched == m_resizeGripBottomRight) {
         if (windowState() & Qt::WindowMaximized) {
@@ -4383,7 +4644,11 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
         micBtn->setIconSize(QSize(14, 14));
 
         m_talkButtons.insert(userId, micBtn);
+        updateTalkButtonsAvailability();
         connect(micBtn, &QPushButton::clicked, [this, micBtn, appDir, userId]() {
+            if (!m_audioCallPeerId.isEmpty() && userId != m_audioCallPeerId) {
+                return;
+            }
             const bool remoteActive = micBtn->property("remoteActive").toBool();
             bool isOn = micBtn->property("isOn").toBool();
             if (remoteActive) {

@@ -143,6 +143,13 @@ bool VideoWindow::isSpeakerChecked() const
     return m_speakerButton ? m_speakerButton->isChecked() : false;
 }
 
+void VideoWindow::setAudioCallRestoreVisible(bool visible)
+{
+    if (m_audioCallRestoreButton) {
+        m_audioCallRestoreButton->setVisible(visible);
+    }
+}
+
 void VideoWindow::setupUI()
 {
     m_mainLayout = new QVBoxLayout(this);
@@ -528,6 +535,30 @@ void VideoWindow::setupCustomTitleBar()
     m_titleCenterLayout = new QHBoxLayout(m_titleCenter);
     m_titleCenterLayout->setContentsMargins(0, 0, 0, 0);
     m_titleCenterLayout->setSpacing(0);
+
+    m_audioCallRestoreButton = new QPushButton(m_titleCenter);
+    m_audioCallRestoreButton->setText(QStringLiteral("通话中"));
+    m_audioCallRestoreButton->setFixedHeight(20);
+    m_audioCallRestoreButton->setMinimumWidth(58);
+    m_audioCallRestoreButton->setCursor(Qt::PointingHandCursor);
+    m_audioCallRestoreButton->setToolTip(QStringLiteral("通话中（点击查看通话窗口）"));
+    m_audioCallRestoreButton->setStyleSheet(QStringLiteral(
+        "QPushButton {"
+        "  background-color: #2e7d32;"
+        "  color: rgba(255,255,255,230);"
+        "  border-radius: 10px;"
+        "  border: none;"
+        "  padding: 0 10px;"
+        "  font-size: 11px;"
+        "  font-weight: 600;"
+        "}"
+        "QPushButton:hover { background-color: #2b6f2e; }"
+        "QPushButton:pressed { background-color: #245d27; }"));
+    m_audioCallRestoreButton->setVisible(false);
+    connect(m_audioCallRestoreButton, &QPushButton::clicked, this, &VideoWindow::audioCallRestoreClicked);
+
+    m_titleCenterLayout->addWidget(m_audioCallRestoreButton, 0, Qt::AlignCenter);
+    m_titleCenterLayout->addSpacing(14);
     m_titleCenterLayout->addWidget(m_toolBar);
     m_titleBarLayout->addWidget(m_titleCenter, 0, Qt::AlignCenter);
     m_titleBarLayout->addStretch();

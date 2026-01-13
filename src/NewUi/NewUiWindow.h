@@ -58,6 +58,9 @@ public:
     void janusSwitchToMyRoom();
     void janusSetMuted(bool muted);
     void janusStop();
+    void showAudioCallUiForSession(const QString &peerId, bool forceEnableMic);
+    void restoreAudioCallUi();
+    QString activeAudioCallPeerId() const;
 
     // Viewer List Management
     void addViewer(const QString &id, const QString &name);
@@ -89,6 +92,7 @@ signals:
     void talkToggleRequested(const QString &targetId, bool enabled);
     void avatarPixmapUpdated(const QString &userId, const QPixmap &pixmap);
     void broadcastRequested(const QString &content);
+    void audioCallRestoreAvailableChanged(bool available);
 
 private:
     void setupUi();
@@ -134,10 +138,15 @@ private:
     void applyJanusAudioState();
     void ensureAudioCallUi();
     void showAudioCallUi(const QString &peerId);
+    void showAudioCallUiInternal(const QString &peerId, bool forceEnableMic);
     void hideAudioCallUi();
     void refreshAudioCallParticipants();
     void rebuildAudioCallParticipantsUi(const QStringList &names);
     void hangupAudioCallUi();
+    void showAudioCallMiniBar();
+    void hideAudioCallMiniBar();
+    void setAudioCallMiniHidden(bool hidden);
+    void updateTalkButtonsAvailability();
     
     // Dragging support
     bool m_dragging = false;
@@ -253,6 +262,8 @@ private:
     QString m_janusActiveRoomOwnerId;
 
     QDialog *m_audioCallDialog = nullptr;
+    bool m_audioCallDialogDragging = false;
+    QPoint m_audioCallDialogDragOffset;
     QPushButton *m_audioCallMuteBtn = nullptr;
     QPushButton *m_audioCallHangupBtn = nullptr;
     QPushButton *m_audioCallSpeakerBtn = nullptr;
@@ -262,4 +273,12 @@ private:
     QWidget *m_audioCallParticipantsWidget = nullptr;
     QHBoxLayout *m_audioCallParticipantsLayout = nullptr;
     bool m_audioCallSpeakerEnabled = true;
+
+    QDialog *m_audioCallMiniBar = nullptr;
+    QLabel *m_audioCallMiniLogoLabel = nullptr;
+    bool m_audioCallMiniBarDragging = false;
+    QPoint m_audioCallMiniBarDragOffset;
+    bool m_audioCallMiniHidden = false;
+    QPushButton *m_audioCallTitleRestoreBtn = nullptr;
+    bool m_audioCallRestoreAvailable = false;
 };

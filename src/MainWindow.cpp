@@ -900,6 +900,18 @@ void MainWindow::setupUI()
     // 设置当前用户信息
     m_transparentImageList->setMyStreamId(getDeviceId(), m_userName.isEmpty() ? "Me" : m_userName);
     m_transparentImageList->setCaptureScreenIndex(loadScreenIndexFromConfig());
+
+    connect(m_videoWindow, &VideoWindow::audioCallRestoreClicked, this, [this]() {
+        if (m_transparentImageList) {
+            m_transparentImageList->restoreAudioCallUi();
+        }
+    });
+
+    connect(m_transparentImageList, &NewUiWindow::audioCallRestoreAvailableChanged, this, [this](bool available) {
+        if (m_videoWindow) {
+            m_videoWindow->setAudioCallRestoreVisible(available);
+        }
+    });
     
     // 连接观看请求信号
     connect(m_transparentImageList, &NewUiWindow::startWatchingRequested,
@@ -997,15 +1009,37 @@ void MainWindow::setupUI()
                 m_pendingTalkEnabled = false;
             }
             sendViewerMicState(targetId, false);
+
+            if (!m_currentTargetId.isEmpty() && m_currentTargetId == targetId && m_videoWindow) {
+                m_videoWindow->setMicCheckedSilently(false);
+                if (auto *vd = m_videoWindow->getVideoDisplayWidget()) {
+                    vd->setTalkEnabled(false);
+                    vd->setMicSendEnabled(false);
+                    if (vd->isReceiving()) {
+                        vd->stopReceiving(false);
+                    }
+                }
+                m_videoWindow->hide();
+                m_audioOnlyTargetId.clear();
+                m_currentTargetId.clear();
+            }
         }
     });
 
     connect(m_videoWindow, &VideoWindow::closeClicked, this, [this]() {
-        if (!m_pendingTalkTargetId.isEmpty() && m_transparentImageList) {
-            m_transparentImageList->talkToggleRequested(m_pendingTalkTargetId, false);
-        }
+        bool hangupSent = false;
         if (m_transparentImageList) {
-            m_transparentImageList->janusStop();
+            const QString peerId = m_transparentImageList->activeAudioCallPeerId();
+            if (!peerId.isEmpty()) {
+                m_transparentImageList->talkToggleRequested(peerId, false);
+                hangupSent = true;
+            } else if (!m_pendingTalkTargetId.isEmpty()) {
+                m_transparentImageList->talkToggleRequested(m_pendingTalkTargetId, false);
+                hangupSent = true;
+            }
+            if (!hangupSent) {
+                m_transparentImageList->janusStop();
+            }
         }
 
         if (m_videoWindow) {
@@ -1035,7 +1069,12 @@ void MainWindow::setupUI()
         m_transparentImageList->restartUserStreamSubscription(targetId);
         m_transparentImageList->onVideoReceivingStopped(targetId);
         if (!(m_pendingTalkEnabled && m_pendingTalkTargetId == targetId)) {
-            m_transparentImageList->janusStop();
+            const QString peerId = m_transparentImageList->activeAudioCallPeerId();
+            if (!peerId.isEmpty() && peerId == targetId) {
+                m_transparentImageList->talkToggleRequested(peerId, false);
+            } else {
+                m_transparentImageList->janusStop();
+            }
         }
     });
 
@@ -3164,7 +3203,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
             startVideoReceiving(targetId);
             if (showVideoWindow && m_transparentImageList) {
-                m_transparentImageList->janusSwitchToUserRoom(targetId);
+                m_transparentImageList->talkToggleRequested(targetId, true);
             }
             if (talkWasPending && m_transparentImageList) {
                 m_transparentImageList->setTalkConnected(targetId, true);

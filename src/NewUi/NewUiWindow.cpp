@@ -443,7 +443,7 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
 
     ACCENT_POLICY policy{};
     policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
-    policy.AccentFlags = 2;
+    policy.AccentFlags = 0;
     policy.GradientColor = abgrGradientColor;
 
     WINDOWCOMPOSITIONATTRIBDATA data{};
@@ -455,8 +455,8 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
     }
 
     policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
-    policy.AccentFlags = 2;
-    policy.GradientColor = 0;
+    policy.AccentFlags = 0;
+    policy.GradientColor = abgrGradientColor;
     return fn(hwnd, &data) != FALSE;
 }
 
@@ -491,6 +491,31 @@ static bool tryEnableDwmBackdropSimple(HWND hwnd, int backdropType, bool darkMod
 
     FreeLibrary(dwmapi);
     return SUCCEEDED(hrBackdrop);
+}
+
+static void tryExtendGlassFrame(HWND hwnd)
+{
+    if (!hwnd) return;
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) return;
+    auto extendFrame = reinterpret_cast<DwmExtendFrameIntoClientAreaFn>(GetProcAddress(dwmapi, "DwmExtendFrameIntoClientArea"));
+    if (!extendFrame) {
+        FreeLibrary(dwmapi);
+        return;
+    }
+    const DwmMargins margins{-1, -1, -1, -1};
+    extendFrame(hwnd, &margins);
+    FreeLibrary(dwmapi);
+}
+
+static void ensureLayeredForAcrylic(HWND hwnd)
+{
+    if (!hwnd) return;
+    LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if ((exStyle & WS_EX_LAYERED) == 0) {
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+    }
+    SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
 }
 
 static void applyRoundedRegion(HWND hwnd, bool enabled, int radiusPx)
@@ -547,7 +572,7 @@ static void applyHwndCornerStyle(HWND hwnd, bool rounded)
     applyRoundedRegion(hwnd, true, kHwndCornerRadiusPx);
 }
 
-static constexpr int kAcrylicTintAbgr = 0xA0E6E6E6;
+static constexpr int kAcrylicTintAbgr = 0x30FFFFFF;
 
 static bool applyAcrylicForWidget(QWidget *w, int abgrGradientColor)
 {
@@ -3161,8 +3186,13 @@ bool NewUiWindow::event(QEvent *event)
             setAttribute(Qt::WA_TranslucentBackground, true);
             setAttribute(Qt::WA_NoSystemBackground, true);
             setAutoFillBackground(false);
-            const bool acrylicOk = tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr);
-            setWindowOpacity(acrylicOk ? 1.0 : 0.92);
+            tryExtendGlassFrame(hwnd);
+            ensureLayeredForAcrylic(hwnd);
+            if (!tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr)) {
+                if (!tryEnableDwmBackdropSimple(hwnd, 3, true)) {
+                    SetLayeredWindowAttributes(hwnd, 0, 235, LWA_ALPHA);
+                }
+            }
             applyHwndCornerStyle(hwnd, !(windowState() & Qt::WindowMaximized));
         });
     }

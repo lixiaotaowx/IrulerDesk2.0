@@ -881,7 +881,7 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
         micBtn->setProperty("remoteActive", false);
         micBtn->setFlat(true);
         micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-        micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
+        micBtn->setIcon(QIcon(appDir + "/maps/logo/get.png"));
         micBtn->setIconSize(QSize(14, 14));
 
         m_talkButtons.insert(userId, micBtn);
@@ -900,7 +900,8 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
                     return;
                 }
             }
-            isOn = !isOn;
+            if (isOn) return; // Only dial, no hangup
+            isOn = true;
             micBtn->setProperty("isOn", isOn);
             if (isOn) {
                 const QStringList keys = m_talkButtons.keys();

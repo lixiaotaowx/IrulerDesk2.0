@@ -23,6 +23,200 @@
 #include <windows.h>
 #include <iostream>
 #include <algorithm>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+
+namespace {
+
+enum WindowCompositionAttribute {
+    WCA_ACCENT_POLICY = 19
+};
+
+struct ACCENT_POLICY {
+    int AccentState;
+    int AccentFlags;
+    int GradientColor;
+    int AnimationId;
+};
+
+struct WINDOWCOMPOSITIONATTRIBDATA {
+    int Attrib;
+    void *pvData;
+    unsigned int cbData;
+};
+
+enum AccentState {
+    ACCENT_DISABLED = 0,
+    ACCENT_ENABLE_GRADIENT = 1,
+    ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+    ACCENT_ENABLE_BLURBEHIND = 3,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
+};
+
+using SetWindowCompositionAttributeFn = BOOL(WINAPI *)(HWND, WINDOWCOMPOSITIONATTRIBDATA *);
+using RtlGetVersionFn = LONG (WINAPI *)(OSVERSIONINFOW*);
+
+static bool isWindows11OrGreater() {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) return false;
+    auto fn = reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion"));
+    if (!fn) return false;
+
+    OSVERSIONINFOW rovi = { 0 };
+    rovi.dwOSVersionInfoSize = sizeof(rovi);
+    if (fn(&rovi) == 0) { // STATUS_SUCCESS
+        return rovi.dwBuildNumber >= 22000;
+    }
+    return false;
+}
+
+static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
+{
+    if (!hwnd) return false;
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) return false;
+    auto fn = reinterpret_cast<SetWindowCompositionAttributeFn>(GetProcAddress(user32, "SetWindowCompositionAttribute"));
+    if (!fn) return false;
+
+    ACCENT_POLICY policy{};
+    WINDOWCOMPOSITIONATTRIBDATA data{};
+    data.Attrib = WCA_ACCENT_POLICY;
+    data.pvData = &policy;
+    data.cbData = sizeof(policy);
+
+    if (isWindows11OrGreater()) {
+        policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+        policy.AccentFlags = 0;
+        policy.GradientColor = abgrGradientColor;
+        if (fn(hwnd, &data)) {
+            return true;
+        }
+    }
+
+    // Windows 10 or fallback
+    // Use darker tint (Black 0x000000) with high alpha (0xE6) to avoid "whiteness"
+    policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
+    policy.AccentFlags = 0;
+    policy.GradientColor = 0xE6000000;
+
+    return fn(hwnd, &data) != FALSE;
+}
+
+struct DwmMargins {
+    int cxLeftWidth;
+    int cxRightWidth;
+    int cyTopHeight;
+    int cyBottomHeight;
+};
+
+using DwmExtendFrameIntoClientAreaFn = HRESULT(WINAPI *)(HWND, const DwmMargins *);
+using DwmSetWindowAttributeFn = HRESULT(WINAPI *)(HWND, DWORD, LPCVOID, DWORD);
+
+static bool tryEnableDwmBackdropSimple(HWND hwnd, int backdropType, bool darkMode)
+{
+    if (!hwnd) return false;
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) return false;
+    auto setAttr = reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+    if (!setAttr) {
+        FreeLibrary(dwmapi);
+        return false;
+    }
+
+    const int useDarkMode = darkMode ? 1 : 0;
+    setAttr(hwnd, 20, &useDarkMode, sizeof(useDarkMode));
+
+    HRESULT hrBackdrop = E_FAIL;
+    if (backdropType >= 0) {
+        hrBackdrop = setAttr(hwnd, 38, &backdropType, sizeof(backdropType));
+    }
+
+    FreeLibrary(dwmapi);
+    return SUCCEEDED(hrBackdrop);
+}
+
+static void tryExtendGlassFrame(HWND hwnd)
+{
+    if (!hwnd) return;
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) return;
+    auto extendFrame = reinterpret_cast<DwmExtendFrameIntoClientAreaFn>(GetProcAddress(dwmapi, "DwmExtendFrameIntoClientArea"));
+    if (!extendFrame) {
+        FreeLibrary(dwmapi);
+        return;
+    }
+    const DwmMargins margins{-1, -1, -1, -1};
+    extendFrame(hwnd, &margins);
+    FreeLibrary(dwmapi);
+}
+
+static void ensureLayeredForAcrylic(HWND hwnd)
+{
+    if (!hwnd) return;
+    LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if ((exStyle & WS_EX_LAYERED) == 0) {
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+    }
+    SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+}
+
+static void applyRoundedRegion(HWND hwnd, bool enabled, int radiusPx)
+{
+    if (!hwnd) return;
+    if (!enabled) {
+        SetWindowRgn(hwnd, nullptr, TRUE);
+        return;
+    }
+    RECT rc{};
+    if (!GetClientRect(hwnd, &rc)) return;
+    const int w = rc.right - rc.left;
+    const int h = rc.bottom - rc.top;
+    if (w <= 0 || h <= 0) return;
+    const int r = radiusPx > 0 ? radiusPx : 0;
+    const int d = r * 2;
+    HRGN rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, d, d);
+    if (!rgn) return;
+    if (!SetWindowRgn(hwnd, rgn, TRUE)) {
+        DeleteObject(rgn);
+    }
+}
+
+static constexpr int kHwndCornerRadiusPx = 10;
+
+static bool trySetDwmCornerPreference(HWND hwnd, int cornerPreference, int radiusPx)
+{
+    if (!hwnd) return false;
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) return false;
+    auto setAttr = reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+    if (!setAttr) {
+        FreeLibrary(dwmapi);
+        return false;
+    }
+    const HRESULT hrCorner = setAttr(hwnd, 33, &cornerPreference, sizeof(cornerPreference));
+    HRESULT hrRadius = E_FAIL;
+    if (radiusPx > 0) {
+        hrRadius = setAttr(hwnd, 40, &radiusPx, sizeof(radiusPx));
+    }
+    FreeLibrary(dwmapi);
+    return SUCCEEDED(hrCorner) || SUCCEEDED(hrRadius);
+}
+
+static void applyHwndCornerStyle(HWND hwnd, bool rounded)
+{
+    if (!hwnd) return;
+    if (!rounded) {
+        trySetDwmCornerPreference(hwnd, 1, 0);
+        SetWindowRgn(hwnd, nullptr, TRUE);
+        return;
+    }
+    trySetDwmCornerPreference(hwnd, 2, kHwndCornerRadiusPx);
+    applyRoundedRegion(hwnd, true, kHwndCornerRadiusPx);
+}
+
+static constexpr int kAcrylicTintAbgr = 0x30FFFFFF;
+
+} // namespace
 
 VideoWindow::VideoWindow(QWidget *parent)
     : QWidget(parent)
@@ -165,7 +359,7 @@ void VideoWindow::setupUI()
     m_videoDisplayWidget->setAutoResize(true);
     m_videoDisplayWidget->setStyleSheet(
         "VideoDisplayWidget {"
-        "    background-color: #000000;"
+        "    background-color: transparent;"
         "    border: none;"
         "}"
     );
@@ -758,15 +952,38 @@ void VideoWindow::mouseReleaseEvent(QMouseEvent *event)
 
 void VideoWindow::paintEvent(QPaintEvent *event)
 {
+    // Only paint border, background handled by Acrylic
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     
-    // 绘制窗口背景和边框
-    painter.setBrush(QBrush(QColor(42, 42, 42)));
+    painter.setBrush(Qt::NoBrush);
     painter.setPen(QPen(QColor(60, 60, 60), 1));
     painter.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 8, 8);
     
     QWidget::paintEvent(event);
+}
+
+bool VideoWindow::event(QEvent *event)
+{
+#ifdef _WIN32
+    if (event && (event->type() == QEvent::Show || event->type() == QEvent::WinIdChange)) {
+        QTimer::singleShot(0, this, [this]() {
+            HWND hwnd = reinterpret_cast<HWND>(winId());
+            setAttribute(Qt::WA_TranslucentBackground, true);
+            setAttribute(Qt::WA_NoSystemBackground, true);
+            setAutoFillBackground(false);
+            tryExtendGlassFrame(hwnd);
+            ensureLayeredForAcrylic(hwnd);
+            if (!tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr)) {
+                if (!tryEnableDwmBackdropSimple(hwnd, 3, true)) {
+                    SetLayeredWindowAttributes(hwnd, 0, 235, LWA_ALPHA);
+                }
+            }
+            applyHwndCornerStyle(hwnd, !(windowState() & Qt::WindowMaximized));
+        });
+    }
+#endif
+    return QWidget::event(event);
 }
 
 void VideoWindow::onMinimizeClicked()

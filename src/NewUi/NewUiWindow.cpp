@@ -432,6 +432,21 @@ enum ACCENT_STATE {
 };
 
 using SetWindowCompositionAttributeFn = BOOL(WINAPI *)(HWND, WINDOWCOMPOSITIONATTRIBDATA *);
+using RtlGetVersionFn = LONG (WINAPI *)(OSVERSIONINFOW*);
+
+static bool isWindows11OrGreater() {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) return false;
+    auto fn = reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion"));
+    if (!fn) return false;
+
+    OSVERSIONINFOW rovi = { 0 };
+    rovi.dwOSVersionInfoSize = sizeof(rovi);
+    if (fn(&rovi) == 0) { // STATUS_SUCCESS
+        return rovi.dwBuildNumber >= 22000;
+    }
+    return false;
+}
 
 static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
 {
@@ -442,21 +457,26 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
     if (!fn) return false;
 
     ACCENT_POLICY policy{};
-    policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
-    policy.AccentFlags = 0;
-    policy.GradientColor = abgrGradientColor;
-
     WINDOWCOMPOSITIONATTRIBDATA data{};
     data.Attrib = WCA_ACCENT_POLICY;
     data.pvData = &policy;
     data.cbData = sizeof(policy);
-    if (fn(hwnd, &data)) {
-        return true;
+
+    if (isWindows11OrGreater()) {
+        policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+        policy.AccentFlags = 0;
+        policy.GradientColor = abgrGradientColor;
+        if (fn(hwnd, &data)) {
+            return true;
+        }
     }
 
+    // Windows 10 or fallback
+    // Use darker tint (Black 0x000000) with high alpha (0xE6) to avoid "whiteness"
     policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
     policy.AccentFlags = 0;
-    policy.GradientColor = abgrGradientColor;
+    policy.GradientColor = 0xE6000000;
+
     return fn(hwnd, &data) != FALSE;
 }
 
@@ -1368,7 +1388,7 @@ void NewUiWindow::setTalkPending(const QString &userId, bool pending)
 
     const QString appDir = QCoreApplication::applicationDirPath();
     const bool isOn = btn->property("isOn").toBool();
-    const QString iconName = isOn ? "end.png" : "get.png";
+    const QString iconName = "get.png";
     btn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
     updateTalkOverlay(userId);
 }
@@ -1768,7 +1788,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
             micBtn->setProperty("remoteActive", false);
             micBtn->setFlat(true);
             micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-            micBtn->setIcon(QIcon(appDir + "/maps/logo/end.png"));
+            micBtn->setIcon(QIcon(appDir + "/maps/logo/get.png"));
             micBtn->setIconSize(QSize(14, 14));
 
             m_talkButtons.insert(id, micBtn);
@@ -1787,7 +1807,8 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
                         return;
                     }
                 }
-                isOn = !isOn;
+                if (isOn) return; // Only dial, no hangup
+                isOn = true;
                 micBtn->setProperty("isOn", isOn);
                 if (isOn) {
                     const QStringList keys = m_talkButtons.keys();
@@ -1970,6 +1991,23 @@ void NewUiWindow::setupUi()
     );
 #endif
 
+
+    bool isWin11 = false;
+#ifdef _WIN32
+    RTL_OSVERSIONINFOEXW osInfo = { sizeof(osInfo) };
+    typedef LONG (WINAPI *RtlGetVersionPtr)(RTL_OSVERSIONINFOEXW*);
+    HMODULE hMod = GetModuleHandleW(L"ntdll.dll");
+    if (hMod) {
+        RtlGetVersionPtr pRtlGetVersion = (RtlGetVersionPtr)GetProcAddress(hMod, "RtlGetVersion");
+        if (pRtlGetVersion) {
+            pRtlGetVersion(&osInfo);
+            if (osInfo.dwMajorVersion > 10 || (osInfo.dwMajorVersion == 10 && osInfo.dwBuildNumber >= 22000)) {
+                isWin11 = true;
+            }
+        }
+    }
+#endif
+
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(1, 1, 1, 1);
     mainLayout->setSpacing(20); // The "hollow" gap
@@ -1989,14 +2027,17 @@ void NewUiWindow::setupUi()
     leftPanel->setFixedWidth(80);
     leftPanel->installEventFilter(this);
     // Use QSS for styling
+    // Unified values for both Win10 and Win11 to ensure consistent look and shadow visibility
+    const QString leftBgColor = "rgba(18, 18, 20, 150)";
+
     leftPanel->setStyleSheet(
         "QWidget#LeftPanel {"
-        "   background-color: rgba(18, 18, 20, 150);"
+        "   background-color: " + leftBgColor + ";"
         "   border: 1px solid rgba(255, 255, 255, 18);"
         "   border-top-left-radius: 10px;"
         "   border-bottom-left-radius: 10px;"
-        "   border-top-right-radius: 10px;"
-        "   border-bottom-right-radius: 10px;"
+        "   border-top-right-radius: 0px;"
+        "   border-bottom-right-radius: 0px;"
         "}"
         "QWidget#LeftPanel QPushButton {"
         "   background-color: transparent;"
@@ -2207,12 +2248,16 @@ void NewUiWindow::setupUi()
     // --- Right Panel ---
     QWidget *rightPanel = new QWidget(this);
     rightPanel->setObjectName("RightPanel");
+    
+    // Unified values for both Win10 and Win11 to ensure consistent look and shadow visibility
+    const QString rightBgColor = "rgba(18, 18, 20, 120)";
+
     rightPanel->setStyleSheet(
         "QWidget#RightPanel {"
-        "   background-color: rgba(18, 18, 20, 120);"
+        "   background-color: " + rightBgColor + ";"
         "   border: 1px solid rgba(255, 255, 255, 16);"
-        "   border-top-left-radius: 10px;"
-        "   border-bottom-left-radius: 10px;"
+        "   border-top-left-radius: 0px;"
+        "   border-bottom-left-radius: 0px;"
         "   border-top-right-radius: 10px;"
         "   border-bottom-right-radius: 10px;"
         "}"

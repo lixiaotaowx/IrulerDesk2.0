@@ -169,7 +169,7 @@ void VideoDisplayWidget::setupUI()
     // 视频显示区域
     m_videoLabel = new QLabel("等待视频流...");
     m_videoLabel->setAlignment(Qt::AlignCenter);
-    m_videoLabel->setStyleSheet("QLabel { background-color: black; color: white; font-size: 14px; }");
+    m_videoLabel->setStyleSheet("QLabel { background-color: transparent; color: white; font-size: 14px; }");
     m_videoLabel->setMinimumSize(320, 240); // 减小最小尺寸
     m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // 允许扩展
     m_videoLabel->setScaledContents(false); // 禁用自动缩放，保持原始比例

@@ -7,10 +7,6 @@
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    AppConfig::applyApplicationInfo(a);
-    QNetworkProxyFactory::setUseSystemConfiguration(false);
-    QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     {
         static bool done = false;
         if (!done) {
@@ -21,6 +17,10 @@ int main(int argc, char *argv[])
             QWebEngineUrlScheme::registerScheme(scheme);
         }
     }
+    QApplication a(argc, argv);
+    AppConfig::applyApplicationInfo(a);
+    QNetworkProxyFactory::setUseSystemConfiguration(false);
+    QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     NewUiWindow w;
     w.show();
     return a.exec();

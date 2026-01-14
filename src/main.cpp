@@ -239,11 +239,11 @@ int main(int argc, char *argv[])
     ConsoleLogger::attachToParentConsole();
     ConsoleLogger::installQtMessageHandler();
 
+    registerIrulerWebScheme();
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
     QNetworkProxyFactory::setUseSystemConfiguration(false);
     QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
-    registerIrulerWebScheme();
     
     {
         QLocalSocket probe;

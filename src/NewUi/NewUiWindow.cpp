@@ -46,6 +46,7 @@
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineSettings>
+#include <QWebChannel>
 #include <QSignalBlocker>
 #include <QDialog>
 #include <QLayout>
@@ -225,105 +226,72 @@ QString jsQuotedString(const QString &value)
     return json.mid(1, json.size() - 2);
 }
 
-void injectCredentialHook(QWebEngineView *view)
+class IrulerWebBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit IrulerWebBridge(QObject *parent = nullptr) : QObject(parent) {}
+
+    Q_INVOKABLE void saveWebCredential(const QString &origin, const QString &username, const QString &password)
+    {
+        ::saveWebCredential(origin.trimmed(), username, password);
+    }
+
+    Q_INVOKABLE QString getWebCredential(const QString &origin)
+    {
+        QString u;
+        QString p;
+        const bool ok = loadWebCredential(origin.trimmed(), u, p);
+        QJsonObject obj;
+        obj.insert(QStringLiteral("ok"), ok);
+        if (ok) {
+            obj.insert(QStringLiteral("u"), u);
+            obj.insert(QStringLiteral("p"), p);
+        }
+        return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    }
+};
+
+void ensureWebChannelBridge(QWebEngineView *view)
 {
     if (!view || !view->page()) return;
-    const QString js = QStringLiteral(
-        "(function(){"
-        "if(window.__irulerPwdHooked)return;"
-        "window.__irulerPwdHooked=true;"
-        "function isVisible(el){"
-        "try{var r=el.getBoundingClientRect();return r&&r.width>0&&r.height>0;}catch(e){return false;}"
-        "}"
-        "function findUserField(pwd){"
-        "var form=pwd&&pwd.form?pwd.form:null;"
-        "var scope=form||document;"
-        "var inputs=Array.prototype.slice.call(scope.querySelectorAll('input'));"
-        "var cands=[];"
-        "for(var i=0;i<inputs.length;i++){"
-        "var el=inputs[i];"
-        "if(!el||el===pwd)continue;"
-        "var t=(el.type||'').toLowerCase();"
-        "if(t==='text'||t==='email'||t==='tel'||t==='number'||t==='search')cands.push(el);"
-        "if(el.autocomplete==='username'||el.autocomplete==='email')cands.push(el);"
-        "}"
-        "for(var j=cands.length-1;j>=0;j--){if(isVisible(cands[j]))return cands[j];}"
-        "var prev=null;"
-        "if(pwd){"
-        "var all=Array.prototype.slice.call(scope.querySelectorAll('input'));"
-        "var idx=all.indexOf(pwd);"
-        "if(idx>0){"
-        "for(var k=idx-1;k>=0;k--){"
-        "var e=all[k];"
-        "if(!e)continue;"
-        "var tt=(e.type||'').toLowerCase();"
-        "if(tt==='text'||tt==='email'||tt==='tel'||tt==='number'||tt==='search'){prev=e;break;}"
-        "}"
-        "}"
-        "}"
-        "if(prev&&isVisible(prev))return prev;"
-        "return null;"
-        "}"
-        "function emit(u,p){"
-        "try{"
-        "var url='iruler://savewebcred?origin='+encodeURIComponent(location.origin)+'&u='+encodeURIComponent(u||'')+'&p='+encodeURIComponent(p||'');"
-        "location.href=url;"
-        "}catch(e){}"
-        "}"
-        "function attach(form){"
-        "if(!form||form.__irulerHooked)return;"
-        "form.__irulerHooked=true;"
-        "form.addEventListener('submit',function(){"
-        "try{"
-        "var pwd=form.querySelector('input[type=password]');"
-        "if(!pwd||!pwd.value)return;"
-        "var user=findUserField(pwd);"
-        "emit(user?user.value:'',pwd.value||'');"
-        "}catch(e){}"
-        "},true);"
-        "}"
-        "try{"
-        "var forms=Array.prototype.slice.call(document.forms||[]);"
-        "forms.forEach(attach);"
-        "var mo=new MutationObserver(function(){"
-        "Array.prototype.slice.call(document.forms||[]).forEach(attach);"
-        "});"
-        "mo.observe(document.documentElement,{childList:true,subtree:true});"
-        "}catch(e){}"
-        "})();"
-    );
-    view->page()->runJavaScript(js);
+    QWebEnginePage *page = view->page();
+    if (page->property("_iruler_wc_ready").toBool()) return;
+
+    auto *bridge = new IrulerWebBridge(page);
+    auto *channel = new QWebChannel(page);
+    channel->registerObject(QStringLiteral("irulerBridge"), bridge);
+    page->setWebChannel(channel);
+    page->setProperty("_iruler_wc_ready", true);
 }
 
-void injectAutofill(QWebEngineView *view)
+void injectWebCredentialAndAutofill(QWebEngineView *view)
 {
     if (!view || !view->page()) return;
-    const QString origin = webOriginForUrl(view->url());
-    if (origin.isEmpty()) return;
-
-    QString username;
-    QString password;
-    if (!loadWebCredential(origin, username, password)) return;
-
-    const QString u = jsQuotedString(username);
-    const QString p = jsQuotedString(password);
+    ensureWebChannelBridge(view);
 
     const QString js = QStringLiteral(
         "(function(){"
+        "if(window.__irulerWcHooked)return;"
+        "window.__irulerWcHooked=true;"
         "function isVisible(el){"
         "try{var r=el.getBoundingClientRect();return r&&r.width>0&&r.height>0;}catch(e){return false;}"
         "}"
         "function setVal(el,val){"
         "if(!el)return;"
         "try{"
-        "el.focus();"
-        "el.value=val;"
+        "var proto=Object.getPrototypeOf(el);"
+        "var desc=Object.getOwnPropertyDescriptor(proto,'value');"
+        "if(!desc||!desc.set)desc=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');"
+        "if(desc&&desc.set){desc.set.call(el,val);}else{el.value=val;}"
+        "try{el.setAttribute('value',val);}catch(e){}"
         "el.dispatchEvent(new Event('input',{bubbles:true}));"
         "el.dispatchEvent(new Event('change',{bubbles:true}));"
+        "el.dispatchEvent(new Event('keyup',{bubbles:true}));"
         "}catch(e){}"
         "}"
-        "function pickPwd(){"
-        "var pwds=Array.prototype.slice.call(document.querySelectorAll('input[type=password]'));"
+        "function pickPwd(scope){"
+        "var pwds=Array.prototype.slice.call((scope||document).querySelectorAll('input[type=password]'));"
         "for(var i=0;i<pwds.length;i++){if(isVisible(pwds[i]))return pwds[i];}"
         "return null;"
         "}"
@@ -354,14 +322,66 @@ void injectAutofill(QWebEngineView *view)
         "}"
         "return null;"
         "}"
-        "var pwd=pickPwd();"
+        "function attach(form){"
+        "if(!form||form.__irulerHooked)return;"
+        "form.__irulerHooked=true;"
+        "form.addEventListener('submit',function(){"
+        "try{"
+        "var pwd=pickPwd(form);"
+        "if(!pwd||!pwd.value)return;"
+        "var user=pickUser(pwd);"
+        "if(window.irulerBridge&&window.irulerBridge.saveWebCredential){"
+        "window.irulerBridge.saveWebCredential(location.origin,(user?user.value:''),pwd.value||'');"
+        "}"
+        "}catch(e){}"
+        "},true);"
+        "}"
+        "function attachAll(){"
+        "try{"
+        "var forms=Array.prototype.slice.call(document.forms||[]);"
+        "forms.forEach(attach);"
+        "}catch(e){}"
+        "}"
+        "function tryAutofill(){"
+        "try{"
+        "if(!(window.irulerBridge&&window.irulerBridge.getWebCredential))return;"
+        "window.irulerBridge.getWebCredential(location.origin,function(json){"
+        "try{"
+        "if(!json)return;"
+        "var obj=null;try{obj=JSON.parse(json);}catch(e){obj=null;}"
+        "if(!obj||!obj.ok)return;"
+        "var pwd=pickPwd(document);"
         "if(!pwd)return;"
         "if(pwd.value&&pwd.value.length>0)return;"
         "var user=pickUser(pwd);"
-        "setVal(user,%1);"
-        "setVal(pwd,%2);"
+        "setVal(user,obj.u||'');"
+        "setVal(pwd,obj.p||'');"
+        "}catch(e){}"
+        "});"
+        "}catch(e){}"
+        "}"
+        "function setupBridge(){"
+        "attachAll();"
+        "tryAutofill();"
+        "var mo=new MutationObserver(function(){attachAll();});"
+        "mo.observe(document.documentElement,{childList:true,subtree:true});"
+        "}"
+        "function ensureQWebChannel(cb){"
+        "if(typeof qt==='undefined'||!qt.webChannelTransport){setTimeout(function(){ensureQWebChannel(cb);},50);return;}"
+        "if(typeof QWebChannel!=='undefined'){cb();return;}"
+        "var s=document.createElement('script');"
+        "s.src='qrc:///qtwebchannel/qwebchannel.js';"
+        "s.onload=function(){cb();};"
+        "(document.head||document.documentElement).appendChild(s);"
+        "}"
+        "ensureQWebChannel(function(){"
+        "new QWebChannel(qt.webChannelTransport,function(channel){"
+        "window.irulerBridge=channel.objects.irulerBridge;"
+        "setupBridge();"
+        "});"
+        "});"
         "})();"
-    ).arg(u, p);
+    );
 
     view->page()->runJavaScript(js);
 }
@@ -2612,8 +2632,7 @@ void NewUiWindow::setupUi()
     m_function1WebView->setPage(storyboardPage);
     connect(m_function1WebView, &QWebEngineView::loadFinished, this, [this](bool ok) {
         if (!ok) return;
-        injectCredentialHook(m_function1WebView);
-        injectAutofill(m_function1WebView);
+        injectWebCredentialAndAutofill(m_function1WebView);
     });
 
     ensureJanusAudioLoaded();
@@ -3407,3 +3426,5 @@ void NewUiWindow::onBroadcastBtnClicked()
     connect(&dlg, &BroadcastNoticeDialog::publishRequested, this, &NewUiWindow::broadcastRequested);
     dlg.exec();
 }
+
+#include "NewUiWindow.moc"

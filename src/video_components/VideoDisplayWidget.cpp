@@ -248,6 +248,14 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     emit connectionStatusChanged(m_stats.connectionStatus);
     showWaitingSplash();
 
+    QTimer::singleShot(2500, this, [this]() {
+        if (!m_isReceiving) return;
+        if (!m_receiver) return;
+        if (!m_receiver->isConnected()) return;
+        if (m_stats.framesDisplayed > 0) return;
+        m_receiver->sendRequestKeyFrame();
+    });
+
     // 启动“是否继续观看”周期提示定时器
     if (!m_continuePromptTimer) {
         setupContinuePrompt();
@@ -272,6 +280,10 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
         if (!recreate && m_receiver) {
             // Force cleanup if destroying
             m_receiver->setTalkEnabled(false);
+            if (m_receiver->isConnected() && !m_receiver->isLanSwitchInProgress()) {
+                m_receiver->sendViewerExit();
+                m_receiver->sendStopStreaming();
+            }
             // Stop audio first to prevent log spam
             m_receiver->stopAudio();
             m_receiver->disconnectFromServer();
@@ -290,6 +302,10 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
     }
     
     if (m_receiver) {
+        if (m_receiver->isConnected() && !m_receiver->isLanSwitchInProgress()) {
+            m_receiver->sendViewerExit();
+            m_receiver->sendStopStreaming();
+        }
         m_receiver->stopAudio();
         // Disconnect audio signal to prevent processing any queued signals
         disconnect(m_receiver.get(), &WebSocketReceiver::audioFrameReceived, this, nullptr);

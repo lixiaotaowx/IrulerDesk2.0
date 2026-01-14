@@ -194,6 +194,94 @@ void NewUiWindow::applyJanusAudioState()
         });
 }
 
+void NewUiWindow::stopJanusEnsure()
+{
+    m_janusEnsureOwnerId.clear();
+    m_janusEnsureAttempt = 0;
+    m_janusEnsureStartAtMs = 0;
+    if (m_janusEnsureTimer) {
+        m_janusEnsureTimer->stop();
+    }
+}
+
+void NewUiWindow::scheduleJanusEnsure(const QString &desiredOwnerId)
+{
+    if (desiredOwnerId.isEmpty()) {
+        stopJanusEnsure();
+        return;
+    }
+
+    m_janusEnsureOwnerId = desiredOwnerId;
+    m_janusEnsureAttempt = 0;
+    m_janusEnsureStartAtMs = QDateTime::currentMSecsSinceEpoch();
+
+    if (!m_janusEnsureTimer) {
+        m_janusEnsureTimer = new QTimer(this);
+        m_janusEnsureTimer->setSingleShot(true);
+        connect(m_janusEnsureTimer, &QTimer::timeout, this, [this]() {
+            const QString desiredOwnerId = m_janusEnsureOwnerId;
+            if (desiredOwnerId.isEmpty()) {
+                return;
+            }
+            if (!m_function1WebView || !m_function1WebView->page()) {
+                m_janusEnsureAttempt++;
+                if (m_janusEnsureAttempt <= 25 && m_janusEnsureTimer) {
+                    m_janusEnsureTimer->start(400);
+                }
+                return;
+            }
+
+            ensureJanusAudioLoaded();
+
+            const qint64 expectedRoom = AppConfig::janusAudioRoomForUserId(desiredOwnerId);
+            const QString getStateJs = QStringLiteral(
+                "(() => { try { return (window.IrulerJanusAudio && IrulerJanusAudio.getState) ? IrulerJanusAudio.getState() : null; } catch (e) { return null; } })();");
+
+            m_function1WebView->page()->runJavaScript(getStateJs, [this, desiredOwnerId, expectedRoom](const QVariant &ret) {
+                if (!this) {
+                    return;
+                }
+                if (m_janusEnsureOwnerId != desiredOwnerId) {
+                    return;
+                }
+
+                qint64 room = 0;
+                qint64 sessionId = 0;
+                bool parsed = false;
+
+                const QVariantMap map = ret.toMap();
+                if (!map.isEmpty()) {
+                    parsed = true;
+                    room = map.value(QStringLiteral("room")).toLongLong();
+                    sessionId = map.value(QStringLiteral("sessionId")).toLongLong();
+                }
+
+                const bool inRoom = parsed && (room == expectedRoom) && (sessionId > 0);
+                if (inRoom) {
+                    stopJanusEnsure();
+                    return;
+                }
+
+                applyJanusAudioState();
+
+                m_janusEnsureAttempt++;
+                if (m_janusEnsureAttempt > 25) {
+                    return;
+                }
+                const int delayMs = (m_janusEnsureAttempt <= 8) ? 350 : 900;
+                if (m_janusEnsureTimer) {
+                    m_janusEnsureTimer->start(delayMs);
+                }
+            });
+        });
+    }
+
+    if (m_janusEnsureTimer) {
+        m_janusEnsureTimer->stop();
+        m_janusEnsureTimer->start(200);
+    }
+}
+
 void NewUiWindow::janusSwitchToUserRoom(const QString &userId)
 {
     if (userId.isEmpty()) {
@@ -202,6 +290,7 @@ void NewUiWindow::janusSwitchToUserRoom(const QString &userId)
     m_janusDesiredRoomOwnerId = userId;
     ensureJanusAudioLoaded();
     applyJanusAudioState();
+    scheduleJanusEnsure(userId);
 }
 
 void NewUiWindow::janusSwitchToMyRoom()
@@ -212,6 +301,7 @@ void NewUiWindow::janusSwitchToMyRoom()
     m_janusDesiredRoomOwnerId = m_myStreamId;
     ensureJanusAudioLoaded();
     applyJanusAudioState();
+    scheduleJanusEnsure(m_myStreamId);
 }
 
 void NewUiWindow::janusSetMuted(bool muted)
@@ -227,13 +317,14 @@ void NewUiWindow::janusSetMuted(bool muted)
 
 void NewUiWindow::janusStop()
 {
+    stopJanusEnsure();
+    m_janusDesiredRoomOwnerId.clear();
+    m_janusActiveRoomOwnerId.clear();
+    hideAudioCallUi();
     if (!m_function1WebView || !m_function1WebView->page()) {
         return;
     }
     ensureJanusAudioLoaded();
-    m_janusDesiredRoomOwnerId.clear();
-    m_janusActiveRoomOwnerId.clear();
-    hideAudioCallUi();
     const QString js = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.stop && IrulerJanusAudio.stop('hangup');");
     m_function1WebView->page()->runJavaScript(js);
 }
@@ -806,4 +897,3 @@ void NewUiWindow::refreshAudioCallParticipants()
         rebuildAudioCallParticipantsUi(names);
     });
 }
-

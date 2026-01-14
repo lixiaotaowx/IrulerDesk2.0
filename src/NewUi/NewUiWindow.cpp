@@ -1323,6 +1323,9 @@ void NewUiWindow::enterEmbeddedWatchingUi(const QString &targetId, const QString
 {
     Q_UNUSED(targetName);
     m_embeddedTargetId = targetId;
+    if (!targetId.isEmpty()) {
+        janusSwitchToUserRoom(targetId);
+    }
     if (m_rightContentStack && m_videoContentPage) {
         m_rightContentStack->setCurrentWidget(m_videoContentPage);
     }
@@ -1339,6 +1342,9 @@ void NewUiWindow::startEmbeddedReceiving(const QString &viewerId,
 {
     m_embeddedTargetId = targetId;
     setWatchingTarget(targetId);
+    if (!targetId.isEmpty()) {
+        janusSwitchToUserRoom(targetId);
+    }
     if (m_rightContentStack && m_videoContentPage) {
         m_rightContentStack->setCurrentWidget(m_videoContentPage);
     }
@@ -1360,6 +1366,13 @@ void NewUiWindow::stopEmbeddedWatching()
     const QString targetId = m_embeddedTargetId;
     m_embeddedTargetId.clear();
     setWatchingTarget(QString());
+    if (!m_audioCallPeerId.isEmpty()) {
+        hangupAudioCallUi();
+    } else if (!m_myStreamId.isEmpty()) {
+        janusSwitchToMyRoom();
+    } else {
+        janusStop();
+    }
     if (m_embeddedVideoWidget && m_embeddedVideoWidget->isReceiving()) {
         m_embeddedVideoWidget->stopReceiving(false);
     }
@@ -1517,9 +1530,14 @@ void NewUiWindow::setupUi()
                 if (m_function1WebView) {
                     QString v = AppConfig::readConfigValue(QStringLiteral("function2_url")).trimmed();
                     if (v.isEmpty()) {
-                        v = QStringLiteral("about:blank");
+                        m_function1WebView->setHtml(
+                            QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head>"
+                                           "<body style=\"background:#404040;color:#e0e0e0;font-family:sans-serif;padding:18px;\">"
+                                           "请在系统设置-配置中填写“功能2网址”"
+                                           "</body></html>"));
+                    } else {
+                        m_function1WebView->load(QUrl::fromUserInput(v));
                     }
-                    m_function1WebView->load(QUrl::fromUserInput(v));
                 }
                 if (m_rightContentStack && m_function1BrowserPage) {
                     m_rightContentStack->setCurrentWidget(m_function1BrowserPage);

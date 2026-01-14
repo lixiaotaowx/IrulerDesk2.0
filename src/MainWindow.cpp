@@ -467,6 +467,25 @@ void MainWindow::sendWatchRequestWithVideo(const QString& targetDeviceId)
 {
     m_pendingShowVideoWindow = true;
     m_audioOnlyTargetId.clear();
+    if (!targetDeviceId.isEmpty() && targetDeviceId != getDeviceId()) {
+        QString activePeer;
+        if (m_transparentImageList) {
+            activePeer = m_transparentImageList->activeAudioCallPeerId();
+        }
+        if (activePeer.isEmpty()) {
+            m_pendingTalkTargetId = targetDeviceId;
+            m_pendingTalkEnabled = true;
+        } else if (activePeer == targetDeviceId) {
+            if (m_pendingTalkTargetId == targetDeviceId) {
+                m_pendingTalkEnabled = false;
+            }
+        } else {
+            if (m_pendingTalkTargetId == targetDeviceId) {
+                m_pendingTalkTargetId.clear();
+                m_pendingTalkEnabled = false;
+            }
+        }
+    }
     if (m_transparentImageList && !targetDeviceId.isEmpty() && targetDeviceId != getDeviceId()) {
         m_transparentImageList->setWatchingTarget(targetDeviceId);
         m_transparentImageList->enterEmbeddedWatchingUi(targetDeviceId);
@@ -589,6 +608,19 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
             if (m_transparentImageList->isEmbeddedWatchingTarget(targetDeviceId)) {
                 m_transparentImageList->stopEmbeddedWatching();
             }
+        }
+        if (m_pendingTalkTargetId == targetDeviceId) {
+            m_pendingTalkTargetId.clear();
+            m_pendingTalkEnabled = false;
+        }
+        if (!targetDeviceId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+            QJsonObject msg;
+            msg["type"] = "viewer_mic_state";
+            msg["viewer_id"] = getDeviceId();
+            msg["target_id"] = targetDeviceId;
+            msg["enabled"] = false;
+            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
         }
 
         // 关闭对话框
@@ -901,6 +933,33 @@ void MainWindow::setupUI()
     connect(m_transparentImageList, &NewUiWindow::broadcastRequested,
             this, &MainWindow::sendBroadcastNotice);
 
+    connect(m_transparentImageList, &NewUiWindow::stopWatchingRequested, this, [this](const QString &targetId) {
+        if (targetId.isEmpty()) {
+            return;
+        }
+        const QString activePeer = m_transparentImageList ? m_transparentImageList->activeAudioCallPeerId() : QString();
+        const bool shouldHangupAudio = (m_pendingTalkTargetId == targetId) || (activePeer == targetId);
+        if (m_pendingTalkTargetId == targetId) {
+            m_pendingTalkTargetId.clear();
+            m_pendingTalkEnabled = false;
+        }
+        if (!m_currentTargetId.isEmpty() && m_currentTargetId == targetId) {
+            m_currentTargetId.clear();
+        }
+        if (m_audioOnlyTargetId == targetId) {
+            m_audioOnlyTargetId.clear();
+        }
+        if (shouldHangupAudio && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+            QJsonObject msg;
+            msg["type"] = "viewer_mic_state";
+            msg["viewer_id"] = getDeviceId();
+            msg["target_id"] = targetId;
+            msg["enabled"] = false;
+            msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+            m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+        }
+    });
+
     connect(m_transparentImageList, &NewUiWindow::kickViewerRequested,
             this, [this](const QString &viewerId) {
         if (!m_loginWebSocket) {
@@ -971,6 +1030,7 @@ void MainWindow::setupUI()
             }
             sendViewerMicState(targetId, true);
         } else {
+            const bool keepWatchingVideo = m_transparentImageList && m_transparentImageList->isEmbeddedWatchingTarget(targetId);
             auto sendKickViewer = [this](const QString &viewerId) {
                 if (viewerId.isEmpty()) {
                     return;
@@ -989,6 +1049,9 @@ void MainWindow::setupUI()
             if (m_transparentImageList) {
                 m_transparentImageList->janusStop();
                 m_transparentImageList->setTalkConnected(targetId, false);
+                if (keepWatchingVideo) {
+                    m_transparentImageList->stopEmbeddedWatching();
+                }
             }
             if (m_pendingTalkTargetId == targetId) {
                 m_pendingTalkTargetId.clear();

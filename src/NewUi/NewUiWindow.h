@@ -153,6 +153,8 @@ private:
     void setResizeGripsVisible(bool visible);
     void ensureJanusAudioLoaded();
     void applyJanusAudioState();
+    void scheduleJanusEnsure(const QString &desiredOwnerId);
+    void stopJanusEnsure();
     void ensureAudioCallUi();
     void showAudioCallUi(const QString &peerId);
     void showAudioCallUiInternal(const QString &peerId, bool forceEnableMic);
@@ -196,6 +198,7 @@ private:
     QWidget *m_function1BrowserPage = nullptr;
     QWidget *m_videoContentPage = nullptr;
     QWebEngineView *m_function1WebView = nullptr;
+    QWebEngineView *m_janusWebView = nullptr;
     StreamClient *m_streamClient = nullptr;
     StreamClient *m_streamClientLan = nullptr;
     LoginClient *m_loginClient = nullptr;
@@ -286,6 +289,10 @@ private:
     bool m_janusAudioLoaded = false;
     QString m_janusDesiredRoomOwnerId;
     QString m_janusActiveRoomOwnerId;
+    QTimer *m_janusEnsureTimer = nullptr;
+    QString m_janusEnsureOwnerId;
+    int m_janusEnsureAttempt = 0;
+    qint64 m_janusEnsureStartAtMs = 0;
 
     QDialog *m_audioCallDialog = nullptr;
     bool m_audioCallDialogDragging = false;

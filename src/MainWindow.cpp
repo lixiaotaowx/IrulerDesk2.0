@@ -30,6 +30,7 @@
 #include <QPainterPath>
 #include <QCloseEvent>
 #include <QSet>
+#include <QGraphicsDropShadowEffect>
 #include <cstdlib>
 #include <ctime>
 #include "common/AppConfig.h"
@@ -722,9 +723,11 @@ void MainWindow::setupUI()
     setWindowTitle("屏幕流媒体系统 - 用户列表");
     setMinimumSize(400, 600);
     resize(450, 700);
+    setObjectName("MainWindow");
     
     // 创建中央部件
     m_centralWidget = new QWidget(this);
+    m_centralWidget->setObjectName("MainRoot");
     setCentralWidget(m_centralWidget);
     
     // 创建主垂直布局
@@ -734,57 +737,114 @@ void MainWindow::setupUI()
     
     // 设置窗口样式
     setStyleSheet(
-        "QMainWindow {"
-        "    background-color: #1a1a1a;"
+        "QMainWindow#MainWindow {"
+        "    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
+        "        stop:0 rgba(18,20,26,255),"
+        "        stop:1 rgba(10,11,14,255)"
+        "    );"
         "}"
-        "QWidget {"
-        "    background-color: #1a1a1a;"
+        "QWidget#MainRoot { background: transparent; }"
+        "QFrame[glassCard=\"true\"] {"
+        "    background-color: rgba(35, 38, 45, 170);"
+        "    border: 1px solid rgba(255, 255, 255, 18);"
+        "    border-radius: 16px;"
         "}"
-    );
-    
-    // 创建标题标签
-    QLabel *titleLabel = new QLabel("在线用户", this);
-    titleLabel->setStyleSheet(
-        "QLabel {"
-        "    color: #ffffff;"
-        "    font-size: 20px;"
-        "    font-weight: bold;"
-        "    padding: 15px;"
-        "    background-color: #2a2a2a;"
-        "    border-radius: 10px;"
-        "    text-align: center;"
+        "QLabel#TitleLabel {"
+        "    color: rgba(255,255,255,235);"
+        "    font-size: 18px;"
+        "    font-weight: 700;"
+        "    background: transparent;"
+        "    padding: 14px 16px;"
         "}"
-    );
-    titleLabel->setAlignment(Qt::AlignCenter);
-    m_mainLayout->addWidget(titleLabel);
-    
-    // 创建列表组件
-    m_listWidget = new QListWidget(this);
-    m_listWidget->setMinimumHeight(300);
-    m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_listWidget->setStyleSheet(
         "QListWidget {"
-        "    background-color: #2a2a2a;"
-        "    border: 2px solid #444;"
-        "    border-radius: 10px;"
-        "    color: white;"
+        "    background: transparent;"
+        "    border: none;"
+        "    color: rgba(255,255,255,220);"
         "    font-size: 14px;"
-        "    padding: 10px;"
+        "    padding: 6px;"
+        "    outline: none;"
         "}"
         "QListWidget::item {"
-        "    padding: 15px;"
-        "    margin: 5px;"
-        "    border-radius: 8px;"
-        "    background-color: #3a3a3a;"
+        "    padding: 12px;"
+        "    margin: 6px;"
+        "    border-radius: 12px;"
+        "    background-color: rgba(255,255,255,10);"
+        "    border: 1px solid rgba(255,255,255,8);"
         "}"
         "QListWidget::item:hover {"
-        "    background-color: #4a4a4a;"
+        "    background-color: rgba(255,255,255,16);"
+        "    border-color: rgba(255,255,255,14);"
         "}"
         "QListWidget::item:selected {"
-        "    background-color: #42a5f5;"
-        "    color: white;"
+        "    background-color: rgba(0, 120, 212, 70);"
+        "    border-color: rgba(0, 120, 212, 120);"
+        "    color: rgba(255,255,255,245);"
+        "}"
+        "QPushButton {"
+        "    background-color: rgba(255,255,255,12);"
+        "    border: 1px solid rgba(255,255,255,20);"
+        "    border-radius: 14px;"
+        "    color: rgba(255,255,255,235);"
+        "    font-size: 15px;"
+        "    font-weight: 700;"
+        "    padding: 14px 16px;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: rgba(255,255,255,16);"
+        "    border-color: rgba(255,255,255,28);"
+        "}"
+        "QPushButton:pressed {"
+        "    background-color: rgba(255,255,255,10);"
+        "}"
+        "QPushButton:disabled {"
+        "    background-color: rgba(255,255,255,6);"
+        "    border-color: rgba(255,255,255,10);"
+        "    color: rgba(255,255,255,90);"
+        "}"
+        "QLabel#IdLabel {"
+        "    color: rgba(130, 220, 170, 240);"
+        "    font-size: 15px;"
+        "    font-weight: 700;"
+        "    background: transparent;"
+        "    padding: 16px;"
         "}"
     );
+    
+    auto applyGlassShadow = [](QWidget *w) {
+        if (!w) return;
+        auto *fx = new QGraphicsDropShadowEffect(w);
+        fx->setBlurRadius(28);
+        fx->setOffset(0, 10);
+        fx->setColor(QColor(0, 0, 0, 120));
+        w->setGraphicsEffect(fx);
+    };
+
+    QFrame *titleCard = new QFrame(m_centralWidget);
+    titleCard->setProperty("glassCard", true);
+    QVBoxLayout *titleCardLayout = new QVBoxLayout(titleCard);
+    titleCardLayout->setContentsMargins(0, 0, 0, 0);
+    titleCardLayout->setSpacing(0);
+    applyGlassShadow(titleCard);
+
+    // 创建标题标签
+    QLabel *titleLabel = new QLabel("在线用户", titleCard);
+    titleLabel->setObjectName("TitleLabel");
+    titleLabel->setAlignment(Qt::AlignCenter);
+    titleCardLayout->addWidget(titleLabel);
+    m_mainLayout->addWidget(titleCard);
+    
+    // 创建列表组件
+    QFrame *listCard = new QFrame(m_centralWidget);
+    listCard->setProperty("glassCard", true);
+    QVBoxLayout *listCardLayout = new QVBoxLayout(listCard);
+    listCardLayout->setContentsMargins(8, 8, 8, 8);
+    listCardLayout->setSpacing(0);
+    applyGlassShadow(listCard);
+
+    m_listWidget = new QListWidget(listCard);
+    m_listWidget->setMinimumHeight(300);
+    m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    listCardLayout->addWidget(m_listWidget);
     
     // 连接右键菜单信号
     connect(m_listWidget, &QListWidget::customContextMenuRequested,
@@ -802,35 +862,10 @@ void MainWindow::setupUI()
     // 添加示例项目
     m_listWidget->addItem("等待连接服务器...");
     
-    m_mainLayout->addWidget(m_listWidget, 1);
+    m_mainLayout->addWidget(listCard, 1);
     
     // 创建观看按钮
     m_watchButton = new QPushButton("开始观看", this);
-    m_watchButton->setStyleSheet(
-        "QPushButton {"
-        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "                stop:0 #4caf50, stop:1 #45a049);"
-        "    border: none;"
-        "    border-radius: 10px;"
-        "    color: white;"
-        "    font-size: 16px;"
-        "    font-weight: bold;"
-        "    padding: 15px;"
-        "    min-height: 20px;"
-        "}"
-        "QPushButton:hover {"
-        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "                stop:0 #5cbf60, stop:1 #4caf50);"
-        "}"
-        "QPushButton:pressed {"
-        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "                stop:0 #45a049, stop:1 #3d8b40);"
-        "}"
-        "QPushButton:disabled {"
-        "    background-color: #666;"
-        "    color: #999;"
-        "}"
-    );
     m_watchButton->setEnabled(false); // 初始状态禁用
     connect(m_watchButton, &QPushButton::clicked, this, &MainWindow::onWatchButtonClicked);
     
@@ -845,21 +880,17 @@ void MainWindow::setupUI()
     QString idText = QString("我的ID: %1").arg(randomId);
     m_idLabel->setText(idText);
     
-    m_idLabel->setStyleSheet(
-        "QLabel {"
-        "    background-color: #1a4d3a;"
-        "    border: 2px solid #4caf50;"
-        "    border-radius: 10px;"
-        "    color: #4caf50;"
-        "    font-size: 16px;"
-        "    font-weight: bold;"
-        "    padding: 20px;"
-        "    text-align: center;"
-        "}"
-    );
+    m_idLabel->setObjectName("IdLabel");
     m_idLabel->setAlignment(Qt::AlignCenter);
     
-    m_mainLayout->addWidget(m_idLabel);
+    QFrame *idCard = new QFrame(m_centralWidget);
+    idCard->setProperty("glassCard", true);
+    QVBoxLayout *idCardLayout = new QVBoxLayout(idCard);
+    idCardLayout->setContentsMargins(0, 0, 0, 0);
+    idCardLayout->setSpacing(0);
+    applyGlassShadow(idCard);
+    idCardLayout->addWidget(m_idLabel);
+    m_mainLayout->addWidget(idCard);
     
     
     // 创建视频窗口（但不显示）

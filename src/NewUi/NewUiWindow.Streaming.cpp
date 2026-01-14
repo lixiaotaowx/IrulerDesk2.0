@@ -780,18 +780,19 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
     card->setStyleSheet(
         "#CardFrame {"
-        "   background-color: #3b3b3b;"
-        "   border-radius: 12px;"
+        "   background-color: rgba(32, 32, 36, 175);"
+        "   border: 1px solid rgba(255, 255, 255, 22);"
+        "   border-radius: 15px;"
         "}"
         "#CardFrame:hover {"
-        "   background-color: #444;"
+        "   background-color: rgba(40, 40, 45, 190);"
         "}"
     );
 
     QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect();
-    shadow->setBlurRadius(10);
-    shadow->setColor(QColor(0, 0, 0, 80));
-    shadow->setOffset(0, 2);
+    shadow->setBlurRadius(18);
+    shadow->setColor(QColor(0, 0, 0, 140));
+    shadow->setOffset(0, 6);
     card->setGraphicsEffect(shadow);
 
     QVBoxLayout *cardLayout = new QVBoxLayout(card);
@@ -1220,4 +1221,3 @@ QString NewUiWindow::getCurrentUserId() const
 {
     return m_myStreamId;
 }
-

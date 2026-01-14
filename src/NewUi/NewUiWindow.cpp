@@ -405,6 +405,195 @@ QWebEngineProfile *ensureWebEngineProfileConfigured()
     return profile;
 }
 
+#ifdef _WIN32
+struct ACCENT_POLICY {
+    int AccentState;
+    int AccentFlags;
+    int GradientColor;
+    int AnimationId;
+};
+
+struct WINDOWCOMPOSITIONATTRIBDATA {
+    int Attrib;
+    PVOID pvData;
+    SIZE_T cbData;
+};
+
+enum WINDOWCOMPOSITIONATTRIB {
+    WCA_ACCENT_POLICY = 19
+};
+
+enum ACCENT_STATE {
+    ACCENT_DISABLED = 0,
+    ACCENT_ENABLE_GRADIENT = 1,
+    ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+    ACCENT_ENABLE_BLURBEHIND = 3,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
+};
+
+using SetWindowCompositionAttributeFn = BOOL(WINAPI *)(HWND, WINDOWCOMPOSITIONATTRIBDATA *);
+
+static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
+{
+    if (!hwnd) return false;
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) return false;
+    auto fn = reinterpret_cast<SetWindowCompositionAttributeFn>(GetProcAddress(user32, "SetWindowCompositionAttribute"));
+    if (!fn) return false;
+
+    ACCENT_POLICY policy{};
+    policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+    policy.AccentFlags = 2;
+    policy.GradientColor = abgrGradientColor;
+
+    WINDOWCOMPOSITIONATTRIBDATA data{};
+    data.Attrib = WCA_ACCENT_POLICY;
+    data.pvData = &policy;
+    data.cbData = sizeof(policy);
+    if (fn(hwnd, &data)) {
+        return true;
+    }
+
+    policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
+    policy.AccentFlags = 2;
+    policy.GradientColor = 0;
+    return fn(hwnd, &data) != FALSE;
+}
+
+struct DwmMargins {
+    int cxLeftWidth;
+    int cxRightWidth;
+    int cyTopHeight;
+    int cyBottomHeight;
+};
+
+using DwmExtendFrameIntoClientAreaFn = HRESULT(WINAPI *)(HWND, const DwmMargins *);
+using DwmSetWindowAttributeFn = HRESULT(WINAPI *)(HWND, DWORD, LPCVOID, DWORD);
+
+static bool tryEnableDwmBackdropSimple(HWND hwnd, int backdropType, bool darkMode)
+{
+    if (!hwnd) return false;
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) return false;
+    auto setAttr = reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+    if (!setAttr) {
+        FreeLibrary(dwmapi);
+        return false;
+    }
+
+    const int useDarkMode = darkMode ? 1 : 0;
+    setAttr(hwnd, 20, &useDarkMode, sizeof(useDarkMode));
+
+    HRESULT hrBackdrop = E_FAIL;
+    if (backdropType >= 0) {
+        hrBackdrop = setAttr(hwnd, 38, &backdropType, sizeof(backdropType));
+    }
+
+    FreeLibrary(dwmapi);
+    return SUCCEEDED(hrBackdrop);
+}
+
+static void applyRoundedRegion(HWND hwnd, bool enabled, int radiusPx)
+{
+    if (!hwnd) return;
+    if (!enabled) {
+        SetWindowRgn(hwnd, nullptr, TRUE);
+        return;
+    }
+    RECT rc{};
+    if (!GetClientRect(hwnd, &rc)) return;
+    const int w = rc.right - rc.left;
+    const int h = rc.bottom - rc.top;
+    if (w <= 0 || h <= 0) return;
+    const int r = radiusPx > 0 ? radiusPx : 0;
+    const int d = r * 2;
+    HRGN rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, d, d);
+    if (!rgn) return;
+    if (!SetWindowRgn(hwnd, rgn, TRUE)) {
+        DeleteObject(rgn);
+    }
+}
+
+static constexpr int kHwndCornerRadiusPx = 10;
+
+static bool trySetDwmCornerPreference(HWND hwnd, int cornerPreference, int radiusPx)
+{
+    if (!hwnd) return false;
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) return false;
+    auto setAttr = reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+    if (!setAttr) {
+        FreeLibrary(dwmapi);
+        return false;
+    }
+    const HRESULT hrCorner = setAttr(hwnd, 33, &cornerPreference, sizeof(cornerPreference));
+    HRESULT hrRadius = E_FAIL;
+    if (radiusPx > 0) {
+        hrRadius = setAttr(hwnd, 40, &radiusPx, sizeof(radiusPx));
+    }
+    FreeLibrary(dwmapi);
+    return SUCCEEDED(hrCorner) || SUCCEEDED(hrRadius);
+}
+
+static void applyHwndCornerStyle(HWND hwnd, bool rounded)
+{
+    if (!hwnd) return;
+    if (!rounded) {
+        trySetDwmCornerPreference(hwnd, 1, 0);
+        SetWindowRgn(hwnd, nullptr, TRUE);
+        return;
+    }
+    trySetDwmCornerPreference(hwnd, 2, kHwndCornerRadiusPx);
+    applyRoundedRegion(hwnd, true, kHwndCornerRadiusPx);
+}
+
+static constexpr int kAcrylicTintAbgr = 0xA0E6E6E6;
+
+static bool applyAcrylicForWidget(QWidget *w, int abgrGradientColor)
+{
+    if (!w) return false;
+    w->setAttribute(Qt::WA_NativeWindow, true);
+    w->setAttribute(Qt::WA_TranslucentBackground, true);
+    w->setAutoFillBackground(false);
+    HWND hwnd = reinterpret_cast<HWND>(w->winId());
+    if (!hwnd) return false;
+    if (tryEnableDwmBackdropSimple(hwnd, 3, true)) {
+        return true;
+    }
+    return tryEnableAcrylicBlur(hwnd, abgrGradientColor);
+}
+
+static bool tryEnableDwmBackdrop(HWND hwnd)
+{
+    if (!hwnd) return false;
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) return false;
+    auto extendFrame = reinterpret_cast<DwmExtendFrameIntoClientAreaFn>(GetProcAddress(dwmapi, "DwmExtendFrameIntoClientArea"));
+    auto setAttr = reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+    if (!setAttr) {
+        FreeLibrary(dwmapi);
+        return false;
+    }
+
+    const int useDarkMode = 1;
+    setAttr(hwnd, 20, &useDarkMode, sizeof(useDarkMode));
+
+    const int cornerPreference = 2;
+    setAttr(hwnd, 33, &cornerPreference, sizeof(cornerPreference));
+
+    const int backdropType = 3;
+    HRESULT hrBackdrop = setAttr(hwnd, 38, &backdropType, sizeof(backdropType));
+
+    if (extendFrame) {
+        const DwmMargins margins{0, 0, 0, 0};
+        extendFrame(hwnd, &margins);
+    }
+
+    FreeLibrary(dwmapi);
+    return SUCCEEDED(hrBackdrop);
+}
+#endif
+
 } // namespace
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
@@ -493,6 +682,8 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint);
     setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_NoSystemBackground);
+    setAutoFillBackground(false);
     setMouseTracking(true);
     resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
     
@@ -694,6 +885,10 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     };
     for (QWidget *g : grips) {
         g->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+        g->setAttribute(Qt::WA_TranslucentBackground, true);
+        g->setAttribute(Qt::WA_NoSystemBackground, true);
+        g->setAutoFillBackground(false);
+        g->setStyleSheet(QStringLiteral("background: transparent;"));
         g->setMouseTracking(true);
         g->installEventFilter(this);
         g->raise();
@@ -1303,12 +1498,12 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
             } else {
                 card->setStyleSheet(
                     "#CardFrame {"
-                    "   background-color: #3b3b3b;"
+                    "   background-color: rgba(32, 32, 36, 175);"
                     "   border-radius: 15px;"
-                    "   border: none;"
+                    "   border: 1px solid rgba(255, 255, 255, 22);"
                     "}"
                     "#CardFrame:hover {"
-                    "   background-color: #444;"
+                    "   background-color: rgba(40, 40, 45, 190);"
                     "}"
                 );
             }
@@ -1464,19 +1659,20 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
 
         card->setStyleSheet(
             "#CardFrame {"
-            "   background-color: #3b3b3b;"
-            "   border-radius: 12px;"
+            "   background-color: rgba(32, 32, 36, 175);"
+            "   border: 1px solid rgba(255, 255, 255, 22);"
+            "   border-radius: 15px;"
             "}"
             "#CardFrame:hover {"
-            "   background-color: #444;"
+            "   background-color: rgba(40, 40, 45, 190);"
             "}"
         );
         
         // Shadow Effect
         QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect();
-        shadow->setBlurRadius(10); 
-        shadow->setColor(QColor(0, 0, 0, 80));
-        shadow->setOffset(0, 2);
+        shadow->setBlurRadius(18); 
+        shadow->setColor(QColor(0, 0, 0, 140));
+        shadow->setOffset(0, 6);
         card->setGraphicsEffect(shadow);
 
         QVBoxLayout *cardLayout = new QVBoxLayout(card);
@@ -1737,9 +1933,30 @@ void NewUiWindow::setupUi()
 {
     QString appDir = QCoreApplication::applicationDirPath();
 
+    setObjectName("NewUiWindowRoot");
+    setAttribute(Qt::WA_StyledBackground, false);
+    setAutoFillBackground(false);
+    setAttribute(Qt::WA_NoSystemBackground, true);
+#ifndef _WIN32
+    setStyleSheet(
+        "QWidget#NewUiWindowRoot {"
+        "   background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0b0c10, stop:1 #141724);"
+        "}"
+    );
+#endif
+
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
-    mainLayout->setContentsMargins(10, 10, 10, 10); // Margins for shadow if needed
+    mainLayout->setContentsMargins(1, 1, 1, 1);
     mainLayout->setSpacing(20); // The "hollow" gap
+
+    auto applyShadow = [](QWidget *w, int blurRadius, int yOffset, int alpha) {
+        if (!w) return;
+        auto *fx = new QGraphicsDropShadowEffect(w);
+        fx->setBlurRadius(blurRadius);
+        fx->setOffset(0, yOffset);
+        fx->setColor(QColor(0, 0, 0, alpha));
+        w->setGraphicsEffect(fx);
+    };
 
     // --- Left Panel ---
     QWidget *leftPanel = new QWidget(this);
@@ -1749,18 +1966,23 @@ void NewUiWindow::setupUi()
     // Use QSS for styling
     leftPanel->setStyleSheet(
         "QWidget#LeftPanel {"
-        "   background-color: #2b2b2b;"
-        "   border-radius: 20px;"
+        "   background-color: rgba(18, 18, 20, 150);"
+        "   border: 1px solid rgba(255, 255, 255, 18);"
+        "   border-top-left-radius: 10px;"
+        "   border-bottom-left-radius: 10px;"
+        "   border-top-right-radius: 10px;"
+        "   border-bottom-right-radius: 10px;"
         "}"
-        "QPushButton {"
-        "   background-color: #444;"
-        "   border: none;"
+        "QWidget#LeftPanel QPushButton {"
+        "   background-color: transparent;"
+        "   border: 1px solid transparent;"
         "   border-radius: 20px;"
         "   margin: 5px;"
         "}"
-        "QPushButton:hover { background-color: #555; }"
-        "QPushButton:checked { background-color: #666; }"
+        "QWidget#LeftPanel QPushButton:hover { background-color: rgba(255, 255, 255, 26); }"
+        "QWidget#LeftPanel QPushButton:pressed { background-color: rgba(255, 255, 255, 38); }"
     );
+    applyShadow(leftPanel, 30, 10, 135);
 
     QVBoxLayout *leftLayout = new QVBoxLayout(leftPanel);
     leftLayout->setContentsMargins(0, 20, 0, 20);
@@ -1835,8 +2057,8 @@ void NewUiWindow::setupUi()
                 "   border: none;"
                 "   border-radius: 20px;"
                 "}"
-                "QPushButton#HomeButton:hover { background-color: transparent; }"
-                "QPushButton#HomeButton:pressed { background-color: transparent; }"
+                "QPushButton#HomeButton:hover { background-color: rgba(255, 255, 255, 26); }"
+                "QPushButton#HomeButton:pressed { background-color: rgba(255, 255, 255, 38); }"
             );
             
             // Add click animation (Bling effect: Scale down -> Scale up -> Restore)
@@ -1855,8 +2077,8 @@ void NewUiWindow::setupUi()
                 "   border: none;"
                 "   border-radius: 20px;"
                 "}"
-                "QPushButton#Function1Button:hover { background-color: transparent; }"
-                "QPushButton#Function1Button:pressed { background-color: transparent; }"
+                "QPushButton#Function1Button:hover { background-color: rgba(255, 255, 255, 26); }"
+                "QPushButton#Function1Button:pressed { background-color: rgba(255, 255, 255, 38); }"
             );
 
             connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
@@ -1874,8 +2096,8 @@ void NewUiWindow::setupUi()
                 "   border: none;"
                 "   border-radius: 20px;"
                 "}"
-                "QPushButton#Function2Button:hover { background-color: transparent; }"
-                "QPushButton#Function2Button:pressed { background-color: transparent; }"
+                "QPushButton#Function2Button:hover { background-color: rgba(255, 255, 255, 26); }"
+                "QPushButton#Function2Button:pressed { background-color: rgba(255, 255, 255, 38); }"
             );
 
             connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
@@ -1907,8 +2129,8 @@ void NewUiWindow::setupUi()
                 "   border: none;"
                 "   border-radius: 20px;"
                 "}"
-                "QPushButton#Function3Button:hover { background-color: transparent; }"
-                "QPushButton#Function3Button:pressed { background-color: transparent; }"
+                "QPushButton#Function3Button:hover { background-color: rgba(255, 255, 255, 26); }"
+                "QPushButton#Function3Button:pressed { background-color: rgba(255, 255, 255, 38); }"
             );
 
             connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
@@ -1950,8 +2172,8 @@ void NewUiWindow::setupUi()
         "   border: none;"
         "   border-radius: 20px;"
         "}"
-        "QPushButton#SettingButton:hover { background-color: transparent; }"
-        "QPushButton#SettingButton:pressed { background-color: transparent; }"
+        "QPushButton#SettingButton:hover { background-color: rgba(255, 255, 255, 26); }"
+        "QPushButton#SettingButton:pressed { background-color: rgba(255, 255, 255, 38); }"
     );
     settingBtn->installEventFilter(this);
     connect(settingBtn, &QPushButton::clicked, this, &NewUiWindow::systemSettingsRequested);
@@ -1962,10 +2184,15 @@ void NewUiWindow::setupUi()
     rightPanel->setObjectName("RightPanel");
     rightPanel->setStyleSheet(
         "QWidget#RightPanel {"
-        "   background-color: #2b2b2b;"
-        "   border-radius: 20px;"
+        "   background-color: rgba(18, 18, 20, 120);"
+        "   border: 1px solid rgba(255, 255, 255, 16);"
+        "   border-top-left-radius: 10px;"
+        "   border-bottom-left-radius: 10px;"
+        "   border-top-right-radius: 10px;"
+        "   border-bottom-right-radius: 10px;"
         "}"
     );
+    applyShadow(rightPanel, 38, 12, 150);
 
     QVBoxLayout *rightLayout = new QVBoxLayout(rightPanel);
     rightLayout->setContentsMargins(10, 10, 10, 10); // Reduced margins (was 40, 10, 40, 40) to expand content
@@ -1988,7 +2215,8 @@ void NewUiWindow::setupUi()
     toolsContainer->installEventFilter(this);
     toolsContainer->setStyleSheet(
         "#ToolsContainer {"
-        "   background-color: #3b3b3b;"
+        "   background-color: rgba(25, 25, 28, 160);"
+        "   border: 1px solid rgba(255, 255, 255, 18);"
         "   border-radius: 20px;"
         "}"
         "QPushButton {"
@@ -1997,7 +2225,7 @@ void NewUiWindow::setupUi()
         "   margin: 3px;"
         "}"
         "QPushButton:hover {"
-        "   background-color: rgba(255, 255, 255, 30);"
+        "   background-color: rgba(255, 255, 255, 28);"
         "   border-radius: 17px;"
         "}"
         "QPushButton:pressed {"
@@ -2141,14 +2369,25 @@ void NewUiWindow::setupUi()
 
     m_rightContentStack = new QStackedWidget(rightPanel);
     m_rightContentStack->setObjectName("RightContentStack");
+    m_rightContentStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_rightContentStack->setAttribute(Qt::WA_TranslucentBackground);
+    m_rightContentStack->setAutoFillBackground(false);
+    m_rightContentStack->setStyleSheet(
+        "QStackedWidget#RightContentStack {"
+        "   background: transparent;"
+        "   border: none;"
+        "}"
+    );
 
     // Content Area (Image Matrix)
     // Wrap QListWidget in a container to handle rounded corners + scrollbar issue
     QFrame *listContainer = new QFrame(rightPanel);
     listContainer->setObjectName("ListContainer");
+    listContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     listContainer->setStyleSheet(
         "#ListContainer {"
-        "   background-color: #404040;" // Lighter than #333333
+        "   background-color: rgba(26, 26, 30, 110);"
+        "   border: 1px solid rgba(255, 255, 255, 14);"
         "   border-radius: 20px;"
         "}"
     );
@@ -2189,8 +2428,8 @@ void NewUiWindow::setupUi()
         
         contextMenu.setStyleSheet(
             "QMenu {"
-            "    background-color: #2b2b2b;"
-            "    border: 1px solid #444;"
+            "    background-color: rgba(20, 20, 24, 210);"
+            "    border: 1px solid rgba(255, 255, 255, 22);"
             "    border-radius: 12px;"
             "    padding: 6px;"
             "    color: #e0e0e0;"
@@ -2208,7 +2447,7 @@ void NewUiWindow::setupUi()
             "}"
             "QMenu::separator {"
             "    height: 1px;"
-            "    background: #444;"
+            "    background: rgba(255, 255, 255, 18);"
             "    margin: 4px 10px;"
             "}"
         );
@@ -2479,19 +2718,20 @@ void NewUiWindow::setupUi()
 
         card->setStyleSheet(
             "#CardFrame {"
-            "   background-color: #3b3b3b;"
-            "   border-radius: 12px;"
+            "   background-color: rgba(32, 32, 36, 175);"
+            "   border: 1px solid rgba(255, 255, 255, 22);"
+            "   border-radius: 15px;"
             "}"
             "#CardFrame:hover {"
-            "   background-color: #444;"
+            "   background-color: rgba(40, 40, 45, 190);"
             "}"
         );
         
         // Shadow Effect
         QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect();
-        shadow->setBlurRadius(10); 
-        shadow->setColor(QColor(0, 0, 0, 80));
-        shadow->setOffset(0, 2);
+        shadow->setBlurRadius(18); 
+        shadow->setColor(QColor(0, 0, 0, 140));
+        shadow->setOffset(0, 6);
         card->setGraphicsEffect(shadow);
 
         QVBoxLayout *cardLayout = new QVBoxLayout(card);
@@ -2616,9 +2856,11 @@ void NewUiWindow::setupUi()
 
     QFrame *browserContainer = new QFrame(rightPanel);
     browserContainer->setObjectName("Function1BrowserContainer");
+    browserContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     browserContainer->setStyleSheet(
         "#Function1BrowserContainer {"
-        "   background-color: #404040;"
+        "   background-color: rgba(26, 26, 30, 110);"
+        "   border: 1px solid rgba(255, 255, 255, 14);"
         "   border-radius: 20px;"
         "}"
     );
@@ -2643,6 +2885,7 @@ void NewUiWindow::setupUi()
 
     QFrame *videoContainer = new QFrame(rightPanel);
     videoContainer->setObjectName("VideoContainer");
+    videoContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     videoContainer->setStyleSheet(
         "#VideoContainer {"
         "   background-color: #404040;"
@@ -2685,7 +2928,8 @@ void NewUiWindow::setupUi()
     annotationContainer->setFrameShape(QFrame::NoFrame);
     annotationContainer->setStyleSheet(
         "#VideoAnnotationContainer {"
-        "   background-color: #3b3b3b;"
+        "   background-color: rgba(25, 25, 28, 160);"
+        "   border: 1px solid rgba(255, 255, 255, 18);"
         "   border-radius: 20px;"
         "}"
     );
@@ -2818,12 +3062,12 @@ void NewUiWindow::setupUi()
                         // Default Style
                         card->setStyleSheet(
                             "#CardFrame {"
-                            "   background-color: #3b3b3b;"
+                            "   background-color: rgba(32, 32, 36, 175);"
                             "   border-radius: 15px;"
-                            "   border: none;"
+                            "   border: 1px solid rgba(255, 255, 255, 22);"
                             "}"
                             "#CardFrame:hover {"
-                            "   background-color: #444;"
+                            "   background-color: rgba(40, 40, 45, 190);"
                             "}"
                         );
                     }
@@ -2900,11 +3144,29 @@ void NewUiWindow::changeEvent(QEvent *event)
     if (event && event->type() == QEvent::WindowStateChange) {
         updateTitleMaximizeButton();
         setResizeGripsVisible(!(windowState() & Qt::WindowMaximized));
+#ifdef _WIN32
+        QTimer::singleShot(0, this, [this]() {
+            applyHwndCornerStyle(reinterpret_cast<HWND>(winId()), !(windowState() & Qt::WindowMaximized));
+        });
+#endif
     }
 }
 
 bool NewUiWindow::event(QEvent *event)
 {
+#ifdef _WIN32
+    if (event && (event->type() == QEvent::Show || event->type() == QEvent::WinIdChange)) {
+        QTimer::singleShot(0, this, [this]() {
+            HWND hwnd = reinterpret_cast<HWND>(winId());
+            setAttribute(Qt::WA_TranslucentBackground, true);
+            setAttribute(Qt::WA_NoSystemBackground, true);
+            setAutoFillBackground(false);
+            const bool acrylicOk = tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr);
+            setWindowOpacity(acrylicOk ? 1.0 : 0.92);
+            applyHwndCornerStyle(hwnd, !(windowState() & Qt::WindowMaximized));
+        });
+    }
+#endif
     if (event && (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::WindowActivate)) {
         const bool active = (event->type() == QEvent::WindowActivate);
         if (!active) {
@@ -3044,6 +3306,9 @@ void NewUiWindow::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     updateResizeGrips();
+#ifdef _WIN32
+    applyHwndCornerStyle(reinterpret_cast<HWND>(winId()), !(windowState() & Qt::WindowMaximized));
+#endif
     if (m_farRightPanel) {
         const int outerMargin = 10;
         const int panelW = m_farRightPanel->width();

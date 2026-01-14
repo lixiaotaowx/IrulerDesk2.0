@@ -25,6 +25,7 @@
 #include <QNetworkProxy>
 #include <QNetworkProxyFactory>
 #include <QThread>
+#include <QWebEngineUrlScheme>
 #include <iostream>
 #include <atomic>
 #include <memory>
@@ -38,6 +39,18 @@
 #include "NewUi/NewUiWindow.h"
 
 namespace {
+void registerIrulerWebScheme()
+{
+    static bool done = false;
+    if (done) return;
+    done = true;
+
+    QWebEngineUrlScheme scheme("iruler");
+    scheme.setSyntax(QWebEngineUrlScheme::Syntax::HostAndPort);
+    scheme.setFlags(QWebEngineUrlScheme::SecureScheme | QWebEngineUrlScheme::LocalScheme | QWebEngineUrlScheme::ContentSecurityPolicyIgnored);
+    QWebEngineUrlScheme::registerScheme(scheme);
+}
+
 class LanRelayServer final : public QObject
 {
 public:
@@ -230,6 +243,7 @@ int main(int argc, char *argv[])
     app.setQuitOnLastWindowClosed(false);
     QNetworkProxyFactory::setUseSystemConfiguration(false);
     QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
+    registerIrulerWebScheme();
     
     {
         QLocalSocket probe;

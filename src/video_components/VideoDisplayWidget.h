@@ -147,6 +147,7 @@ private:
     void updateButtonText();
     void drawMouseCursor(QPixmap &pixmap, const QPoint &position, const QString &name = QString()); // 保留旧接口（不再使用远端叠加）
     void updateLocalCursorComposite();
+    void flushPendingFrame();
     // 捕获鼠标并映射到源坐标
     bool eventFilter(QObject *obj, QEvent *event) override;
     QPoint mapLabelToSource(const QPoint &labelPoint) const;
@@ -218,6 +219,11 @@ private:
     QPixmap m_cursorScaledComposite;
     double m_lastCursorScale = -1.0;
     QColor m_localCursorColor;
+
+    QPixmap m_pendingFramePixmap;
+    QSize m_pendingFrameSize;
+    bool m_hasPendingFrame = false;
+    bool m_pendingFrameCounts = false;
 
     // 最近一次观看者与目标ID（用于重发watch_request以恢复推流）
     QString m_lastViewerId;

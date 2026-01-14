@@ -3,6 +3,7 @@
 #include "../common/AppConfig.h"
 #include <QNetworkProxy>
 #include <QNetworkProxyFactory>
+#include <QWebEngineUrlScheme>
 
 int main(int argc, char *argv[])
 {
@@ -10,6 +11,16 @@ int main(int argc, char *argv[])
     AppConfig::applyApplicationInfo(a);
     QNetworkProxyFactory::setUseSystemConfiguration(false);
     QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
+    {
+        static bool done = false;
+        if (!done) {
+            done = true;
+            QWebEngineUrlScheme scheme("iruler");
+            scheme.setSyntax(QWebEngineUrlScheme::Syntax::HostAndPort);
+            scheme.setFlags(QWebEngineUrlScheme::SecureScheme | QWebEngineUrlScheme::LocalScheme | QWebEngineUrlScheme::ContentSecurityPolicyIgnored);
+            QWebEngineUrlScheme::registerScheme(scheme);
+        }
+    }
     NewUiWindow w;
     w.show();
     return a.exec();

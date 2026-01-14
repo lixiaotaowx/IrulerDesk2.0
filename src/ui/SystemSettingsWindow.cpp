@@ -409,6 +409,18 @@ QFrame* SystemSettingsWindow::setupConfigControls()
     function2Layout->addWidget(m_function2UrlConfirmBtn);
     box->addWidget(function2Row);
 
+    QWidget* function3Row = new QWidget(card);
+    QHBoxLayout* function3Layout = new QHBoxLayout(function3Row);
+    function3Layout->setContentsMargins(0, 0, 0, 0);
+    function3Layout->setSpacing(10);
+    m_function3UrlLabel = new QLabel(QStringLiteral("功能3网址："), function3Row);
+    m_function3UrlEdit = new QLineEdit(function3Row);
+    m_function3UrlConfirmBtn = new QPushButton(QStringLiteral("确定"), function3Row);
+    function3Layout->addWidget(m_function3UrlLabel);
+    function3Layout->addWidget(m_function3UrlEdit, 1);
+    function3Layout->addWidget(m_function3UrlConfirmBtn);
+    box->addWidget(function3Row);
+
     {
         QString v = AppConfig::readConfigValue(QStringLiteral("storyboard_url")).trimmed();
         if (v.isEmpty()) {
@@ -419,6 +431,10 @@ QFrame* SystemSettingsWindow::setupConfigControls()
     {
         const QString v = AppConfig::readConfigValue(QStringLiteral("function2_url")).trimmed();
         m_function2UrlEdit->setText(v);
+    }
+    {
+        const QString v = AppConfig::readConfigValue(QStringLiteral("function3_url")).trimmed();
+        m_function3UrlEdit->setText(v);
     }
 
     connect(m_storyboardUrlEdit, &QLineEdit::editingFinished, this, [this]() {
@@ -439,6 +455,16 @@ QFrame* SystemSettingsWindow::setupConfigControls()
     });
     connect(m_function2UrlConfirmBtn, &QPushButton::clicked, this, [this]() {
         emit function2UrlChanged(m_function2UrlEdit->text().trimmed());
+    });
+
+    connect(m_function3UrlEdit, &QLineEdit::editingFinished, this, [this]() {
+        emit function3UrlChanged(m_function3UrlEdit->text().trimmed());
+    });
+    connect(m_function3UrlEdit, &QLineEdit::returnPressed, this, [this]() {
+        emit function3UrlChanged(m_function3UrlEdit->text().trimmed());
+    });
+    connect(m_function3UrlConfirmBtn, &QPushButton::clicked, this, [this]() {
+        emit function3UrlChanged(m_function3UrlEdit->text().trimmed());
     });
 
     return card;

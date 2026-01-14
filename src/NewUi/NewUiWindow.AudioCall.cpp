@@ -247,6 +247,7 @@ void NewUiWindow::scheduleJanusEnsure(const QString &desiredOwnerId)
 
                 qint64 room = 0;
                 qint64 sessionId = 0;
+                qint64 wsState = -1;
                 bool parsed = false;
 
                 const QVariantMap map = ret.toMap();
@@ -254,14 +255,16 @@ void NewUiWindow::scheduleJanusEnsure(const QString &desiredOwnerId)
                     parsed = true;
                     room = map.value(QStringLiteral("room")).toLongLong();
                     sessionId = map.value(QStringLiteral("sessionId")).toLongLong();
+                    wsState = map.value(QStringLiteral("wsState")).toLongLong();
                 }
 
-                const bool inRoom = parsed && (room == expectedRoom) && (sessionId > 0);
+                const bool inRoom = parsed && (room == expectedRoom) && (sessionId > 0) && (wsState == 1);
                 if (inRoom) {
                     stopJanusEnsure();
                     return;
                 }
 
+                m_janusActiveRoomOwnerId.clear();
                 applyJanusAudioState();
 
                 m_janusEnsureAttempt++;
@@ -287,6 +290,12 @@ void NewUiWindow::janusSwitchToUserRoom(const QString &userId)
     if (userId.isEmpty()) {
         return;
     }
+    if (m_janusDesiredRoomOwnerId == userId) {
+        ensureJanusAudioLoaded();
+        applyJanusAudioState();
+        scheduleJanusEnsure(userId);
+        return;
+    }
     m_janusDesiredRoomOwnerId = userId;
     ensureJanusAudioLoaded();
     applyJanusAudioState();
@@ -296,6 +305,12 @@ void NewUiWindow::janusSwitchToUserRoom(const QString &userId)
 void NewUiWindow::janusSwitchToMyRoom()
 {
     if (m_myStreamId.isEmpty()) {
+        return;
+    }
+    if (m_janusDesiredRoomOwnerId == m_myStreamId) {
+        ensureJanusAudioLoaded();
+        applyJanusAudioState();
+        scheduleJanusEnsure(m_myStreamId);
         return;
     }
     m_janusDesiredRoomOwnerId = m_myStreamId;

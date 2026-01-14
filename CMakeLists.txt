@@ -253,7 +253,7 @@ add_custom_command(TARGET ScreenStreamApp POST_BUILD
 # 添加Windows特定库
 if(WIN32)
     target_link_libraries(CaptureProcess PRIVATE d3d11 dxgi dbghelp)
-    target_link_libraries(ScreenStreamApp PRIVATE d3d11 dxva2 ole32 dbghelp)
+    target_link_libraries(ScreenStreamApp PRIVATE d3d11 dxva2 ole32 dbghelp crypt32)
     target_link_libraries(PlayerProcess PRIVATE d3d11 dxva2 ole32 dbghelp)
     message(STATUS "检测到Windows平台，正在链接d3d11、dxgi、dxva2、ole32、dbghelp")
 endif()

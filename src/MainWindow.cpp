@@ -3536,6 +3536,8 @@ void MainWindow::onSystemSettingsRequested()
                 this, &MainWindow::onStoryboardUrlChanged);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::function2UrlChanged,
                 this, &MainWindow::onFunction2UrlChanged);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::function3UrlChanged,
+                this, &MainWindow::onFunction3UrlChanged);
     }
     const bool wasVisible = m_systemSettingsWindow->isVisible();
     const Qt::WindowFlags flags = m_systemSettingsWindow->windowFlags();
@@ -3654,6 +3656,11 @@ void MainWindow::onStoryboardUrlChanged(const QString& url)
 void MainWindow::onFunction2UrlChanged(const QString& url)
 {
     saveFunction2UrlToConfig(url.trimmed());
+}
+
+void MainWindow::onFunction3UrlChanged(const QString& url)
+{
+    saveFunction3UrlToConfig(url.trimmed());
 }
 
 void MainWindow::onScreenSelected(int index)
@@ -4350,6 +4357,34 @@ void MainWindow::saveFunction2UrlToConfig(const QString &url)
     }
     if (!replaced) {
         configLines << QString("function2_url=%1").arg(url);
+    }
+    if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&configFile);
+        for (const QString &line : configLines) out << line << "\n";
+        configFile.close();
+    }
+}
+
+void MainWindow::saveFunction3UrlToConfig(const QString &url)
+{
+    QString configFilePath = getConfigFilePath();
+    QFile configFile(configFilePath);
+    QStringList configLines;
+    if (configFile.exists() && configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&configFile);
+        while (!in.atEnd()) configLines << in.readLine();
+        configFile.close();
+    }
+    bool replaced = false;
+    for (int i = 0; i < configLines.size(); ++i) {
+        if (configLines[i].startsWith("function3_url=")) {
+            configLines[i] = QString("function3_url=%1").arg(url);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        configLines << QString("function3_url=%1").arg(url);
     }
     if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&configFile);

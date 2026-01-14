@@ -506,6 +506,15 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
         // 检查标签尺寸有效性
         QSize labelSize = m_videoLabel->size();
         if (labelSize.width() <= 0 || labelSize.height() <= 0) {
+            QPixmap pixmap = QPixmap::fromImage(frontBuffer);
+            if (m_hasMousePosition) {
+                drawMouseCursor(pixmap, m_mousePosition, m_mouseName);
+            }
+            m_pendingFramePixmap = pixmap;
+            m_pendingFrameSize = frameSize;
+            m_hasPendingFrame = true;
+            m_pendingFrameCounts = true;
+            QTimer::singleShot(0, this, [this]() { flushPendingFrame(); });
             return;
         }
         
@@ -540,6 +549,38 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
         //     qDebug() << "[VideoDisplayWidget] 显示帧统计 - 第" << displayCount << "帧，总显示:" << m_stats.framesDisplayed;
         // }
     }
+}
+
+void VideoDisplayWidget::flushPendingFrame()
+{
+    if (!m_hasPendingFrame || !m_videoLabel) {
+        return;
+    }
+    const QSize labelSize = m_videoLabel->size();
+    if (labelSize.width() <= 0 || labelSize.height() <= 0) {
+        QTimer::singleShot(0, this, [this]() { flushPendingFrame(); });
+        return;
+    }
+
+    const QPixmap src = m_pendingFramePixmap;
+    if (src.isNull()) {
+        m_hasPendingFrame = false;
+        m_pendingFrameCounts = false;
+        return;
+    }
+
+    const QPixmap scaledPixmap = src.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    m_videoLabel->setPixmap(scaledPixmap);
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    stopWaitingSplash();
+
+    if (m_pendingFrameCounts) {
+        m_stats.framesDisplayed++;
+        m_stats.frameSize = m_pendingFrameSize;
+        emit frameReceived();
+        m_pendingFrameCounts = false;
+    }
+    m_hasPendingFrame = true;
 }
 
 void VideoDisplayWidget::updateConnectionStatus(const QString &status)
@@ -741,6 +782,7 @@ void VideoDisplayWidget::resizeEvent(QResizeEvent *event)
         m_offlineLabel->move(x, y);
         m_offlineLabel->raise();
     }
+    flushPendingFrame();
 }
 
 

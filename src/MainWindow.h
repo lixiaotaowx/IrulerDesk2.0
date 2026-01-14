@@ -106,6 +106,7 @@ public slots:
     void onOnlineNotificationEnabledChanged(bool enabled);
     void onStoryboardUrlChanged(const QString& url);
     void onFunction2UrlChanged(const QString& url);
+    void onFunction3UrlChanged(const QString& url);
 private:
     void saveLocalQualityToConfig(const QString& quality);
     int loadOrGenerateRandomId();
@@ -125,6 +126,7 @@ private:
     void saveUserNameToConfig(const QString &name);
     void saveStoryboardUrlToConfig(const QString &url);
     void saveFunction2UrlToConfig(const QString &url);
+    void saveFunction3UrlToConfig(const QString &url);
     bool loadAudioOutputFollowSystemFromConfig() const;
     QString loadAudioOutputDeviceIdFromConfig() const;
     void saveAudioOutputFollowSystemToConfig(bool followSystem);

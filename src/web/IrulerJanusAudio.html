@@ -30,11 +30,13 @@
       localStream: null,
       muted: true,
       speakerEnabled: true,
+      wantRunning: false,
       room: 0,
       display: "",
       participants: [],
       pending: new Map(),
       keepAliveTimer: null,
+      lastKeepAliveAtMs: 0,
       remoteAnswerWaiter: null,
       remoteAnswerTx: null,
       joinWaiter: null,
@@ -48,6 +50,12 @@
       diagRemoteSrc: null,
       aloneSinceMs: 0,
       aloneCheckTimer: null,
+      wsCloseCount: 0,
+      lastWsCloseAtMs: 0,
+      reconnectTimer: null,
+      reconnectAttempt: 0,
+      reconnectInFlight: false,
+      lastDisconnectAtMs: 0,
       lastStopReason: "",
       lastStopAtMs: 0
     };
@@ -200,6 +208,58 @@
       state.ws.send(JSON.stringify(obj));
     }
 
+    function scheduleReconnect(reason) {
+      if (!state.wantRunning) return;
+      if (!state.room) return;
+      if (state.reconnectInFlight) return;
+      if (state.reconnectTimer) return;
+      const attempt = Math.max(0, state.reconnectAttempt | 0);
+      const delay = Math.min(12000, 600 + attempt * 900);
+      try { logLine("reconnect scheduled in " + delay + "ms reason=" + String(reason || "")); } catch (_) {}
+      state.reconnectTimer = setTimeout(async () => {
+        state.reconnectTimer = null;
+        if (!state.wantRunning) return;
+        if (!state.room) return;
+        if (state.reconnectInFlight) return;
+        state.reconnectInFlight = true;
+        state.reconnectAttempt = attempt + 1;
+        try {
+          await switchRoom(state.room, state.display, state.muted);
+          state.reconnectAttempt = 0;
+        } catch (e) {
+          try { logLine("reconnect failed: " + (e && e.message ? e.message : String(e))); } catch (_) {}
+          scheduleReconnect("retry");
+        } finally {
+          state.reconnectInFlight = false;
+        }
+      }, delay);
+    }
+
+    function stopReconnect() {
+      if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = null;
+      }
+      state.reconnectInFlight = false;
+      state.reconnectAttempt = 0;
+    }
+
+    function onTransportLost(reason) {
+      state.lastDisconnectAtMs = Date.now();
+      try { logLine("transport lost reason=" + String(reason || "")); } catch (_) {}
+      stopKeepAlive();
+      stopAloneWatch();
+      state.pending.clear();
+      state.remoteAnswerWaiter = null;
+      state.joinWaiter = null;
+      state.sessionId = 0;
+      state.handleId = 0;
+      if (state.pc) { try { state.pc.close(); } catch (e) {} state.pc = null; }
+      if (state.localStream) { try { state.localStream.getTracks().forEach(t => t.stop()); } catch (e) {} state.localStream = null; }
+      try { remoteAudio.srcObject = null; } catch (_) {}
+      scheduleReconnect(reason || "transport_lost");
+    }
+
     function waitTx(t) {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -272,7 +332,13 @@
       });
       ws.onclose = () => {
         logLine("ws closed");
+        state.wsCloseCount = (state.wsCloseCount | 0) + 1;
+        state.lastWsCloseAtMs = Date.now();
         stopKeepAlive();
+        state.ws = null;
+        if (state.wantRunning) {
+          onTransportLost("ws_closed");
+        }
       };
       logLine("ws open");
     }
@@ -307,6 +373,7 @@
       stopKeepAlive();
       state.keepAliveTimer = setInterval(() => {
         if (!state.sessionId) return;
+        state.lastKeepAliveAtMs = Date.now();
         try { wsSend({janus:"keepalive", session_id:state.sessionId, transaction:tx()}); } catch (e) {}
       }, 25000);
     }
@@ -321,6 +388,22 @@
       pc.onconnectionstatechange = () => {
         try {
           if (isTerminalPcState(pc.connectionState)) logLine("pc connectionState=" + pc.connectionState);
+        } catch (_) {}
+        try {
+          if (!state.wantRunning) return;
+          const st = pc.connectionState;
+          if (st === "failed") {
+            onTransportLost("pc_failed");
+          } else if (st === "disconnected") {
+            setTimeout(() => {
+              try {
+                if (!state.wantRunning) return;
+                if (!state.pc) return;
+                if (state.pc.connectionState !== "disconnected") return;
+                onTransportLost("pc_disconnected");
+              } catch (_) {}
+            }, 3500);
+          }
         } catch (_) {}
       };
       pc.oniceconnectionstatechange = () => {
@@ -452,6 +535,7 @@
     async function resetAll() {
       stopKeepAlive();
       stopAloneWatch();
+      stopReconnect();
       if (state.pc) { try { state.pc.close(); } catch (e) {} state.pc = null; }
       if (state.localStream) { try { state.localStream.getTracks().forEach(t => t.stop()); } catch (e) {} state.localStream = null; }
       remoteAudio.srcObject = null;
@@ -468,6 +552,8 @@
 
     async function stopAll(reason) {
       try { logLine("stop" + (reason ? " reason=" + reason : "")); } catch (_) {}
+      state.wantRunning = false;
+      stopReconnect();
       try { await resetAll(); } catch (_) {}
       state.room = 0;
       state.display = "";
@@ -491,9 +577,6 @@
           if (n <= 1) {
             const nowMs = Date.now();
             if (!state.aloneSinceMs) state.aloneSinceMs = nowMs;
-            if (nowMs - state.aloneSinceMs >= 30000) {
-              await stopAll("alone_30s");
-            }
           } else {
             state.aloneSinceMs = 0;
           }
@@ -502,6 +585,7 @@
     }
 
     async function switchRoom(room, display, muted) {
+      state.wantRunning = true;
       state.room = room;
       state.display = display || "";
       state.muted = !!muted;
@@ -558,6 +642,12 @@
         muted: state.muted,
         sessionId: state.sessionId,
         handleId: state.handleId,
+        wsState: state.ws ? state.ws.readyState : -1,
+        pcState: state.pc ? state.pc.connectionState : "",
+        wsCloseCount: state.wsCloseCount | 0,
+        lastWsCloseAtMs: state.lastWsCloseAtMs | 0,
+        lastKeepAliveAtMs: state.lastKeepAliveAtMs | 0,
+        lastDisconnectAtMs: state.lastDisconnectAtMs | 0,
         lastStopReason: state.lastStopReason || "",
         lastStopAtMs: state.lastStopAtMs || 0
       })

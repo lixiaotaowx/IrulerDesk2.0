@@ -44,11 +44,13 @@
 #include <QClipboard>
 #include <QWebEngineView>
 #include <QWebEnginePage>
+#include <QWebEngineProfile>
 #include <QWebEngineSettings>
 #include <QSignalBlocker>
 #include <QDialog>
 #include <QLayout>
 #include <QSizePolicy>
+#include <QUrlQuery>
 #include <QtGlobal>
 #include <climits>
 #include <QAbstractButton>
@@ -60,8 +62,330 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <wincrypt.h>
 #endif
 #include "../ui/BroadcastNoticeDialog.h"
+
+namespace {
+
+QString webOriginForUrl(const QUrl &url)
+{
+    if (!url.isValid()) return QString();
+    const QString scheme = url.scheme().toLower();
+    const QString host = url.host().toLower();
+    if (scheme.isEmpty() || host.isEmpty()) return QString();
+    const int port = url.port();
+    if (port <= 0) return scheme + QStringLiteral("://") + host;
+    return scheme + QStringLiteral("://") + host + QStringLiteral(":") + QString::number(port);
+}
+
+QString webCredConfigKeyForOrigin(const QString &origin)
+{
+    const QByteArray md5 = QCryptographicHash::hash(origin.toUtf8(), QCryptographicHash::Md5).toHex();
+    return QStringLiteral("webcred_") + QString::fromLatin1(md5);
+}
+
+bool writeConfigValueToAppDir(const QString &key, const QString &value)
+{
+    const QString configFilePath = AppConfig::configFilePathInAppDir();
+    QFile f(configFilePath);
+    QStringList lines;
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        in.setEncoding(QStringConverter::Utf8);
+#else
+        in.setCodec("UTF-8");
+#endif
+        while (!in.atEnd()) {
+            lines << in.readLine();
+        }
+        f.close();
+    }
+
+    const QString prefix = key + QStringLiteral("=");
+    bool replaced = false;
+    for (int i = 0; i < lines.size(); ++i) {
+        const QString trimmed = lines[i].trimmed();
+        if (trimmed.startsWith(prefix)) {
+            lines[i] = prefix + value;
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        lines << (prefix + value);
+    }
+
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return false;
+    }
+    QTextStream out(&f);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    out.setEncoding(QStringConverter::Utf8);
+#else
+    out.setCodec("UTF-8");
+#endif
+    for (const QString &line : lines) {
+        out << line << "\n";
+    }
+    f.close();
+    return true;
+}
+
+QByteArray dpapiProtect(const QByteArray &plain)
+{
+#ifdef _WIN32
+    if (plain.isEmpty()) return QByteArray();
+    DATA_BLOB inBlob{};
+    inBlob.cbData = static_cast<DWORD>(plain.size());
+    inBlob.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(plain.constData()));
+
+    DATA_BLOB outBlob{};
+    if (!CryptProtectData(&inBlob, L"", nullptr, nullptr, nullptr, 0, &outBlob)) {
+        return QByteArray();
+    }
+
+    QByteArray protectedBytes(reinterpret_cast<const char *>(outBlob.pbData), static_cast<int>(outBlob.cbData));
+    LocalFree(outBlob.pbData);
+    return protectedBytes;
+#else
+    Q_UNUSED(plain);
+    return QByteArray();
+#endif
+}
+
+QByteArray dpapiUnprotect(const QByteArray &protectedBytes)
+{
+#ifdef _WIN32
+    if (protectedBytes.isEmpty()) return QByteArray();
+    DATA_BLOB inBlob{};
+    inBlob.cbData = static_cast<DWORD>(protectedBytes.size());
+    inBlob.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(protectedBytes.constData()));
+
+    DATA_BLOB outBlob{};
+    if (!CryptUnprotectData(&inBlob, nullptr, nullptr, nullptr, nullptr, 0, &outBlob)) {
+        return QByteArray();
+    }
+
+    QByteArray plain(reinterpret_cast<const char *>(outBlob.pbData), static_cast<int>(outBlob.cbData));
+    LocalFree(outBlob.pbData);
+    return plain;
+#else
+    Q_UNUSED(protectedBytes);
+    return QByteArray();
+#endif
+}
+
+bool saveWebCredential(const QString &origin, const QString &username, const QString &password)
+{
+    if (origin.isEmpty()) return false;
+    if (password.isEmpty()) return false;
+    if (password.size() > 2048) return false;
+    if (username.size() > 1024) return false;
+
+    QByteArray payload;
+    payload.append(username.toUtf8());
+    payload.append('\n');
+    payload.append(password.toUtf8());
+    const QByteArray protectedBytes = dpapiProtect(payload);
+    if (protectedBytes.isEmpty()) return false;
+
+    const QString key = webCredConfigKeyForOrigin(origin);
+    const QString value = QString::fromLatin1(protectedBytes.toBase64());
+    return writeConfigValueToAppDir(key, value);
+}
+
+bool loadWebCredential(const QString &origin, QString &outUsername, QString &outPassword)
+{
+    outUsername.clear();
+    outPassword.clear();
+    if (origin.isEmpty()) return false;
+
+    const QString key = webCredConfigKeyForOrigin(origin);
+    const QString b64 = AppConfig::readConfigValue(key).trimmed();
+    if (b64.isEmpty()) return false;
+
+    const QByteArray protectedBytes = QByteArray::fromBase64(b64.toLatin1());
+    const QByteArray plain = dpapiUnprotect(protectedBytes);
+    if (plain.isEmpty()) return false;
+
+    const int nl = plain.indexOf('\n');
+    if (nl < 0) return false;
+    outUsername = QString::fromUtf8(plain.left(nl));
+    outPassword = QString::fromUtf8(plain.mid(nl + 1));
+    return !outPassword.isEmpty();
+}
+
+QString jsQuotedString(const QString &value)
+{
+    QJsonArray a;
+    a.append(value);
+    const QString json = QString::fromUtf8(QJsonDocument(a).toJson(QJsonDocument::Compact));
+    return json.mid(1, json.size() - 2);
+}
+
+void injectCredentialHook(QWebEngineView *view)
+{
+    if (!view || !view->page()) return;
+    const QString js = QStringLiteral(
+        "(function(){"
+        "if(window.__irulerPwdHooked)return;"
+        "window.__irulerPwdHooked=true;"
+        "function isVisible(el){"
+        "try{var r=el.getBoundingClientRect();return r&&r.width>0&&r.height>0;}catch(e){return false;}"
+        "}"
+        "function findUserField(pwd){"
+        "var form=pwd&&pwd.form?pwd.form:null;"
+        "var scope=form||document;"
+        "var inputs=Array.prototype.slice.call(scope.querySelectorAll('input'));"
+        "var cands=[];"
+        "for(var i=0;i<inputs.length;i++){"
+        "var el=inputs[i];"
+        "if(!el||el===pwd)continue;"
+        "var t=(el.type||'').toLowerCase();"
+        "if(t==='text'||t==='email'||t==='tel'||t==='number'||t==='search')cands.push(el);"
+        "if(el.autocomplete==='username'||el.autocomplete==='email')cands.push(el);"
+        "}"
+        "for(var j=cands.length-1;j>=0;j--){if(isVisible(cands[j]))return cands[j];}"
+        "var prev=null;"
+        "if(pwd){"
+        "var all=Array.prototype.slice.call(scope.querySelectorAll('input'));"
+        "var idx=all.indexOf(pwd);"
+        "if(idx>0){"
+        "for(var k=idx-1;k>=0;k--){"
+        "var e=all[k];"
+        "if(!e)continue;"
+        "var tt=(e.type||'').toLowerCase();"
+        "if(tt==='text'||tt==='email'||tt==='tel'||tt==='number'||tt==='search'){prev=e;break;}"
+        "}"
+        "}"
+        "}"
+        "if(prev&&isVisible(prev))return prev;"
+        "return null;"
+        "}"
+        "function emit(u,p){"
+        "try{"
+        "var url='iruler://savewebcred?origin='+encodeURIComponent(location.origin)+'&u='+encodeURIComponent(u||'')+'&p='+encodeURIComponent(p||'');"
+        "location.href=url;"
+        "}catch(e){}"
+        "}"
+        "function attach(form){"
+        "if(!form||form.__irulerHooked)return;"
+        "form.__irulerHooked=true;"
+        "form.addEventListener('submit',function(){"
+        "try{"
+        "var pwd=form.querySelector('input[type=password]');"
+        "if(!pwd||!pwd.value)return;"
+        "var user=findUserField(pwd);"
+        "emit(user?user.value:'',pwd.value||'');"
+        "}catch(e){}"
+        "},true);"
+        "}"
+        "try{"
+        "var forms=Array.prototype.slice.call(document.forms||[]);"
+        "forms.forEach(attach);"
+        "var mo=new MutationObserver(function(){"
+        "Array.prototype.slice.call(document.forms||[]).forEach(attach);"
+        "});"
+        "mo.observe(document.documentElement,{childList:true,subtree:true});"
+        "}catch(e){}"
+        "})();"
+    );
+    view->page()->runJavaScript(js);
+}
+
+void injectAutofill(QWebEngineView *view)
+{
+    if (!view || !view->page()) return;
+    const QString origin = webOriginForUrl(view->url());
+    if (origin.isEmpty()) return;
+
+    QString username;
+    QString password;
+    if (!loadWebCredential(origin, username, password)) return;
+
+    const QString u = jsQuotedString(username);
+    const QString p = jsQuotedString(password);
+
+    const QString js = QStringLiteral(
+        "(function(){"
+        "function isVisible(el){"
+        "try{var r=el.getBoundingClientRect();return r&&r.width>0&&r.height>0;}catch(e){return false;}"
+        "}"
+        "function setVal(el,val){"
+        "if(!el)return;"
+        "try{"
+        "el.focus();"
+        "el.value=val;"
+        "el.dispatchEvent(new Event('input',{bubbles:true}));"
+        "el.dispatchEvent(new Event('change',{bubbles:true}));"
+        "}catch(e){}"
+        "}"
+        "function pickPwd(){"
+        "var pwds=Array.prototype.slice.call(document.querySelectorAll('input[type=password]'));"
+        "for(var i=0;i<pwds.length;i++){if(isVisible(pwds[i]))return pwds[i];}"
+        "return null;"
+        "}"
+        "function pickUser(pwd){"
+        "var form=pwd&&pwd.form?pwd.form:null;"
+        "var scope=form||document;"
+        "var inputs=Array.prototype.slice.call(scope.querySelectorAll('input'));"
+        "var best=null;"
+        "for(var i=0;i<inputs.length;i++){"
+        "var el=inputs[i];"
+        "if(!el||el===pwd)continue;"
+        "var t=(el.type||'').toLowerCase();"
+        "if(el.autocomplete==='username'||el.autocomplete==='email')best=el;"
+        "if(t==='email')best=el;"
+        "if(t==='text'||t==='email'||t==='tel'||t==='number'||t==='search')best=el;"
+        "}"
+        "if(best&&isVisible(best))return best;"
+        "if(pwd){"
+        "var idx=inputs.indexOf(pwd);"
+        "if(idx>0){"
+        "for(var k=idx-1;k>=0;k--){"
+        "var e=inputs[k];"
+        "if(!e)continue;"
+        "var tt=(e.type||'').toLowerCase();"
+        "if(tt==='text'||tt==='email'||tt==='tel'||tt==='number'||tt==='search'){if(isVisible(e))return e;break;}"
+        "}"
+        "}"
+        "}"
+        "return null;"
+        "}"
+        "var pwd=pickPwd();"
+        "if(!pwd)return;"
+        "if(pwd.value&&pwd.value.length>0)return;"
+        "var user=pickUser(pwd);"
+        "setVal(user,%1);"
+        "setVal(pwd,%2);"
+        "})();"
+    ).arg(u, p);
+
+    view->page()->runJavaScript(js);
+}
+
+QWebEngineProfile *ensureWebEngineProfileConfigured()
+{
+    static bool configured = false;
+    QWebEngineProfile *profile = QWebEngineProfile::defaultProfile();
+    if (configured) return profile;
+    configured = true;
+
+    const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString base = appData.isEmpty()
+                             ? (QCoreApplication::applicationDirPath() + QStringLiteral("/config/webengine"))
+                             : (appData + QStringLiteral("/webengine"));
+
+    QDir().mkpath(base);
+    profile->setPersistentStoragePath(base + QStringLiteral("/storage"));
+    profile->setCachePath(base + QStringLiteral("/cache"));
+    profile->setPersistentCookiesPolicy(QWebEngineProfile::AllowPersistentCookies);
+    return profile;
+}
+
+} // namespace
 
 // [Standard Approach] Custom Button for High-Performance Visual Feedback
 // Overrides paintEvent to scale icon when pressed, ensuring instant response.
@@ -87,8 +411,8 @@ protected:
 
 class StoryboardWebPage : public QWebEnginePage {
 public:
-    explicit StoryboardWebPage(QObject *parent, QWebEngineView *view)
-        : QWebEnginePage(parent), m_view(view)
+    explicit StoryboardWebPage(QWebEngineProfile *profile, QObject *parent, QWebEngineView *view)
+        : QWebEnginePage(profile, parent), m_view(view)
     {
     }
 
@@ -98,6 +422,13 @@ protected:
         Q_UNUSED(type);
         Q_UNUSED(isMainFrame);
         if (url.scheme().compare(QStringLiteral("iruler"), Qt::CaseInsensitive) == 0) {
+            if (url.host().compare(QStringLiteral("savewebcred"), Qt::CaseInsensitive) == 0) {
+                const QUrlQuery q(url);
+                const QString origin = q.queryItemValue(QStringLiteral("origin")).trimmed();
+                const QString u = q.queryItemValue(QStringLiteral("u"));
+                const QString p = q.queryItemValue(QStringLiteral("p"));
+                saveWebCredential(origin, u, p);
+            }
             return false;
         }
         return QWebEnginePage::acceptNavigationRequest(url, type, isMainFrame);
@@ -1515,6 +1846,8 @@ void NewUiWindow::setupUi()
         }
         else if (i == 2) {
             btn->setObjectName("Function2Button");
+            btn->setIcon(QIcon(appDir + "/maps/logo/wangye.png"));
+            btn->setIconSize(QSize(28, 28));
             btn->setStyleSheet(
                 "QPushButton#Function2Button {"
                 "   background-color: transparent;"
@@ -1534,6 +1867,39 @@ void NewUiWindow::setupUi()
                             QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head>"
                                            "<body style=\"background:#404040;color:#e0e0e0;font-family:sans-serif;padding:18px;\">"
                                            "请在系统设置-配置中填写“功能2网址”"
+                                           "</body></html>"));
+                    } else {
+                        m_function1WebView->load(QUrl::fromUserInput(v));
+                    }
+                }
+                if (m_rightContentStack && m_function1BrowserPage) {
+                    m_rightContentStack->setCurrentWidget(m_function1BrowserPage);
+                }
+            });
+        }
+        else if (i == 3) {
+            btn->setObjectName("Function3Button");
+            btn->setIcon(QIcon(appDir + "/maps/logo/wangye.png"));
+            btn->setIconSize(QSize(28, 28));
+            btn->setStyleSheet(
+                "QPushButton#Function3Button {"
+                "   background-color: transparent;"
+                "   border: none;"
+                "   border-radius: 20px;"
+                "}"
+                "QPushButton#Function3Button:hover { background-color: transparent; }"
+                "QPushButton#Function3Button:pressed { background-color: transparent; }"
+            );
+
+            connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
+                playIconBling(btn);
+                if (m_function1WebView) {
+                    QString v = AppConfig::readConfigValue(QStringLiteral("function3_url")).trimmed();
+                    if (v.isEmpty()) {
+                        m_function1WebView->setHtml(
+                            QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head>"
+                                           "<body style=\"background:#404040;color:#e0e0e0;font-family:sans-serif;padding:18px;\">"
+                                           "请在系统设置-配置中填写“功能3网址”"
                                            "</body></html>"));
                     } else {
                         m_function1WebView->load(QUrl::fromUserInput(v));
@@ -2240,9 +2606,15 @@ void NewUiWindow::setupUi()
     browserLayout->setContentsMargins(0, 0, 0, 0);
     browserLayout->setSpacing(0);
 
+    QWebEngineProfile *profile = ensureWebEngineProfileConfigured();
     m_function1WebView = new QWebEngineView(browserContainer);
-    auto *storyboardPage = new StoryboardWebPage(this, m_function1WebView);
+    auto *storyboardPage = new StoryboardWebPage(profile, this, m_function1WebView);
     m_function1WebView->setPage(storyboardPage);
+    connect(m_function1WebView, &QWebEngineView::loadFinished, this, [this](bool ok) {
+        if (!ok) return;
+        injectCredentialHook(m_function1WebView);
+        injectAutofill(m_function1WebView);
+    });
 
     ensureJanusAudioLoaded();
     browserLayout->addWidget(m_function1WebView);

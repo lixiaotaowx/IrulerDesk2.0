@@ -27,6 +27,7 @@ signals:
     void onlineNotificationEnabledChanged(bool enabled);
     void storyboardUrlChanged(const QString& url);
     void function2UrlChanged(const QString& url);
+    void function3UrlChanged(const QString& url);
 
 public slots:
     void notifySwitchSucceeded();
@@ -58,6 +59,9 @@ private:
     QLabel* m_function2UrlLabel = nullptr;
     QLineEdit* m_function2UrlEdit = nullptr;
     QPushButton* m_function2UrlConfirmBtn = nullptr;
+    QLabel* m_function3UrlLabel = nullptr;
+    QLineEdit* m_function3UrlEdit = nullptr;
+    QPushButton* m_function3UrlConfirmBtn = nullptr;
 };
 
 #endif // SYSTEMSETTINGSWINDOW_H

@@ -99,6 +99,8 @@ set(CAPTURE_SOURCES
     src/capture/WebSocketSender.h         # WebSocket 发送端声明
     src/capture/InputSimulator.cpp        # 远程控制输入模拟器实现
     src/capture/InputSimulator.h          # 远程控制输入模拟器声明
+    src/capture/KeyboardSimulator.cpp     # 键盘输入模拟器实现
+    src/capture/KeyboardSimulator.h       # 键盘输入模拟器声明
     src/capture/MouseCapture.cpp          # 鼠标捕获实现：记录鼠标位置与状态用于批注
     src/capture/MouseCapture.h            # 鼠标捕获声明
     src/capture/PerformanceMonitor.cpp    # 性能监控实现：统计编码/网络/帧率指标

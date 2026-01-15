@@ -686,12 +686,24 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         }
     } else if (type == "remote_input") {
         QString inputType = obj.value("input_type").toString();
-        int x = obj.value("x").toInt();
-        int y = obj.value("y").toInt();
-        int button = obj.value("button").toInt(0);
-        int delta = obj.value("delta").toInt(0);
         
-        emit remoteInputReceived(inputType, x, y, button, delta);
+        if (inputType == "key_press" || inputType == "key_release") {
+            int key = obj.value("key").toInt();
+            int modifiers = obj.value("modifiers").toInt();
+            quint32 nativeScanCode = (quint32)obj.value("native_scan_code").toVariant().toLongLong();
+            QString text = obj.value("text").toString();
+            
+            qDebug() << "[Sender] Received remote key:" << inputType << key << modifiers << nativeScanCode;
+            emit remoteKeyReceived(inputType, key, modifiers, nativeScanCode, text);
+        } else {
+            // Mouse events: move, press, release, dblclick, wheel
+            int x = obj.value("x").toInt();
+            int y = obj.value("y").toInt();
+            int button = obj.value("button").toInt(0);
+            int delta = obj.value("delta").toInt(0);
+            
+            emit remoteInputReceived(inputType, x, y, button, delta);
+        }
     }
 }
 

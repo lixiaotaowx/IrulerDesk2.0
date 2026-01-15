@@ -967,6 +967,32 @@ void WebSocketReceiver::sendRemoteInput(const QString &type, int x, int y, int b
     }
 }
 
+void WebSocketReceiver::sendRemoteKeyInput(const QString &type, int key, int modifiers, quint32 nativeScanCode, const QString &text)
+{
+    QJsonObject json;
+    json["type"] = "remote_input";
+    json["input_type"] = type; // "key_press" or "key_release"
+    json["key"] = key;
+    json["modifiers"] = modifiers;
+    json["native_scan_code"] = (qint64)nativeScanCode;
+    json["text"] = text;
+    
+    {
+        QMutexLocker locker(&m_mutex);
+        if (!m_lastViewerId.isEmpty()) json["viewer_id"] = m_lastViewerId;
+        if (!m_lastTargetId.isEmpty()) json["target_id"] = m_lastTargetId;
+    }
+
+    QByteArray data = QJsonDocument(json).toJson(QJsonDocument::Compact);
+
+    QMutexLocker locker(&m_mutex);
+    if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+        m_lanWebSocket->sendTextMessage(data);
+    } else if (m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        m_webSocket->sendTextMessage(data);
+    }
+}
+
 void WebSocketReceiver::stopAudio()
 {
     QMutexLocker locker(&m_mutex);

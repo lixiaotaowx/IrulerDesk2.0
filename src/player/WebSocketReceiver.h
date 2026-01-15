@@ -72,8 +72,11 @@ public:
     void stopAudio();
     void sendViewerMicState(bool enabled);
 
-    // 发送远程输入事件
+    // 远程控制
     void sendRemoteInput(const QString &type, int x, int y, int button = 0, int delta = 0);
+    void sendRemoteKeyInput(const QString &type, int key, int modifiers, quint32 nativeScanCode, const QString &text);
+
+    // 音频相关sendRemoteKeyInput(const QString &type, int x, int y, int button = 0, int delta = 0);
 public:
     // 断开连接
     void disconnectFromServer();

@@ -101,6 +101,7 @@ signals:
 
     // 远程控制信号
     void remoteInputReceived(const QString &type, int x, int y, int button, int delta);
+    void remoteKeyReceived(const QString &type, int key, int modifiers, quint32 nativeScanCode, const QString &text);
 
 private slots:
     void onConnected();

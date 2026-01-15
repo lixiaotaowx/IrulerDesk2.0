@@ -62,7 +62,16 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     }
     if (m_videoLabel) {
         m_inputHandler->setVideoLabel(m_videoLabel);
+        // Ensure video label can accept focus for keyboard input
+        m_videoLabel->setFocusPolicy(Qt::StrongFocus);
     }
+
+    // 鼠标点击事件，确保获取焦点以接收键盘输入
+    connect(m_inputHandler, &ViewerInputHandler::mouseClicked, this, [this]() {
+        if (m_videoLabel) {
+            m_videoLabel->setFocus();
+        }
+    });
 
     m_receiver->setAudioOnly(m_audioOnlySession);
     if (!m_decoderInitialized) {
@@ -1124,6 +1133,12 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             bool isPrimary   = (!m_mouseButtonsSwapped && me->button() == Qt::LeftButton) ||
                                (m_mouseButtonsSwapped && me->button() == Qt::RightButton);
             if (isSecondary) {
+                // 如果处于控制模式（即允许输入），则不弹出右键菜单，允许事件继续传播（被远程接收）
+                // 只有在非控制模式（观察模式）下才显示本地右键菜单
+                if (m_inputHandler && m_inputHandler->isEnabled()) {
+                    return false;
+                }
+
                 // 右键弹出上下文菜单
                 QMenu menu(this);
                 QAction *clearAction = menu.addAction(QStringLiteral("清理绘制"));
@@ -1268,6 +1283,11 @@ bool VideoDisplayWidget::eventFilter(QObject *obj, QEvent *event)
             return true;
         }
         case QEvent::ContextMenu: {
+            // 如果处于控制模式（即允许输入），则不处理上下文菜单事件
+            if (m_inputHandler && m_inputHandler->isEnabled()) {
+                return false;
+            }
+
             // 键盘菜单键或长按触发的上下文菜单
             QContextMenuEvent *ce = static_cast<QContextMenuEvent*>(event);
             QMenu menu(this);

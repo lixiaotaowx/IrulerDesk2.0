@@ -2468,6 +2468,9 @@ void NewUiWindow::setupUi()
 
     m_listWidget = new QListWidget(listContainer);
     m_listWidget->setViewMode(QListWidget::IconMode);
+    // [Fix] Disable dragging to prevent process freeze
+    m_listWidget->setMovement(QListView::Static);
+    m_listWidget->setDragEnabled(false);
     // Adjust icon size to fit the card widget (roughly card size)
     // Use the global TOTAL size calculated above
     m_listWidget->setIconSize(QSize(m_totalItemWidth, m_totalItemHeight)); 

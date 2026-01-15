@@ -56,6 +56,7 @@
 #include "VP9Encoder.h"
 #include "WebSocketSender.h"
 #include "InputSimulator.h"
+#include "KeyboardSimulator.h"
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
 // 性能监控禁用：避免统计带来的额外开销
 #include "AnnotationOverlay.h"
@@ -71,6 +72,7 @@ int getScreenIndexFromConfig();
 
 // Global static pointer for InputSimulator to ensure visibility in lambdas
 static InputSimulator *staticInputSim = nullptr;
+static KeyboardSimulator *staticKeyboardSim = nullptr;
 
 namespace {
 class LanRelayServer final : public QObject
@@ -878,6 +880,10 @@ int main(int argc, char *argv[])
     
     // 创建输入模拟器
     InputSimulator *inputSim = new InputSimulator(&app);
+    
+    // 创建键盘模拟器
+    KeyboardSimulator *keyboardSim = new KeyboardSimulator(&app);
+    staticKeyboardSim = keyboardSim;
 
     // 设置鼠标坐标缩放和屏幕偏移
     // 计算当前屏幕的物理区域和逻辑区域
@@ -2352,10 +2358,17 @@ int main(int argc, char *argv[])
         }
         staticInputSim->onInputEvent(type, x, y, button, delta);
     };
+
+    auto handleRemoteKeyInput = [](const QString &type, int key, int modifiers, quint32 nativeScanCode, const QString &text) {
+        if (!staticKeyboardSim) return;
+        staticKeyboardSim->simulateKey(type, key, modifiers, nativeScanCode, text);
+    };
     
     QObject::connect(sender, &WebSocketSender::remoteInputReceived, handleRemoteInput);
+    QObject::connect(sender, &WebSocketSender::remoteKeyReceived, handleRemoteKeyInput);
     if (lanSender) {
         QObject::connect(lanSender, &WebSocketSender::remoteInputReceived, handleRemoteInput);
+        QObject::connect(lanSender, &WebSocketSender::remoteKeyReceived, handleRemoteKeyInput);
     }
 
     if (lanSender) {

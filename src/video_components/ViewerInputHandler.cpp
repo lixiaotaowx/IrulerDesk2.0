@@ -1,6 +1,7 @@
 #include "ViewerInputHandler.h"
 #include "../player/WebSocketReceiver.h"
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QDebug>
 
 ViewerInputHandler::ViewerInputHandler(QObject *parent)
@@ -50,6 +51,16 @@ bool ViewerInputHandler::eventFilter(QObject *obj, QEvent *event)
     case QEvent::Wheel:
         handleMouseEvent(event);
         return false; // Allow event to propagate to allow local mouse handling (e.g. leaving window)
+    case QEvent::ShortcutOverride:
+        if (m_enabled) {
+            event->accept(); // Prevent Qt from triggering local shortcuts (like Ctrl+Z, Ctrl+C)
+            return true;
+        }
+        break;
+    case QEvent::KeyPress:
+    case QEvent::KeyRelease:
+        handleKeyEvent(event);
+        return true; // Consume key events to prevent local shortcuts
     default:
         break;
     }
@@ -102,9 +113,37 @@ void ViewerInputHandler::handleMouseEvent(QEvent *event)
     }
 
     m_receiver->sendRemoteInput(type, x, y, button, delta);
+    if (type == "press") {
+        emit mouseClicked();
+    }
+
     if (type != "move") {
          // qInfo() << "[DEBUG_MOUSE] ViewerInputHandler sent: " << type << x << y;
     }
+}
+
+void ViewerInputHandler::handleKeyEvent(QEvent *event)
+{
+    if (!m_receiver) return;
+
+    QKeyEvent *ke = static_cast<QKeyEvent*>(event);
+    QString type;
+    if (event->type() == QEvent::KeyPress) {
+        type = "key_press";
+    } else if (event->type() == QEvent::KeyRelease) {
+        type = "key_release";
+    } else {
+        return;
+    }
+
+    // Capture native scan code if available for better compatibility
+    quint32 nativeScanCode = ke->nativeScanCode();
+    int key = ke->key();
+    int modifiers = ke->modifiers();
+    QString text = ke->text();
+
+    m_receiver->sendRemoteKeyInput(type, key, modifiers, nativeScanCode, text);
+    qDebug() << "[Viewer] Key sent:" << type << key << "Scan:" << nativeScanCode;
 }
 
 QPoint ViewerInputHandler::mapToRemote(const QPoint &localPos)

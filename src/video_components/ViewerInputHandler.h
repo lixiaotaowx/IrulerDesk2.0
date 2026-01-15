@@ -18,11 +18,15 @@ public:
     bool isEnabled() const { return m_enabled; }
     void setSourceSize(const QSize &size);
 
+signals:
+    void mouseClicked();
+
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     void handleMouseEvent(QEvent *event);
+    void handleKeyEvent(QEvent *event);
     QPoint mapToRemote(const QPoint &localPos);
 
     QPointer<QLabel> m_videoLabel;

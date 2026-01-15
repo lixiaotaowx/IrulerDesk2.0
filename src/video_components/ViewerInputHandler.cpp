@@ -49,7 +49,7 @@ bool ViewerInputHandler::eventFilter(QObject *obj, QEvent *event)
     case QEvent::MouseButtonDblClick:
     case QEvent::Wheel:
         handleMouseEvent(event);
-        return true; // Consume event to prevent local processing if needed, or false to allow
+        return false; // Allow event to propagate to allow local mouse handling (e.g. leaving window)
     default:
         break;
     }

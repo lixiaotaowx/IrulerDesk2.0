@@ -952,6 +952,12 @@ void VideoDisplayWidget::onMousePositionReceived(const QPoint &position, qint64 
 
 void VideoDisplayWidget::drawMouseCursor(QPixmap &pixmap, const QPoint &position, const QString &name)
 {
+    // 如果处于控制模式（即允许输入），则不绘制远程鼠标，避免双重鼠标干扰
+    // 只有在非控制模式（观察模式）下才绘制远程传回的鼠标位置
+    if (m_inputHandler && m_inputHandler->isEnabled()) {
+        return;
+    }
+
     static QPixmap whiteCursorPixmap;
     static bool loaded = false;
     
@@ -1571,9 +1577,7 @@ void VideoDisplayWidget::recreateReceiver()
             this, &VideoDisplayWidget::onMousePositionReceived);
 
     connect(m_receiver.get(), &WebSocketReceiver::kicked, this, [this](const QString &) {
-/*
-        // qInfo().noquote() << "[KickDiag] VideoDisplayWidget received kicked; stopping receiving";
-*/
+        // [KickDiag] VideoDisplayWidget received kicked; stopping receiving
         QTimer::singleShot(0, this, [this]() {
             if (!m_isReceiving) return;
             showOfflineReminder(QStringLiteral("你已被房主移除"));
@@ -1590,8 +1594,6 @@ void VideoDisplayWidget::recreateReceiver()
     connect(m_receiver.get(), &WebSocketReceiver::disconnected, this, [this]() {
         scheduleAutoReconnect();
     });
-
-
 
     connect(m_receiver.get(), &WebSocketReceiver::avatarUpdateReceived,
             this, [this](const QString &userId, int iconId) {

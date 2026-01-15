@@ -390,6 +390,7 @@ inline QStringList localLanBaseUrls()
     }
     out.removeDuplicates();
 
+    /*
     static qint64 lastLogAtMs = 0;
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     if (nowMs - lastLogAtMs > 60000) {
@@ -399,10 +400,11 @@ inline QStringList localLanBaseUrls()
             const Cand &c = cands[i];
             top.append(QStringLiteral("%1 score=%2 iface=%3").arg(c.url).arg(c.score).arg(c.iface));
         }
-        qInfo().noquote() << "[KickDiag][LanBase] preferred_ip="
+        // qInfo().noquote() << "[KickDiag][LanBase] preferred_ip="
                           << (preferredIp == 0 ? QStringLiteral("-") : QHostAddress(preferredIp).toString())
                           << " top=" << top.join(QStringLiteral(" | "));
     }
+    */
     return out;
 }
 

@@ -3049,6 +3049,9 @@ void NewUiWindow::setupUi()
         connect(m_annotationToolbar, &AnnotationToolbar::clearRequested, this, [this]() {
             if (m_embeddedVideoWidget) m_embeddedVideoWidget->sendClear();
         });
+        connect(m_annotationToolbar, &AnnotationToolbar::remoteControlToggled, this, [this](bool checked) {
+            if (m_embeddedVideoWidget) m_embeddedVideoWidget->setRemoteControlEnabled(checked);
+        });
     }
 
     videoTopLayout->addSpacing(8);

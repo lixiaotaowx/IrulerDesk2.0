@@ -379,8 +379,8 @@ void WebSocketSender::startStreaming()
     }
     if (didStart) {
         emit streamingStarted();
-        qInfo().noquote() << "[KickDiag][Sender] streaming_started"
-                          << " url=" << urlCopy;
+        // qInfo().noquote() << "[KickDiag][Sender] streaming_started"
+        //                   << " url=" << urlCopy;
     }
 }
 
@@ -401,9 +401,9 @@ void WebSocketSender::stopStreaming(bool softStop)
     }
     if (didStop) {
         emit streamingStopped(softStop);
-        qInfo().noquote() << "[KickDiag][Sender] streaming_stopped"
-                          << " softStop=" << (softStop ? "1" : "0")
-                          << " url=" << urlCopy;
+        // qInfo().noquote() << "[KickDiag][Sender] streaming_stopped"
+        //                   << " softStop=" << (softStop ? "1" : "0")
+        //                   << " url=" << urlCopy;
     }
 }
 
@@ -430,10 +430,12 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
     const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_ws_text")).trimmed();
     const bool dumpWsText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
     if (dumpWsText) {
+        /*
         if (type != QStringLiteral("mouse_position") && type != QStringLiteral("audio_opus") && type != QStringLiteral("viewer_audio_opus")) {
-            qInfo().noquote() << "[KickDiag][Sender] rx message type=" << type
+            // qInfo().noquote() << "[KickDiag][Sender] rx message type=" << type
                               << " raw=" << message.left(200);
         }
+        */
     }
     
     if (type == "lan_offer_request") {
@@ -461,11 +463,13 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
                               << " url=" << m_serverUrl;
             return;
         }
+        
         qInfo().noquote() << "[KickDiag][Sender] lan_offer_request accepted"
                           << " room_id=" << roomId
                           << " requested=" << requested
                           << " base_urls=" << bases.join(QStringLiteral(","))
                           << " url=" << m_serverUrl;
+        
         QJsonArray arr;
         for (const QString &b : bases) {
             arr.append(b);
@@ -501,12 +505,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         QString viewerName = obj.value("viewer_name").toString();
         QString targetId = obj["target_id"].toString();
 
+        /*
         qInfo().noquote() << "[KickDiag][Sender] rx watch_request"
                           << " viewer_id=" << viewerId
                           << " viewer_name=" << viewerName
                           << " target_id=" << targetId
                           << " manual=" << isManualApprovalEnabled()
                           << " waiting=" << m_waitingForApproval;
+        */
 
         if (!viewerName.isEmpty() && m_viewerName != viewerName) {
             m_viewerName = viewerName;
@@ -555,8 +561,8 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             return;
         }
         if (isStartRequest && manualApproval && isLanRelay) {
-            qInfo().noquote() << "[KickDiag][Sender] start_streaming_request bypass_manual_approval_for_lan"
-                              << " url=" << m_serverUrl;
+            // qInfo().noquote() << "[KickDiag][Sender] start_streaming_request bypass_manual_approval_for_lan"
+            //                   << " url=" << m_serverUrl;
         }
         QString vid = obj.value("viewer_id").toString();
         if (vid.isEmpty()) vid = obj.value("sender_id").toString();
@@ -678,6 +684,14 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         if (!vid.isEmpty()) {
             emit viewerExited(vid);
         }
+    } else if (type == "remote_input") {
+        QString inputType = obj.value("input_type").toString();
+        int x = obj.value("x").toInt();
+        int y = obj.value("y").toInt();
+        int button = obj.value("button").toInt(0);
+        int delta = obj.value("delta").toInt(0);
+        
+        emit remoteInputReceived(inputType, x, y, button, delta);
     }
 }
 
@@ -818,10 +832,12 @@ void WebSocketSender::onSendTimer()
         }
     }
     if (shouldLog) {
-        qInfo().noquote() << "[KickDiag][Sender] tx_vp9_frame ok"
+        /*
+        // qInfo().noquote() << "[KickDiag][Sender] tx_vp9_frame ok"
                           << " frames=" << QString::number(framesCopy)
                           << " bytes=" << QString::number(bytesCopy)
                           << " url=" << urlCopy;
+        */
     }
 }
 bool WebSocketSender::isManualApprovalEnabled() const

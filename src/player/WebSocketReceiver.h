@@ -71,6 +71,9 @@ public:
     // 停止音频处理（停止定时器，清空队列），用于在不完全断开连接的情况下静音
     void stopAudio();
     void sendViewerMicState(bool enabled);
+
+    // 发送远程输入事件
+    void sendRemoteInput(const QString &type, int x, int y, int button = 0, int delta = 0);
 public:
     // 断开连接
     void disconnectFromServer();

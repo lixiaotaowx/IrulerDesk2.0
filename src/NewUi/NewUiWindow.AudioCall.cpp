@@ -81,9 +81,9 @@ protected:
                                   const QString &sourceID) override
     {
         if (level == QWebEnginePage::ErrorMessageLevel) {
-            qInfo().noquote() << message << "line=" << lineNumber << "src=" << sourceID;
+            // qInfo().noquote() << message << "line=" << lineNumber << "src=" << sourceID;
         } else {
-            qInfo().noquote() << message;
+            // qInfo().noquote() << message;
         }
         QWebEnginePage::javaScriptConsoleMessage(level, message, lineNumber, sourceID);
     }
@@ -127,19 +127,21 @@ void NewUiWindow::ensureJanusAudioLoaded()
     const QString templatePath = AppConfig::janusAudioHtmlPath();
     if (!templatePath.isEmpty()) {
         const QFileInfo fi(templatePath);
-        qInfo().noquote() << "[KickDiag] janus template"
+        /*
+        // qInfo().noquote() << "[KickDiag] janus template"
                           << " path=" << fi.absoluteFilePath()
                           << " bytes=" << fi.size();
+        */
     } else {
         const QString appDir = QCoreApplication::applicationDirPath();
         const QString expected = QDir(appDir).filePath(QStringLiteral("src/web/IrulerJanusAudio.html"));
         const QFileInfo expectedFi(QDir::cleanPath(expected));
-        qInfo().noquote()
-            << QStringLiteral("[KickDiag] janus template missing app_dir=%1 cwd=%2 expect=%3 exist=%4")
-                   .arg(appDir,
-                        QDir::currentPath(),
-                        expectedFi.absoluteFilePath(),
-                        expectedFi.exists() && expectedFi.isFile() ? QStringLiteral("true") : QStringLiteral("false"));
+        // qInfo().noquote()
+        //     << QStringLiteral("[KickDiag] janus template missing app_dir=%1 cwd=%2 expect=%3 exist=%4")
+        //            .arg(appDir,
+        //                 QDir::currentPath(),
+        //                 expectedFi.absoluteFilePath(),
+        //                 expectedFi.exists() && expectedFi.isFile() ? QStringLiteral("true") : QStringLiteral("false"));
     }
     m_function1WebView->setHtml(buildJanusAudioHtml(), QUrl(QStringLiteral("http://localhost/")));
     m_janusAudioLoaded = true;
@@ -181,10 +183,12 @@ void NewUiWindow::applyJanusAudioState()
                 return;
             }
 
-            qInfo().noquote() << "[KickDiag] janus state"
+            /*
+            // qInfo().noquote() << "[KickDiag] janus state"
                               << " owner=" << desiredOwnerId
                               << " room=" << room
                               << " muted=" << (muted ? "true" : "false");
+            */
             const QString switchJs = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.switchRoom(%1, %2, %3);")
                                          .arg(QString::number(room),
                                               toJsStringLiteral(display),

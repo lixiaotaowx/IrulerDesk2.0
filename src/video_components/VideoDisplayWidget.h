@@ -24,6 +24,7 @@
 // 前向声明
 class DxvaVP9Decoder;
 class WebSocketReceiver;
+class ViewerInputHandler;
 
 struct VideoStats {
     int framesReceived = 0;
@@ -72,6 +73,7 @@ public:
     void setAnnotationEnabled(bool enabled);
     void setToolMode(int mode);
     void setTextFontSize(int size);
+    void setRemoteControlEnabled(bool enabled);
 
     // 显示切换中提示
     void showSwitchingIndicator(const QString &message = QStringLiteral("切换中..."));
@@ -266,6 +268,8 @@ private:
     int m_textFontSize = 16;
     QPoint m_lastTextSrcPoint;
     
+    ViewerInputHandler *m_inputHandler = nullptr;
+
     QMutex m_mutex; // Protect cleanup
 };
 

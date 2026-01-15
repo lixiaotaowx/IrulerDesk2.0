@@ -178,6 +178,8 @@ void StreamingIslandWidget::setupUI()
     });
     
     connect(m_toolbar, &AnnotationToolbar::clearRequested, m_annotationWidget, &ScreenAnnotationWidget::clear);
+
+    connect(m_toolbar, &AnnotationToolbar::remoteControlToggled, this, &StreamingIslandWidget::remoteControlRequested);
 }
 
 void StreamingIslandWidget::showOnScreen()

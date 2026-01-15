@@ -250,16 +250,16 @@ void MainWindow::startLanDiscoveryListener()
     const bool ok = m_lanDiscoverySocket->bind(QHostAddress::AnyIPv4, port,
                                                QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
     if (!ok) {
-        qWarning().noquote() << "[KickDiag][LanDiscovery] bind_failed"
-                             << " port=" << port
-                             << " err=" << m_lanDiscoverySocket->errorString();
+        // qWarning().noquote() << "[KickDiag][LanDiscovery] bind_failed"
+        //                      << " port=" << port
+        //                      << " err=" << m_lanDiscoverySocket->errorString();
         m_lanDiscoverySocket->deleteLater();
         m_lanDiscoverySocket = nullptr;
         return;
     }
 
-    qInfo().noquote() << "[KickDiag][LanDiscovery] listening"
-                      << " port=" << port;
+    // qInfo().noquote() << "[KickDiag][LanDiscovery] listening"
+    //                   << " port=" << port;
 
     connect(m_lanDiscoverySocket, &QUdpSocket::readyRead, this, [this]() {
         if (!m_lanDiscoverySocket) return;
@@ -312,10 +312,10 @@ void MainWindow::startLanDiscoveryListener()
 
             if (m_lanDiscoveredBaseByTarget.value(targetId) != base) {
                 m_lanDiscoveredBaseByTarget.insert(targetId, base);
-                qInfo().noquote() << "[KickDiag][LanDiscovery] discovered"
-                                  << " target_id=" << targetId
-                                  << " base=" << base
-                                  << " udp_port=" << senderPort;
+                // // qInfo().noquote() << "[KickDiag][LanDiscovery] discovered"
+                //                   << " target_id=" << targetId
+                //                   << " base=" << base
+                //                   << " udp_port=" << senderPort;
             }
 
             QStringList existing = AppConfig::lanBaseUrlsForTarget(targetId);
@@ -994,14 +994,14 @@ void MainWindow::setupUI()
     connect(m_transparentImageList, &NewUiWindow::kickViewerRequested,
             this, [this](const QString &viewerId) {
         if (!m_loginWebSocket) {
-            qInfo().noquote() << "[KickDiag] kick_viewer not sent: login socket is null"
-                              << " viewer_id=" << viewerId;
+            // qInfo().noquote() << "[KickDiag] kick_viewer not sent: login socket is null"
+            //                   << " viewer_id=" << viewerId;
             return;
         }
         if (m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
-            qInfo().noquote() << "[KickDiag] kick_viewer not sent: login socket not connected"
-                              << " state=" << static_cast<int>(m_loginWebSocket->state())
-                              << " viewer_id=" << viewerId;
+            // // qInfo().noquote() << "[KickDiag] kick_viewer not sent: login socket not connected"
+            //                   << " state=" << static_cast<int>(m_loginWebSocket->state())
+            //                   << " viewer_id=" << viewerId;
             return;
         }
         QJsonObject msg;
@@ -1011,9 +1011,9 @@ void MainWindow::setupUI()
         msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
         QString payload = QJsonDocument(msg).toJson(QJsonDocument::Compact);
         qint64 bytes = m_loginWebSocket->sendTextMessage(payload);
-        qInfo().noquote() << "[KickDiag] kick_viewer sent"
-                          << " bytes=" << bytes
-                          << " payload=" << payload;
+        // qInfo().noquote() << "[KickDiag] kick_viewer sent"
+        //                   << " bytes=" << bytes
+        //                   << " payload=" << payload;
         if (m_transparentImageList) {
             m_transparentImageList->removeViewer(viewerId);
             m_transparentImageList->sendKickToSubscribers(viewerId);
@@ -1022,9 +1022,9 @@ void MainWindow::setupUI()
 
     connect(m_transparentImageList, &NewUiWindow::closeRoomRequested,
             this, [this]() {
-        qInfo().noquote() << "[KickDiag] close_room requested"
-                          << " my_id=" << getDeviceId()
-                          << " is_streaming=" << m_isStreaming;
+        // qInfo().noquote() << "[KickDiag] close_room requested"
+        //                   << " my_id=" << getDeviceId()
+        //                   << " is_streaming=" << m_isStreaming;
         stopStreaming();
     });
 
@@ -1046,10 +1046,10 @@ void MainWindow::setupUI()
             m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
         };
 
-        qInfo().noquote() << "[KickDiag] talk_toggle"
-                          << " viewer_id=" << getDeviceId()
-                          << " target_id=" << targetId
-                          << " enabled=" << (enabled ? "true" : "false");
+        // qInfo().noquote() << "[KickDiag] talk_toggle"
+        //                   << " viewer_id=" << getDeviceId()
+        //                   << " target_id=" << targetId
+        //                   << " enabled=" << (enabled ? "true" : "false");
         if (enabled) {
             m_pendingTalkTargetId = targetId;
             m_pendingTalkEnabled = true;
@@ -1170,6 +1170,14 @@ void MainWindow::setupUI()
     // Initialize Streaming Island
     m_islandWidget = new StreamingIslandWidget(nullptr); 
     connect(m_islandWidget, &StreamingIslandWidget::stopStreamingRequested, this, &MainWindow::stopStreaming);
+    connect(m_islandWidget, &StreamingIslandWidget::remoteControlRequested, this, [this](bool enabled) {
+        if (m_videoWindow && m_videoWindow->getVideoDisplayWidget()) {
+            m_videoWindow->getVideoDisplayWidget()->setRemoteControlEnabled(enabled);
+        }
+        if (m_transparentImageList && m_transparentImageList->embeddedVideoWidget()) {
+            m_transparentImageList->embeddedVideoWidget()->setRemoteControlEnabled(enabled);
+        }
+    });
 }
 
 void MainWindow::setupStatusBar()
@@ -2730,9 +2738,11 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
     
     if (error.error != QJsonParseError::NoError) {
         if (message.contains("kick_viewer")) {
-            qInfo().noquote() << "[KickDiag] login ws message parse failed"
+            /*
+            // qInfo().noquote() << "[KickDiag] login ws message parse failed"
                               << " error=" << error.errorString()
                               << " raw=" << message;
+            */
         }
         return;
     }
@@ -3239,14 +3249,18 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
     } else if (type == "kick_viewer") {
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
-        qInfo().noquote() << "[KickDiag] kick_viewer received on login ws"
+        /*
+        // qInfo().noquote() << "[KickDiag] kick_viewer received on login ws"
                           << " viewer_id=" << viewerId
                           << " target_id=" << targetId
                           << " my_id=" << getDeviceId();
+        */
 
         if (viewerId == getDeviceId()) {
-            qInfo().noquote() << "[KickDiag] kick_viewer applied on viewer side"
+            /*
+            // qInfo().noquote() << "[KickDiag] kick_viewer applied on viewer side"
                               << " target_id=" << targetId;
+            */
             if (m_waitingDialog) {
                 m_waitingDialog->close();
                 m_waitingDialog->deleteLater();
@@ -3280,7 +3294,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 }
             }
         } else {
-            qInfo().noquote() << "[KickDiag] kick_viewer ignored on this client";
+            /*
+            // qInfo().noquote() << "[KickDiag] kick_viewer ignored on this client";
+            */
         }
     } else if (type == "streaming_ok") {
         // 处理推流OK响应，开始拉流播放

@@ -28,6 +28,7 @@ signals:
     void cameraRequested();
     void snippetRequested();
     void clearRequested();
+    void remoteControlToggled(bool enabled);
 
 private slots:
     void onToolToggled(bool checked);
@@ -48,6 +49,7 @@ private:
     QPushButton *m_cameraButton;
     QPushButton *m_snippetButton;
     QPushButton *m_clearButton;
+    QPushButton *m_remoteCtrlButton;
 
     QString m_micButtonStyle;
     QString m_selectedToolStyle;

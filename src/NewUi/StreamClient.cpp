@@ -126,15 +126,15 @@ StreamClient::StreamClient(QObject *parent)
             return;
         }
         if (m_isConnected) {
-            emit logMessage(scTag(this) + QStringLiteral("lan_fallback_timer ignored: already connected url=%1 route=%2")
-                                .arg(m_lastUrl.toString(), wsRouteTagFromUrl(m_lastUrl)));
+            // emit logMessage(scTag(this) + QStringLiteral("lan_fallback_timer ignored: already connected url=%1 route=%2")
+            //                     .arg(m_lastUrl.toString(), wsRouteTagFromUrl(m_lastUrl)));
             m_lanSwitchInProgress = false;
             m_cloudFallbackUrl = QUrl();
             return;
         }
         if (!m_cloudFallbackUrl.isValid() || m_cloudFallbackUrl.isEmpty()) {
-            emit logMessage(scTag(this) + QStringLiteral("lan_fallback_timer stop: invalid cloud_fallback url=%1")
-                                .arg(m_lastUrl.toString()));
+            // emit logMessage(scTag(this) + QStringLiteral("lan_fallback_timer stop: invalid cloud_fallback url=%1")
+            //                     .arg(m_lastUrl.toString()));
             m_lanSwitchInProgress = false;
             return;
         }
@@ -143,8 +143,8 @@ StreamClient::StreamClient(QObject *parent)
         m_cloudFallbackUrl = QUrl();
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
         m_lanSwitchDisabledUntilMs = nowMs + 60000;
-        emit logMessage(scTag(this) + QStringLiteral("lan_fallback_timer fire: fallback_to_cloud url=%1")
-                            .arg(fallback.toString()));
+        // emit logMessage(scTag(this) + QStringLiteral("lan_fallback_timer fire: fallback_to_cloud url=%1")
+        //                     .arg(fallback.toString()));
         connectToServer(fallback);
     });
 
@@ -169,7 +169,7 @@ StreamClient::StreamClient(QObject *parent)
         m_cloudFallbackUrl = QUrl();
         m_lanAwaitingFirstFrame = false;
         m_lanSwitchInProgress = false;
-        emit logMessage(scTag(this) + QStringLiteral("lan_first_frame_timeout fallback_to_cloud url=%1").arg(fallback.toString()));
+        // emit logMessage(scTag(this) + QStringLiteral("lan_first_frame_timeout fallback_to_cloud url=%1").arg(fallback.toString()));
         connectToServer(fallback);
     });
 
@@ -231,9 +231,9 @@ void StreamClient::connectToServer(const QUrl &url)
         !m_lastUrl.isEmpty() &&
         url == m_lastUrl &&
         (st == QAbstractSocket::ConnectedState || st == QAbstractSocket::ConnectingState)) {
-        emit logMessage(scTag(this) + QStringLiteral("connect ignored: same url state=%1 url=%2")
-                            .arg(static_cast<int>(st))
-                            .arg(url.toString()));
+        // emit logMessage(scTag(this) + QStringLiteral("connect ignored: same url state=%1 url=%2")
+        //                     .arg(static_cast<int>(st))
+        //                     .arg(url.toString()));
         return;
     }
 
@@ -255,16 +255,17 @@ void StreamClient::connectToServer(const QUrl &url)
         }
         m_lanAwaitingFirstFrame = false;
     }
-    emit logMessage(scTag(this) + QStringLiteral("connect role=%1 route=%2 host=%3 port=%4 channel=%5 switching=%6 cloud_fallback=%7 url=%8")
-                        .arg(wsRoleTagFromUrl(url))
-                        .arg(wsRouteTagFromUrl(url))
-                        .arg(url.host())
-                        .arg(wsPortTag(url))
-                        .arg(roomIdFromUrl(url))
-                        .arg(m_lanSwitchInProgress ? QStringLiteral("true") : QStringLiteral("false"))
-                        .arg(m_cloudFallbackUrl.isValid() ? m_cloudFallbackUrl.toString() : QStringLiteral("-"))
-                        .arg(url.toString()));
-    emit logMessage(QStringLiteral("[StreamClient] connect %1").arg(url.toString()));
+    // emit logMessage(scTag(this) + QStringLiteral("connect role=%1 route=%2 host=%3 port=%4 channel=%5 switching=%6 cloud_fallback=%7 url=%8")
+    //                     .arg(wsRoleTagFromUrl(url))
+    //                     .arg(wsRouteTagFromUrl(url))
+    //                     .arg(url.host())
+    //                     .arg(wsPortTag(url))
+    //                     .arg(roomIdFromUrl(url))
+    //                     .arg(m_lanSwitchInProgress ? QStringLiteral("true") : QStringLiteral("false"))
+    //                     .arg(m_cloudFallbackUrl.isValid() ? m_cloudFallbackUrl.toString() : QStringLiteral("-"))
+    //                     .arg(url.toString()));
+
+    // emit logMessage(QStringLiteral("[StreamClient] connect %1").arg(url.toString()));
 
     m_pendingOpenUrl = QUrl();
     m_hasPendingOpen = false;
@@ -274,9 +275,9 @@ void StreamClient::connectToServer(const QUrl &url)
         m_pendingOpenUrl = url;
         m_hasPendingOpen = true;
         m_manualSwitchClose = true;
-        emit logMessage(scTag(this) + QStringLiteral("connect queued: closing current state=%1 pending_url=%2")
-                            .arg(static_cast<int>(st))
-                            .arg(url.toString()));
+        // emit logMessage(scTag(this) + QStringLiteral("connect queued: closing current state=%1 pending_url=%2")
+        //                     .arg(static_cast<int>(st))
+        //                     .arg(url.toString()));
         m_webSocket->close();
         return;
     }
@@ -306,8 +307,8 @@ void StreamClient::disconnectFromServer()
     m_pendingOpenUrl = QUrl();
     m_hasPendingOpen = false;
     m_manualSwitchClose = false;
-    emit logMessage(scTag(this) + QStringLiteral("disconnect last_url=%1").arg(m_lastUrl.toString()));
-    emit logMessage(QStringLiteral("[StreamClient] disconnect"));
+    // emit logMessage(scTag(this) + QStringLiteral("disconnect last_url=%1").arg(m_lastUrl.toString()));
+    // emit logMessage(QStringLiteral("[StreamClient] disconnect"));
     m_webSocket->close();
 }
 
@@ -327,9 +328,9 @@ void StreamClient::sendFrame(const QPixmap &pixmap, bool force)
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
         if (nowMs - m_lastDecodeFailLogAtMs > 5000) {
             m_lastDecodeFailLogAtMs = nowMs;
-            emit logMessage(scTag(this) + QStringLiteral("tx_jpg encode_failed quality=%1 url=%2")
-                                .arg(m_jpegQuality)
-                                .arg(m_lastUrl.toString()));
+            // emit logMessage(scTag(this) + QStringLiteral("tx_jpg encode_failed quality=%1 url=%2")
+            //                     .arg(m_jpegQuality)
+            //                     .arg(m_lastUrl.toString()));
         }
         return;
     }
@@ -339,11 +340,11 @@ void StreamClient::sendFrame(const QPixmap &pixmap, bool force)
     if (!force && !m_lastSentBytes.isEmpty() && bytes == m_lastSentBytes && (nowMs - m_lastSentAtMs) < resendSameFrameIntervalMs) {
         if (nowMs - m_lastTxSkipLogAtMs > 5000) {
             m_lastTxSkipLogAtMs = nowMs;
-            emit logMessage(scTag(this) + QStringLiteral("tx_jpg skipped_same bytes=%1 age_ms=%2 url=%3 route=%4")
-                                .arg(bytes.size())
-                                .arg(nowMs - m_lastSentAtMs)
-                                .arg(m_lastUrl.toString())
-                                .arg(wsRouteTagFromUrl(m_lastUrl)));
+            // emit logMessage(scTag(this) + QStringLiteral("tx_jpg skipped_same bytes=%1 age_ms=%2 url=%3 route=%4")
+            //                     .arg(bytes.size())
+            //                     .arg(nowMs - m_lastSentAtMs)
+            //                     .arg(m_lastUrl.toString())
+            //                     .arg(wsRouteTagFromUrl(m_lastUrl)));
         }
         return;
     }
@@ -355,6 +356,7 @@ void StreamClient::sendFrame(const QPixmap &pixmap, bool force)
         m_txFrames++;
         if (m_lastTxLogAtMs == 0 || (nowMs - m_lastTxLogAtMs) > 2000) {
             m_lastTxLogAtMs = nowMs;
+            /*
             emit logMessage(scTag(this) + QStringLiteral("tx_jpg ok frames=%1 bytes=%2 quality=%3 route=%4 channel=%5 url=%6")
                                 .arg(QString::number(m_txFrames))
                                 .arg(QString::number(bytes.size()))
@@ -362,23 +364,24 @@ void StreamClient::sendFrame(const QPixmap &pixmap, bool force)
                                 .arg(wsRouteTagFromUrl(m_lastUrl))
                                 .arg(roomIdFromUrl(m_lastUrl))
                                 .arg(m_lastUrl.toString()));
+            */
         }
     } else {
-        emit logMessage(scTag(this) + QStringLiteral("tx_jpg failed bytes=%1 ws_state=%2 err=%3 url=%4")
-                            .arg(bytes.size())
-                            .arg(static_cast<int>(m_webSocket ? m_webSocket->state() : QAbstractSocket::UnconnectedState))
-                            .arg(m_webSocket ? m_webSocket->errorString() : QStringLiteral("-"))
-                            .arg(m_lastUrl.toString()));
+        // emit logMessage(scTag(this) + QStringLiteral("tx_jpg failed bytes=%1 ws_state=%2 err=%3 url=%4")
+        //                     .arg(bytes.size())
+        //                     .arg(static_cast<int>(m_webSocket ? m_webSocket->state() : QAbstractSocket::UnconnectedState))
+        //                     .arg(m_webSocket ? m_webSocket->errorString() : QStringLiteral("-"))
+        //                     .arg(m_lastUrl.toString()));
     }
 }
 
 qint64 StreamClient::sendTextMessage(const QString &message)
 {
     if (!m_webSocket || m_webSocket->state() != QAbstractSocket::ConnectedState) {
-        emit logMessage(QStringLiteral("[StreamClient] sendTextMessage skipped: not connected"));
+        // emit logMessage(QStringLiteral("[StreamClient] sendTextMessage skipped: not connected"));
         return -1;
     }
-    emit logMessage(QStringLiteral("[StreamClient] sendTextMessage %1").arg(message));
+    // emit logMessage(QStringLiteral("[StreamClient] sendTextMessage %1").arg(message));
     return m_webSocket->sendTextMessage(message);
 }
 
@@ -415,6 +418,7 @@ void StreamClient::onConnected()
         m_lanSwitchInProgress = false;
         m_cloudFallbackUrl = QUrl();
     }
+    /*
     emit logMessage(scTag(this) + QStringLiteral("connected role=%1 route=%2 host=%3 port=%4 channel=%5 url=%6")
                         .arg(wsRoleTagFromUrl(m_lastUrl))
                         .arg(wsRouteTagFromUrl(m_lastUrl))
@@ -422,7 +426,8 @@ void StreamClient::onConnected()
                         .arg(wsPortTag(m_lastUrl))
                         .arg(roomIdFromUrl(m_lastUrl))
                         .arg(m_lastUrl.toString()));
-    emit logMessage(QStringLiteral("[StreamClient] connected"));
+    */
+    // emit logMessage(QStringLiteral("[StreamClient] connected"));
     emit connected();
     if (AppConfig::lanWsEnabled() &&
         isSubscribeUrl(m_lastUrl) &&
@@ -434,11 +439,11 @@ void StreamClient::onConnected()
         if (u.isValid() && !u.isEmpty()) {
             m_cloudFallbackUrl = m_lastUrl;
             m_lanSwitchInProgress = true;
-            emit logMessage(scTag(this) + QStringLiteral("switch_to_lan_cached room=%1 base_urls=%2 from=%3 to=%4")
-                                .arg(roomId)
-                                .arg(bases.join(QStringLiteral(",")))
-                                .arg(m_cloudFallbackUrl.toString())
-                                .arg(u.toString()));
+            // emit logMessage(scTag(this) + QStringLiteral("switch_to_lan_cached room=%1 base_urls=%2 from=%3 to=%4")
+            //                     .arg(roomId)
+            //                     .arg(bases.join(QStringLiteral(",")))
+            //                     .arg(m_cloudFallbackUrl.toString())
+            //                     .arg(u.toString()));
             connectToServer(u);
             startLanFallbackTimer();
             return;
@@ -458,11 +463,13 @@ void StreamClient::onConnected()
 void StreamClient::onDisconnected()
 {
     m_isConnected = false;
+/*
     emit logMessage(scTag(this) + QStringLiteral("disconnected role=%1 route=%2 url=%3")
                         .arg(wsRoleTagFromUrl(m_lastUrl))
                         .arg(wsRouteTagFromUrl(m_lastUrl))
                         .arg(m_lastUrl.toString()));
     emit logMessage(QStringLiteral("[StreamClient] disconnected"));
+*/
     emit disconnected();
 
     if (m_manualSwitchClose && m_hasPendingOpen && m_pendingOpenUrl.isValid() && !m_pendingOpenUrl.isEmpty()) {
@@ -470,7 +477,7 @@ void StreamClient::onDisconnected()
         m_pendingOpenUrl = QUrl();
         m_hasPendingOpen = false;
         m_manualSwitchClose = false;
-        emit logMessage(scTag(this) + QStringLiteral("connect dequeued: opening pending_url=%1").arg(target.toString()));
+        // emit logMessage(scTag(this) + QStringLiteral("connect dequeued: opening pending_url=%1").arg(target.toString()));
         if (m_webSocket) {
             m_webSocket->open(target);
         }
@@ -527,10 +534,12 @@ void StreamClient::onTextMessageReceived(const QString &message)
         if (bases.isEmpty()) {
             return;
         }
+/*
         emit logMessage(scTag(this) + QStringLiteral("tx lan_offer room=%1 base_urls=%2 url=%3")
                             .arg(roomId)
                             .arg(bases.join(QStringLiteral(",")))
                             .arg(m_lastUrl.toString()));
+*/
         QJsonArray arr;
         for (const QString &b : bases) {
             arr.append(b);
@@ -623,11 +632,13 @@ void StreamClient::onError(QAbstractSocket::SocketError error)
             if (u.isValid() && !u.isEmpty()) {
                 m_cloudFallbackUrl = m_lastUrl;
                 m_lanSwitchInProgress = true;
-                emit logMessage(scTag(this) + QStringLiteral("switch_to_lan room=%1 base_urls=%2 from=%3 to=%4")
-                                    .arg(roomId)
-                                    .arg(bases.join(QStringLiteral(",")))
-                                    .arg(m_cloudFallbackUrl.toString())
-                                    .arg(u.toString()));
+/*
+    emit logMessage(scTag(this) + QStringLiteral("switch_to_lan room=%1 base_urls=%2 from=%3 to=%4")
+                        .arg(roomId)
+                        .arg(bases.join(QStringLiteral(",")))
+                        .arg(m_cloudFallbackUrl.toString())
+                        .arg(u.toString()));
+*/
                 connectToServer(u);
                 startLanFallbackTimer();
                 return;

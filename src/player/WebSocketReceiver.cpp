@@ -426,9 +426,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             if (m_lanConnected) {
                 return;
             }
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_connect_timeout; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
+            // qInfo().noquote() << "[KickDiag][Receiver] lan_probe_connect_timeout; fallback_to_cloud"
+            //                   << " pending_lan=" << m_pendingLanUrl
+            //                   << " cloud=" << m_cloudFallbackUrl;
             if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
                 retryLanUrl = m_pendingLanUrl;
                 retryFromUrl = m_cloudFallbackUrl;
@@ -480,9 +480,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             if (m_lanHelloAcked) {
                 return;
             }
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_hello_timeout; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
+            // // qInfo().noquote() << "[KickDiag][Receiver] lan_probe_hello_timeout; fallback_to_cloud"
+            // //                   << " pending_lan=" << m_pendingLanUrl
+            // //                   << " cloud=" << m_cloudFallbackUrl;
             if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
                 retryLanUrl = m_pendingLanUrl;
                 retryFromUrl = m_cloudFallbackUrl;
@@ -529,9 +529,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
             if (m_linkState != LinkState::LanProbing || !m_lanAwaitingFirstFrame) {
                 return;
             }
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_first_frame_timeout; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
+            // qInfo().noquote() << "[KickDiag][Receiver] lan_probe_first_frame_timeout; fallback_to_cloud"
+            //                   << " pending_lan=" << m_pendingLanUrl
+            //                   << " cloud=" << m_cloudFallbackUrl;
             if (lanOnly && !m_pendingLanUrl.isEmpty() && !m_cloudFallbackUrl.isEmpty()) {
                 retryLanUrl = m_pendingLanUrl;
                 retryFromUrl = m_cloudFallbackUrl;
@@ -595,9 +595,9 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         if (!shouldRetry || !m_webSocket || m_webSocket->state() != QAbstractSocket::ConnectedState) {
             return;
         }
-        qInfo().noquote() << "[KickDiag][Receiver] video_start_retry"
-                          << " attempt=" << attempt
-                          << " url=" << url;
+        // qInfo().noquote() << "[KickDiag][Receiver] video_start_retry"
+        //                   << " attempt=" << attempt
+        //                   << " url=" << url;
         QJsonObject startStreamingMessage;
         startStreamingMessage["type"] = "start_streaming";
         startStreamingMessage["viewer_id"] = viewerId;
@@ -683,10 +683,10 @@ WebSocketReceiver::WebSocketReceiver(QObject *parent)
         if (shouldSend && m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
             const QString channelId = roomIdFromWsUrlString(currentUrl);
             if (!channelId.isEmpty()) {
-                qInfo().noquote() << "[KickDiag][Receiver] tx lan_offer_request_retry"
-                                  << " attempt=" << attemptNo
-                                  << " channel_id=" << channelId
-                                  << " url=" << currentUrl;
+                // qInfo().noquote() << "[KickDiag][Receiver] tx lan_offer_request_retry"
+                //                   << " attempt=" << attemptNo
+                //                   << " channel_id=" << channelId
+                //                   << " url=" << currentUrl;
                 QJsonObject req;
                 req["type"] = "lan_offer_request";
                 req["channel_id"] = channelId;
@@ -752,7 +752,7 @@ void WebSocketReceiver::setupWebSocket()
     if (dumpWsText) {
         connect(m_webSocket, &QWebSocket::textMessageReceived, this, [](const QString &msg) {
             if (!msg.contains(QStringLiteral("mouse_position")) && !msg.contains(QStringLiteral("audio_opus"))) {
-                qInfo().noquote() << "[KickDiag][Receiver] RX MSG:" << msg.left(200);
+                // qInfo().noquote() << "[KickDiag][Receiver] RX MSG:" << msg.left(200);
             }
         });
     }
@@ -760,9 +760,9 @@ void WebSocketReceiver::setupWebSocket()
 
 void WebSocketReceiver::startLanProbe(const QString &lanUrl, const QString &fromUrl)
 {
-    qInfo().noquote() << "[KickDiag][Receiver] start_lan_probe"
-                      << " from=" << fromUrl
-                      << " to=" << lanUrl;
+    // qInfo().noquote() << "[KickDiag][Receiver] start_lan_probe"
+    //                   << " from=" << fromUrl
+    //                   << " to=" << lanUrl;
     QPointer<QWebSocket> oldLanWs;
     {
         QMutexLocker locker(&m_mutex);
@@ -931,12 +931,40 @@ bool WebSocketReceiver::connectToServer(const QString &url)
     }
     locker.unlock();
     if (shouldStartLanProbe) {
+        /*
         qInfo().noquote() << "[KickDiag][Receiver] cached_switch_to_lan"
                           << " to=" << lanProbeUrl
                           << " from=" << lanProbeFromUrl;
+        */
         startLanProbe(lanProbeUrl, lanProbeFromUrl);
     }
     return true;
+}
+
+void WebSocketReceiver::sendRemoteInput(const QString &type, int x, int y, int button, int delta)
+{
+    QJsonObject json;
+    json["type"] = "remote_input";
+    json["input_type"] = type;
+    json["x"] = x;
+    json["y"] = y;
+    if (button != 0) json["button"] = button;
+    if (delta != 0) json["delta"] = delta;
+    
+    {
+        QMutexLocker locker(&m_mutex);
+        if (!m_lastViewerId.isEmpty()) json["viewer_id"] = m_lastViewerId;
+        if (!m_lastTargetId.isEmpty()) json["target_id"] = m_lastTargetId;
+    }
+
+    QByteArray data = QJsonDocument(json).toJson(QJsonDocument::Compact);
+
+    QMutexLocker locker(&m_mutex);
+    if (m_lanWebSocket && m_lanWebSocket->state() == QAbstractSocket::ConnectedState) {
+        m_lanWebSocket->sendTextMessage(data);
+    } else if (m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
+        m_webSocket->sendTextMessage(data);
+    }
 }
 
 void WebSocketReceiver::stopAudio()
@@ -1004,8 +1032,8 @@ void WebSocketReceiver::disconnectFromServer()
             stopData = stopDoc.toJson(QJsonDocument::Compact);
             shouldSendExitAndStop = true;
         } else {
-            qInfo().noquote() << "[KickDiag][Receiver] disconnect suppress_exit_stop (lan_switch)"
-                              << " url=" << m_serverUrl;
+            // qInfo().noquote() << "[KickDiag][Receiver] disconnect suppress_exit_stop (lan_switch)"
+            //                   << " url=" << m_serverUrl;
         }
     }
 
@@ -1255,9 +1283,9 @@ void WebSocketReceiver::onConnected()
         }
     }
     if (needLanOffer && m_webSocket && m_webSocket->state() == QAbstractSocket::ConnectedState) {
-        qInfo().noquote() << "[KickDiag][Receiver] tx lan_offer_request"
-                          << " channel_id=" << channelId
-                          << " url=" << serverUrlCopy;
+        // qInfo().noquote() << "[KickDiag][Receiver] tx lan_offer_request"
+        //                   << " channel_id=" << channelId
+        //                   << " url=" << serverUrlCopy;
         QJsonObject req;
         req["type"] = "lan_offer_request";
         req["channel_id"] = channelId;
@@ -1293,9 +1321,9 @@ void WebSocketReceiver::onDisconnected()
     if (disconnectedWs == m_lanWebSocket) {
         m_lanConnected = false;
         if (m_linkState == LinkState::LanProbing) {
-            qInfo().noquote() << "[KickDiag][Receiver] lan_probe_disconnected; fallback_to_cloud"
-                              << " pending_lan=" << m_pendingLanUrl
-                              << " cloud=" << m_cloudFallbackUrl;
+            // qInfo().noquote() << "[KickDiag][Receiver] lan_probe_disconnected; fallback_to_cloud"
+            //                   << " pending_lan=" << m_pendingLanUrl
+            //                   << " cloud=" << m_cloudFallbackUrl;
             const bool lanOnly = AppConfig::lanOnlyEnabled();
             QString retryLanUrl;
             QString retryFromUrl;
@@ -1532,8 +1560,8 @@ void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
     }
 
     if (shouldPromoteLan && cloudWsToClose) {
-        qInfo().noquote() << "[KickDiag][Receiver] promote_to_lan on keyframe"
-                          << " url=" << promoteLanUrl;
+        // qInfo().noquote() << "[KickDiag][Receiver] promote_to_lan on keyframe"
+        //                   << " url=" << promoteLanUrl;
         cloudWsToClose->disconnect(this);
         cloudWsToClose->close();
         cloudWsToClose->deleteLater();
@@ -1673,8 +1701,7 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             if (!AppConfig::lanWsEnabled()) {
                 return;
             }
-            // [KickDiag] Log receipt of lan_offer
-            qInfo().noquote() << "[KickDiag][Receiver] RX MSG: lan_offer received from " << m_serverUrl;
+            // qInfo().noquote() << "[KickDiag][Receiver] RX MSG: lan_offer received from " << m_serverUrl;
 
             const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
             {
@@ -1732,14 +1759,18 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
             const QString lanUrl = pickBestLanSubscribeUrlString(bases, channelId, currentUrl);
             if (lanUrl.isEmpty() || lanUrl == currentUrl) {
                 if (bases.isEmpty()) {
+                    /*
                     qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer no_valid_lan_bases"
                                       << " channel_id=" << channelId
                                       << " url=" << currentUrl;
+                    */
                 } else if (lanUrl.isEmpty()) {
+                    /*
                     qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer no_pick_lan_url"
                                       << " channel_id=" << channelId
                                       << " base_urls=" << bases.join(QStringLiteral(","))
                                       << " url=" << currentUrl;
+                    */
                 }
                 return;
             }
@@ -1764,11 +1795,11 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 }
             }
 
-            qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer switch_to_lan"
-                              << " channel_id=" << channelId
-                              << " base_urls=" << basesJoined
-                              << " chosen=" << chosenUrl
-                              << " from=" << fromUrl;
+            // qInfo().noquote() << "[KickDiag][Receiver] rx lan_offer switch_to_lan"
+            //                   << " channel_id=" << channelId
+            //                   << " base_urls=" << basesJoined
+            //                   << " chosen=" << chosenUrl
+            //                   << " from=" << fromUrl;
 
             if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
                 m_lanOfferRetryTimer->stop();
@@ -2008,17 +2039,17 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 myViewerId = m_lastViewerId;
             }
             QString payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-            qInfo().noquote() << "[KickDiag] kick_viewer received on stream ws"
-                              << " viewer_id=" << viewerId
-                              << " target_id=" << targetId
-                              << " session_viewer_id=" << myViewerId
-                              << " payload=" << payload;
+            // qInfo().noquote() << "[KickDiag] kick_viewer received on stream ws"
+            //                   << " viewer_id=" << viewerId
+            //                   << " target_id=" << targetId
+            //                   << " session_viewer_id=" << myViewerId
+            //                   << " payload=" << payload;
             if (!viewerId.isEmpty() && !myViewerId.isEmpty() && viewerId == myViewerId) {
-                qInfo().noquote() << "[KickDiag] kick_viewer matches session; emitting kicked"
-                                  << " target_id=" << targetId;
+                // qInfo().noquote() << "[KickDiag] kick_viewer matches session; emitting kicked"
+                //                   << " target_id=" << targetId;
                 emit kicked(targetId);
             } else {
-                qInfo().noquote() << "[KickDiag] kick_viewer ignored on this session";
+                // qInfo().noquote() << "[KickDiag] kick_viewer ignored on this session";
             }
             return;
         }
@@ -2125,11 +2156,13 @@ void WebSocketReceiver::onError(QAbstractSocket::SocketError error)
             const QString lanUrl = pickBestLanSubscribeUrlString(bases, channelId, currentUrl);
 
             if (!lanUrl.isEmpty()) {
-                qInfo().noquote() << "[KickDiag][Receiver] onError switch_to_lan"
+                /*
+                // qInfo().noquote() << "[KickDiag][Receiver] onError switch_to_lan"
                                   << " channel_id=" << channelId
                                   << " base_urls=" << bases.join(QStringLiteral(","))
                                   << " to=" << lanUrl
                                   << " from=" << currentUrl;
+                */
                 if (m_lanOfferRetryTimer && m_lanOfferRetryTimer->isActive()) {
                     m_lanOfferRetryTimer->stop();
                 }
@@ -2290,9 +2323,9 @@ void WebSocketReceiver::updateStats()
     locker.unlock();
 
     if (shouldProbeLan) {
-        qInfo().noquote() << "[KickDiag][Receiver] cached_switch_to_lan_tick"
-                          << " to=" << probeLanUrl
-                          << " from=" << probeFromUrl;
+        // qInfo().noquote() << "[KickDiag][Receiver] cached_switch_to_lan_tick"
+        //                   << " to=" << probeLanUrl
+        //                   << " from=" << probeFromUrl;
         startLanProbe(probeLanUrl, probeFromUrl);
     }
 
@@ -2304,10 +2337,10 @@ void WebSocketReceiver::updateStats()
             if (nudgeViewerId.isEmpty() || nudgeTargetId.isEmpty()) {
                 return;
             }
-            qInfo().noquote() << "[KickDiag][Receiver] video_frame_stall_nudge"
-                              << " gap_ms=" << nudgeGapMs
-                              << " attempt=" << nudgeAttempt
-                              << " url=" << m_serverUrl;
+            // qInfo().noquote() << "[KickDiag][Receiver] video_frame_stall_nudge"
+            //                   << " gap_ms=" << nudgeGapMs
+            //                   << " attempt=" << nudgeAttempt
+            //                   << " url=" << m_serverUrl;
             QJsonObject startStreamingMessage;
             startStreamingMessage["type"] = "start_streaming";
             startStreamingMessage["viewer_id"] = nudgeViewerId;
@@ -2412,10 +2445,10 @@ void WebSocketReceiver::sendWatchRequest(const QString &viewerId, const QString 
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
     // 日志清理：移除观看请求打印
-    qInfo().noquote() << "[KickDiag][Receiver] tx watch_request"
-                      << " viewer_id=" << viewerId
-                      << " target_id=" << targetId
-                      << " url=" << m_serverUrl;
+    // qInfo().noquote() << "[KickDiag][Receiver] tx watch_request"
+    //                   << " viewer_id=" << viewerId
+    //                   << " target_id=" << targetId
+    //                   << " url=" << m_serverUrl;
     
     m_webSocket->sendTextMessage(jsonString);
     
@@ -3256,5 +3289,7 @@ bool WebSocketReceiver::produceOpusFrame(QByteArray &out)
     return false;
 }
 
+
+// 瓦片消息处理方法实现已移除
 
 // 瓦片消息处理方法实现已移除

@@ -91,13 +91,13 @@ int main(int argc, char *argv[])
         const quint16 port = static_cast<quint16>(AppConfig::lanDiscoveryPort());
         const bool ok = sock->bind(QHostAddress::AnyIPv4, port, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
         if (!ok) {
-            qWarning().noquote() << "[KickDiag][LanDiscovery] bind_failed"
-                                 << " port=" << port
-                                 << " err=" << sock->errorString();
+            // qWarning().noquote() << "[KickDiag][LanDiscovery] bind_failed"
+            //                      << " port=" << port
+            //                      << " err=" << sock->errorString();
             sock->deleteLater();
         } else {
-            qInfo().noquote() << "[KickDiag][LanDiscovery] listening"
-                              << " port=" << port;
+            // qInfo().noquote() << "[KickDiag][LanDiscovery] listening"
+            //                   << " port=" << port;
             QObject::connect(sock, &QUdpSocket::readyRead, &app, [sock]() {
                 while (sock->hasPendingDatagrams()) {
                     QHostAddress sender;
@@ -129,10 +129,10 @@ int main(int argc, char *argv[])
                     static QHash<QString, QString> last;
                     if (last.value(targetId) != base) {
                         last.insert(targetId, base);
-                        qInfo().noquote() << "[KickDiag][LanDiscovery] discovered"
-                                          << " target_id=" << targetId
-                                          << " base=" << base
-                                          << " udp_port=" << senderPort;
+                        // qInfo().noquote() << "[KickDiag][LanDiscovery] discovered"
+                        //                   << " target_id=" << targetId
+                        //                   << " base=" << base
+                        //                   << " udp_port=" << senderPort;
                     }
                 }
             });

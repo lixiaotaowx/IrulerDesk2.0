@@ -55,6 +55,7 @@
 #include "ScreenCapture.h"
 #include "VP9Encoder.h"
 #include "WebSocketSender.h"
+#include "InputSimulator.h"
 #include "MouseCapture.h" // 新增：鼠标捕获头文件
 // 性能监控禁用：避免统计带来的额外开销
 #include "AnnotationOverlay.h"
@@ -67,6 +68,9 @@ bool getMicEnabledFromConfig();
 QString getDeviceIdFromConfig();
 QString getServerAddressFromConfig();
 int getScreenIndexFromConfig();
+
+// Global static pointer for InputSimulator to ensure visibility in lambdas
+static InputSimulator *staticInputSim = nullptr;
 
 namespace {
 class LanRelayServer final : public QObject
@@ -150,10 +154,10 @@ private:
                 room.publisher->deleteLater();
             }
             room.publisher = sock;
-            qInfo().noquote() << "[LanRelay] Publisher connected for room:" << roomId;
+            // qInfo().noquote() << "[LanRelay] Publisher connected for room:" << roomId;
 
             if (!room.pendingTextToPublisher.isEmpty()) {
-                qInfo().noquote() << "[LanRelay] Flushing " << room.pendingTextToPublisher.size() << " pending text messages to publisher";
+                // qInfo().noquote() << "[LanRelay] Flushing " << room.pendingTextToPublisher.size() << " pending text messages to publisher";
                 for (const QString &msg : room.pendingTextToPublisher) {
                     if (sock->state() == QAbstractSocket::ConnectedState) {
                         sock->sendTextMessage(msg);
@@ -174,7 +178,7 @@ private:
                 auto it = m_rooms.find(roomId);
                 if (it == m_rooms.end()) return;
                 static int binLogCount = 0;
-                if (++binLogCount % 60 == 0) qInfo().noquote() << "[LanRelay] Fwd binary from pub to " << it->subscribers.size() << " subs. Size:" << msg.size();
+                // if (++binLogCount % 60 == 0) qInfo().noquote() << "[LanRelay] Fwd binary from pub to " << it->subscribers.size() << " subs. Size:" << msg.size();
                 for (QWebSocket *rawSub : it->subscribers) {
                     QPointer<QWebSocket> sub = rawSub;
                     if (sub && sub->state() == QAbstractSocket::ConnectedState) {
@@ -189,7 +193,7 @@ private:
                 const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_lanrelay_text")).trimmed();
                 const bool dumpLanRelayText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
                 if (dumpLanRelayText) {
-                    qInfo().noquote() << "[LanRelay] Fwd text from pub to " << it->subscribers.size() << " subs: " << msg.left(200);
+                    // qInfo().noquote() << "[LanRelay] Fwd text from pub to " << it->subscribers.size() << " subs: " << msg.left(200);
                 }
                 for (QWebSocket *rawSub : it->subscribers) {
                     QPointer<QWebSocket> sub = rawSub;
@@ -200,7 +204,7 @@ private:
             });
         } else {
             room.subscribers.insert(sock);
-            qInfo().noquote() << "[LanRelay] Subscriber connected for room:" << roomId;
+            // qInfo().noquote() << "[LanRelay] Subscriber connected for room:" << roomId;
 
             connect(sock, &QWebSocket::textMessageReceived, this, [this, roomId](const QString &msg) {
                 auto it = m_rooms.find(roomId);
@@ -210,14 +214,14 @@ private:
                     const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_lanrelay_text")).trimmed();
                     const bool dumpLanRelayText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
                     if (dumpLanRelayText) {
-                        qInfo().noquote() << "[LanRelay] Fwd text from sub to pub: " << msg.left(200);
+                        // qInfo().noquote() << "[LanRelay] Fwd text from sub to pub: " << msg.left(200);
                     }
                     pub->sendTextMessage(msg);
                 } else {
                     const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_lanrelay_text")).trimmed();
                     const bool dumpLanRelayText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
                     if (dumpLanRelayText) {
-                        qInfo().noquote() << "[LanRelay] Buffering text from sub (no pub): " << msg.left(200);
+                        // qInfo().noquote() << "[LanRelay] Buffering text from sub (no pub): " << msg.left(200);
                     }
                     it->pendingTextToPublisher.append(msg);
                     if (it->pendingTextToPublisher.size() > 12) {
@@ -370,11 +374,13 @@ private:
         
         if (forceLog || nowMs - m_lastLogAtMs > 60000) {
             m_lastLogAtMs = nowMs;
-            qInfo().noquote() << "[KickDiag][LanDiscovery] broadcast"
+/*
+            // qInfo().noquote() << "[KickDiag][LanDiscovery] broadcast"
                               << " device_id=" << m_deviceId
                               << " user_name=" << (m_userName.isEmpty() ? "<EMPTY>" : m_userName)
                               << " ws_port=" << wsPort
                               << " udp_port=" << udpPort;
+*/
         }
         scheduleNext();
     }
@@ -870,21 +876,28 @@ int main(int argc, char *argv[])
     // qDebug() << "[CaptureProcess] 初始化鼠标捕获模块...";
     MouseCapture *mouseCapture = new MouseCapture(&app);
     
+    // 创建输入模拟器
+    InputSimulator *inputSim = new InputSimulator(&app);
+
     // 设置鼠标坐标缩放和屏幕偏移
-    // 计算当前屏幕的物理区域
-    QRect currentScreenRect;
+    // 计算当前屏幕的物理区域和逻辑区域
+    QRect currentScreenRect; // Physical
+    QRect logicalScreenRect; // Logical
     int initialScreenIdx = getScreenIndexFromConfig();
     if (initialScreenIdx >= 0 && initialScreenIdx < QApplication::screens().size()) {
         QScreen *scr = QApplication::screens().at(initialScreenIdx);
         qreal dpr = scr->devicePixelRatio();
         QRect geo = scr->geometry();
+        logicalScreenRect = geo;
         currentScreenRect = QRect(qRound(geo.x() * dpr), qRound(geo.y() * dpr), 
                                   qRound(geo.width() * dpr), qRound(geo.height() * dpr));
     } else {
+        logicalScreenRect = QRect(0, 0, actualScreenSize.width(), actualScreenSize.height()); // Fallback
         currentScreenRect = QRect(0, 0, actualScreenSize.width(), actualScreenSize.height());
     }
     
     mouseCapture->setScreenRect(currentScreenRect, initEncodeSize);
+    inputSim->setScreenRect(logicalScreenRect, initEncodeSize);
     
     // 鼠标坐标转换的连接将在下面（静态变量声明之后）设置
     // qDebug() << "[CaptureProcess] 鼠标捕获模块初始化成功，已连接到WebSocket发送器";
@@ -898,6 +911,8 @@ int main(int argc, char *argv[])
     static ScreenCapture *staticCapture = capture;
     static VP9Encoder *staticEncoder = encoder;
     static MouseCapture *staticMouseCapture = mouseCapture; // 新增：静态鼠标捕获指针
+    // static InputSimulator *staticInputSim = inputSim; // Moved to global scope
+    if (inputSim) staticInputSim = inputSim;
     static WebSocketSender *staticSender = sender; // 新增：静态WebSocket发送器指针
     static WebSocketSender *staticLanSender = lanSender;
     static bool isCapturing = false; // 控制捕获状态
@@ -983,18 +998,22 @@ int main(int argc, char *argv[])
         targetEncodeSize = encodeSize;
         
         // 更新鼠标捕获的屏幕区域信息
-        QRect newScreenRect;
+        QRect newScreenRect; // Physical
+        QRect newLogicalRect; // Logical
         if (currentScreenIndex >= 0 && currentScreenIndex < screens.size()) {
             QScreen *scr = screens.at(currentScreenIndex);
             qreal dpr = scr->devicePixelRatio();
             QRect geo = scr->geometry();
+            newLogicalRect = geo;
             newScreenRect = QRect(qRound(geo.x() * dpr), qRound(geo.y() * dpr), 
                                   qRound(geo.width() * dpr), qRound(geo.height() * dpr));
         } else {
             newScreenRect = QRect(0, 0, newSize.width(), newSize.height());
+            newLogicalRect = QRect(0, 0, newSize.width(), newSize.height());
         }
         
         staticMouseCapture->setScreenRect(newScreenRect, encodeSize);
+        staticInputSim->setScreenRect(newLogicalRect, encodeSize);
         
         staticEncoder->forceKeyFrame();
 
@@ -1452,6 +1471,9 @@ int main(int argc, char *argv[])
         }
         
         staticMouseCapture->setScreenRect(qScreenRect, targetEncodeSize);
+        if (staticInputSim) {
+            staticInputSim->setScreenRect(qScreenRect, targetEncodeSize);
+        }
 
         // 按质量调整码率与静态内容降码策略
         staticEncoder->setSkipStaticFrames(false);
@@ -1570,6 +1592,7 @@ int main(int argc, char *argv[])
     QTimer *statusTimer = new QTimer(&app);
     QObject::connect(statusTimer, &QTimer::timeout, [&]() {
         if (isCapturing) {
+            /*
             qDebug() << "[CaptureProcess] Status - Capturing: Yes | Audio Frames Sent:" << audioFrameSendCount 
                      << "| Audio Source State:" << (audioSource ? audioSource->state() : -1)
                      << "| Opus Enc:" << (opusEnc ? "Ready" : "Null")
@@ -1577,6 +1600,7 @@ int main(int argc, char *argv[])
                      << "| Audio Input:" << (audioInput ? "Valid" : "Null")
                      << "| Bytes Avail:" << (audioInput ? audioInput->bytesAvailable() : -1)
                      << "| Sender Connected:" << sender->isConnected();
+            */
                      
             // 自动故障恢复：如果音频源停止了，或者长时间没有发送数据，尝试重启
             bool needsRestart = false;
@@ -1612,8 +1636,10 @@ int main(int argc, char *argv[])
                  noFrameTimer = 0; 
             }
         } else {
+            /*
             qDebug() << "[CaptureProcess] Status - Capturing: No | Connected:" << sender->isConnected()
                      << "| Waiting for start_streaming signal...";
+            */
         }
         
         // [Fix] Keep-Alive UI Overlay
@@ -2317,6 +2343,21 @@ int main(int argc, char *argv[])
         }
         applyQualitySetting(quality);
     });
+    
+    // 连接远程输入信号
+    auto handleRemoteInput = [](const QString &type, int x, int y, int button, int delta) {
+        if (!staticInputSim) return;
+        if (type != "move") {
+             // qInfo() << "[DEBUG_MOUSE] MainCapture received: " << type << x << y;
+        }
+        staticInputSim->onInputEvent(type, x, y, button, delta);
+    };
+    
+    QObject::connect(sender, &WebSocketSender::remoteInputReceived, handleRemoteInput);
+    if (lanSender) {
+        QObject::connect(lanSender, &WebSocketSender::remoteInputReceived, handleRemoteInput);
+    }
+
     if (lanSender) {
         QObject::connect(lanSender, &WebSocketSender::qualityChangeRequested, [&](const QString &quality) {
             if (!isAnyStreaming()) {
@@ -2708,6 +2749,18 @@ int main(int argc, char *argv[])
         auto captureStartTime = std::chrono::high_resolution_clock::now();
         QByteArray frameData = staticCapture->captureScreen();
         if (!frameData.isEmpty()) {
+            // Check for screen geometry changes (e.g. resolution change) to update input mapping
+            const QSize capSize = staticCapture->getScreenSize();
+            static QSize lastCapSize;
+            if (capSize != lastCapSize) {
+                lastCapSize = capSize;
+                if (staticInputSim && currentScreenIndex >= 0 && currentScreenIndex < QApplication::screens().size()) {
+                    QRect logicalRect = QApplication::screens()[currentScreenIndex]->geometry();
+                    // Update InputSimulator with new logical rect and current encode size
+                    staticInputSim->setScreenRect(logicalRect, targetEncodeSize);
+                }
+            }
+
             auto captureEndTime = std::chrono::high_resolution_clock::now();
             auto captureLatency = std::chrono::duration_cast<std::chrono::microseconds>(captureEndTime - captureStartTime).count();
             frameCount++;
@@ -2717,7 +2770,7 @@ int main(int argc, char *argv[])
             
             // 如果编码目标分辨率与屏幕尺寸不同（例如低质720p），VP9Encoder会自动使用libyuv进行高效缩放
             // 移除了此前导致4K卡顿和异常的QImage::scaled操作
-            const QSize capSize = staticCapture->getScreenSize();
+            // const QSize capSize = staticCapture->getScreenSize();
             
             // 继续正常的VP9编码流程，传入实际捕获的尺寸
             // encode内部会根据初始化尺寸和输入尺寸自动判断是否需要缩放
@@ -2753,9 +2806,11 @@ int main(int argc, char *argv[])
     // 定期输出状态日志，确保用户知道进程还在运行以及ID是什么
     QTimer *aliveTimer = new QTimer(&app);
     QObject::connect(aliveTimer, &QTimer::timeout, [deviceId, serverUrl, isManualApprovalEnabledFromConfig]() {
+        /*
         qInfo().noquote() << "[CaptureProcess] ALIVE DeviceID=" << deviceId 
                           << " ManualApproval=" << isManualApprovalEnabledFromConfig()
                           << " Server=" << serverUrl;
+        */
     });
     aliveTimer->start(5000);
 
@@ -2772,7 +2827,7 @@ int main(int argc, char *argv[])
     // -------------------------------------------------------------------------
     if (watchdog) {
         QObject::connect(watchdog, &WatchdogClient::approvalReceived, [&]() {
-            qDebug() << "[CaptureProcess] Processing local approval...";
+            // qDebug() << "[CaptureProcess] Processing local approval...";
             pendingLocalApproval = true;
             if (sender) {
                 sender->localApproveWatchRequest();

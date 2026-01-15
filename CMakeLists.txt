@@ -97,6 +97,8 @@ set(CAPTURE_SOURCES
     src/capture/WebSocketClient.h         # WebSocket 客户端声明
     src/capture/WebSocketSender.cpp       # WebSocket 发送端实现：发送瓦片/帧/批注事件
     src/capture/WebSocketSender.h         # WebSocket 发送端声明
+    src/capture/InputSimulator.cpp        # 远程控制输入模拟器实现
+    src/capture/InputSimulator.h          # 远程控制输入模拟器声明
     src/capture/MouseCapture.cpp          # 鼠标捕获实现：记录鼠标位置与状态用于批注
     src/capture/MouseCapture.h            # 鼠标捕获声明
     src/capture/PerformanceMonitor.cpp    # 性能监控实现：统计编码/网络/帧率指标
@@ -142,6 +144,8 @@ set(VIDEO_COMPONENTS_SOURCES
     src/player/WebSocketReceiver.h              # WebSocket 接收端声明
     src/ui/BubbleTipWidget.cpp                  # 气泡提示控件
     src/ui/BubbleTipWidget.h                    # 气泡提示控件声明
+    src/video_components/ViewerInputHandler.cpp # 远程控制输入处理器实现
+    src/video_components/ViewerInputHandler.h   # 远程控制输入处理器声明
     src/ui/ScreenAnnotationWidget.cpp           # 屏幕批注透明层实现
     src/ui/ScreenAnnotationWidget.h             # 屏幕批注透明层声明
 )
@@ -292,36 +296,36 @@ if(MSVC AND WIN32)
 endif()
 
 # 为 Release/RelWithDebInfo 生成 PDB 并拷贝到输出目录（仅 MSVC 有效）
-if(MSVC)
-    # 确保为每个目标在 Release/RelWithDebInfo 生成 PDB
-    target_compile_options(ScreenStreamApp PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
-    target_link_options(ScreenStreamApp    PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
-    target_compile_options(CaptureProcess  PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
-    target_link_options(CaptureProcess     PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
-    target_compile_options(PlayerProcess   PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
-    target_link_options(PlayerProcess      PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
-
-    if(WIN32)
-        add_custom_command(TARGET ScreenStreamApp POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for ScreenStreamApp..."
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_PDB_FILE:ScreenStreamApp>
-                $<TARGET_FILE_DIR:ScreenStreamApp>/
-        )
-        add_custom_command(TARGET CaptureProcess POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for CaptureProcess..."
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_PDB_FILE:CaptureProcess>
-                $<TARGET_FILE_DIR:CaptureProcess>/
-        )
-        add_custom_command(TARGET PlayerProcess POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for PlayerProcess..."
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_PDB_FILE:PlayerProcess>
-                $<TARGET_FILE_DIR:PlayerProcess>/
-        )
-    endif()
-endif()
+# if(MSVC)
+#     # 确保为每个目标在 Release/RelWithDebInfo 生成 PDB
+#     target_compile_options(ScreenStreamApp PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
+#     target_link_options(ScreenStreamApp    PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
+#     target_compile_options(CaptureProcess  PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
+#     target_link_options(CaptureProcess     PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
+#     target_compile_options(PlayerProcess   PRIVATE $<$<CONFIG:Release>:/Zi> $<$<CONFIG:RelWithDebInfo>:/Zi>)
+#     target_link_options(PlayerProcess      PRIVATE $<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:RelWithDebInfo>:/DEBUG>)
+#
+#     if(WIN32)
+#         add_custom_command(TARGET ScreenStreamApp POST_BUILD
+#             COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for ScreenStreamApp..."
+#             COMMAND ${CMAKE_COMMAND} -E copy_if_different
+#                 $<TARGET_PDB_FILE:ScreenStreamApp>
+#                 $<TARGET_FILE_DIR:ScreenStreamApp>/
+#         )
+#         add_custom_command(TARGET CaptureProcess POST_BUILD
+#             COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for CaptureProcess..."
+#             COMMAND ${CMAKE_COMMAND} -E copy_if_different
+#                 $<TARGET_PDB_FILE:CaptureProcess>
+#                 $<TARGET_FILE_DIR:CaptureProcess>/
+#         )
+#         add_custom_command(TARGET PlayerProcess POST_BUILD
+#             COMMAND ${CMAKE_COMMAND} -E echo "Copying PDB for PlayerProcess..."
+#             COMMAND ${CMAKE_COMMAND} -E copy_if_different
+#                 $<TARGET_PDB_FILE:PlayerProcess>
+#                 $<TARGET_FILE_DIR:PlayerProcess>/
+#         )
+#     endif()
+# endif()
 
 # 自动部署Qt DLL
 if(WIN32)

@@ -108,6 +108,25 @@ void AnnotationToolbar::setupUI()
     );
     connect(m_clearButton, &QPushButton::clicked, this, &AnnotationToolbar::clearRequested);
 
+    // Remote Control Button
+    m_remoteCtrlButton = new QPushButton("控", this);
+    m_remoteCtrlButton->setCheckable(true);
+    m_remoteCtrlButton->setFixedSize(24, 24);
+    m_remoteCtrlButton->setToolTip(QStringLiteral("远程控制"));
+    m_remoteCtrlButton->setStyleSheet(
+        "QPushButton { "
+        "   background-color: transparent; "
+        "   color: white; "
+        "   border: none; "
+        "   border-radius: 4px; "
+        "   font-weight: bold;"
+        "   font-family: 'Microsoft YaHei';"
+        "} "
+        "QPushButton:hover { background-color: rgba(255, 255, 255, 20); }"
+        "QPushButton:checked { background-color: rgba(64, 158, 255, 180); border: 1px solid #409EFF; }"
+    );
+    connect(m_remoteCtrlButton, &QPushButton::toggled, this, &AnnotationToolbar::remoteControlToggled);
+
     // Layout
     m_layout->addWidget(m_colorButton);
     m_layout->addSpacing(2);
@@ -130,6 +149,8 @@ void AnnotationToolbar::setupUI()
     m_layout->addWidget(m_snippetButton);
     m_layout->addSpacing(2);
     m_layout->addWidget(m_clearButton);
+    m_layout->addSpacing(2);
+    m_layout->addWidget(m_remoteCtrlButton);
 }
 
 void AnnotationToolbar::onToolToggled(bool checked)

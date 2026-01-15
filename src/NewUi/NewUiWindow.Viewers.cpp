@@ -114,9 +114,9 @@ void NewUiWindow::addViewer(const QString &id, const QString &name)
     removeBtn->installEventFilter(this);
 
     connect(removeBtn, &QPushButton::clicked, this, [this, id]() {
-        qInfo().noquote() << "[KickDiag] kick button clicked"
-                          << " viewer_id=" << id
-                          << " my_id=" << m_myStreamId;
+        // qInfo().noquote() << "[KickDiag] kick button clicked"
+        //                   << " viewer_id=" << id
+        //                   << " my_id=" << m_myStreamId;
         emit kickViewerRequested(id);
     });
 
@@ -190,10 +190,10 @@ void NewUiWindow::updateViewerNameIfExists(const QString &id, const QString &nam
 void NewUiWindow::sendKickToSubscribers(const QString &viewerId)
 {
     if (!m_streamClient || !m_streamClient->isConnected()) {
-        qInfo().noquote() << "[KickDiag] kick not sent to room: stream client not connected"
-                          << " viewer_id=" << viewerId
-                          << " my_id=" << m_myStreamId;
-        return;
+        // qInfo().noquote() << "[KickDiag] kick not sent to room: stream client not connected"
+    //                   << " viewer_id=" << viewerId
+    //                   << " my_id=" << m_myStreamId;
+    //    return;
     }
     QJsonObject msg;
     msg["type"] = "kick_viewer";
@@ -201,10 +201,10 @@ void NewUiWindow::sendKickToSubscribers(const QString &viewerId)
     msg["target_id"] = m_myStreamId;
     msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     QString payload = QJsonDocument(msg).toJson(QJsonDocument::Compact);
-    qint64 bytes = m_streamClient->sendTextMessage(payload);
-    qInfo().noquote() << "[KickDiag] kick_viewer sent to room"
-                      << " bytes=" << bytes
-                      << " payload=" << payload;
+    // qint64 bytes = m_streamClient->sendTextMessage(payload);
+    // // qInfo().noquote() << "[KickDiag] kick_viewer sent to room"
+    // //                   << " bytes=" << bytes
+    // //                   << " payload=" << payload;
 }
 
 void NewUiWindow::removeViewer(const QString &id)

@@ -99,6 +99,9 @@ signals:
     void viewerExited(const QString &viewerId);
     void watchRequestReceived(const QString &viewerId, const QString &viewerName, const QString &targetId, int iconId);
 
+    // 远程控制信号
+    void remoteInputReceived(const QString &type, int x, int y, int button, int delta);
+
 private slots:
     void onConnected();
     void onDisconnected();

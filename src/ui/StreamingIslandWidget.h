@@ -19,6 +19,7 @@ public:
 
 signals:
     void stopStreamingRequested();
+    void remoteControlRequested(bool enabled);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;

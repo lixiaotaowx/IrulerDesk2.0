@@ -204,8 +204,15 @@
     } catch (_) {}
 
     function wsSend(obj) {
-      if (!state.ws || state.ws.readyState !== 1) throw new Error("ws not open");
-      state.ws.send(JSON.stringify(obj));
+      try {
+        if (!state.ws || state.ws.readyState !== 1) {
+            // throw new Error("ws not open");
+            return;
+        }
+        state.ws.send(JSON.stringify(obj));
+      } catch (e) {
+          // ignore
+      }
     }
 
     function scheduleReconnect(reason) {

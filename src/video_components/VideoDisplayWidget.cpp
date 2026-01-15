@@ -1,4 +1,5 @@
 #include "VideoDisplayWidget.h"
+#include "ViewerInputHandler.h"
 #include "../ui/ScreenAnnotationWidget.h"
 #include <iostream>
 #include "../player/DxvaVP9Decoder.h"
@@ -54,6 +55,15 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     // 创建解码器和接收器
     m_decoder = std::make_unique<DxvaVP9Decoder>();
     m_receiver = std::make_unique<WebSocketReceiver>();
+    // 初始化远程控制输入处理器
+    m_inputHandler = new ViewerInputHandler(this);
+    if (m_receiver) {
+        m_inputHandler->setReceiver(m_receiver.get());
+    }
+    if (m_videoLabel) {
+        m_inputHandler->setVideoLabel(m_videoLabel);
+    }
+
     m_receiver->setAudioOnly(m_audioOnlySession);
     if (!m_decoderInitialized) {
         m_decoderInitialized = m_decoder->initialize();
@@ -100,7 +110,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
             this, &VideoDisplayWidget::onMousePositionReceived);
 
     connect(m_receiver.get(), &WebSocketReceiver::kicked, this, [this](const QString &) {
-        qInfo().noquote() << "[KickDiag] VideoDisplayWidget received kicked; stopping receiving";
+        // qInfo().noquote() << "[KickDiag] VideoDisplayWidget received kicked; stopping receiving";
         QTimer::singleShot(0, this, [this]() {
             if (!m_isReceiving) return;
             showOfflineReminder(QStringLiteral("你已被房主移除"));
@@ -151,6 +161,11 @@ VideoDisplayWidget::~VideoDisplayWidget()
         QMutexLocker locker(&m_mutex);
         stopReceiving(false);
     }
+    // 手动清理输入处理器，确保在receiver销毁前清理
+    if (m_inputHandler) {
+        delete m_inputHandler;
+        m_inputHandler = nullptr;
+    }
     if (m_audioPlayer) {
         m_audioPlayer->stop();
     }
@@ -179,6 +194,7 @@ void VideoDisplayWidget::setupUI()
     m_videoLabel->setFocusPolicy(Qt::StrongFocus); // 允许接收键盘事件（用于Ctrl+Z撤销）
     m_videoLabel->setContextMenuPolicy(Qt::NoContextMenu); // 禁用默认右键菜单，避免干扰
     m_videoLabel->installEventFilter(this);
+    
     m_mainLayout->addWidget(m_videoLabel, 1); // 添加拉伸因子，让视频区域占据更多空间
 
     // 键盘快捷键：Ctrl+Z 撤销（窗口级）
@@ -227,6 +243,11 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     
     recreateReceiver();
     
+    // 更新输入处理器的接收器引用
+    if (m_inputHandler) {
+        m_inputHandler->setReceiver(m_receiver.get());
+    }
+
     m_serverUrl = serverUrl;
     
     // 解码器已在构造时预初始化；若未初始化则尝试一次
@@ -420,6 +441,13 @@ void VideoDisplayWidget::setViewerName(const QString &name)
     updateLocalCursorComposite();
 }
 
+void VideoDisplayWidget::setRemoteControlEnabled(bool enabled)
+{
+    if (m_inputHandler) {
+        m_inputHandler->setEnabled(enabled);
+    }
+}
+
 void VideoDisplayWidget::setShowControls(bool show)
 {
     m_showControls = show;
@@ -502,6 +530,11 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
         // 使用互斥锁保护显示更新，防止跳闪
         static QMutex displayMutex;
         QMutexLocker locker(&displayMutex);
+
+        // Update source size for input handler
+        if (m_inputHandler) {
+            m_inputHandler->setSourceSize(frameSize);
+        }
         
         // 检查标签尺寸有效性
         QSize labelSize = m_videoLabel->size();
@@ -539,6 +572,9 @@ void VideoDisplayWidget::renderFrame(const QByteArray &frameData, const QSize &f
         
         m_stats.framesDisplayed++;
         m_stats.frameSize = frameSize;
+        if (m_inputHandler) {
+            m_inputHandler->setSourceSize(frameSize);
+        }
         emit frameReceived();
         
         // 移除显示帧统计打印以提升性能
@@ -1505,6 +1541,9 @@ void VideoDisplayWidget::recreateReceiver()
     m_receiver.reset();
     // 创建新实例并重新连接信号
     m_receiver = std::make_unique<WebSocketReceiver>();
+    if (m_inputHandler) {
+        m_inputHandler->setReceiver(m_receiver.get());
+    }
     m_receiver->setAudioOnly(m_audioOnlySession);
     // [Fix] 重建接收器时恢复Session信息，确保批注功能正常工作
     if (!m_lastViewerId.isEmpty() && !m_lastTargetId.isEmpty()) {
@@ -1532,7 +1571,9 @@ void VideoDisplayWidget::recreateReceiver()
             this, &VideoDisplayWidget::onMousePositionReceived);
 
     connect(m_receiver.get(), &WebSocketReceiver::kicked, this, [this](const QString &) {
-        qInfo().noquote() << "[KickDiag] VideoDisplayWidget received kicked; stopping receiving";
+/*
+        // qInfo().noquote() << "[KickDiag] VideoDisplayWidget received kicked; stopping receiving";
+*/
         QTimer::singleShot(0, this, [this]() {
             if (!m_isReceiving) return;
             showOfflineReminder(QStringLiteral("你已被房主移除"));

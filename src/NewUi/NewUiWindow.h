@@ -9,6 +9,8 @@
 #include <QPushButton>
 #include <QIcon>
 #include <QPixmap>
+#include <QPointer>
+#include <QMessageBox>
 #include "StreamClient.h"
 #include "LoginClient.h"
 
@@ -30,12 +32,13 @@ public:
     ~NewUiWindow();
 
 protected:
+    void resizeEvent(QResizeEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
     bool event(QEvent *event) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     void changeEvent(QEvent *event) override;
 
@@ -47,6 +50,9 @@ private slots:
     void onLoginConnected();
     void toggleFunction1Maximize();
     void onBroadcastBtnClicked();
+    void onMeetingBtnClicked();
+    void onInviteRequested(const QStringList &userIds);
+    void onTextMessageReceived(const QString &message);
 
 public:
     void setMyStreamId(const QString &id, const QString &name = QString());
@@ -58,6 +64,7 @@ public:
     void setGlobalMicCheckedSilently(bool enabled);
     void janusSwitchToUserRoom(const QString &userId);
     void janusSwitchToMyRoom();
+    void janusSetIgnoreAlone(bool ignore);
     void janusSetMuted(bool muted);
     void janusStop();
     void showAudioCallUiForSession(const QString &peerId, bool forceEnableMic);
@@ -171,6 +178,14 @@ private:
     
     // Dragging support
     bool m_dragging = false;
+    bool m_isWaitingForAttendees = false;
+    QPointer<QMessageBox> m_inviteWaitDialog;
+    QWidget *m_expiredInviteNotification = nullptr;
+    QWidget *m_activeInviteNotification = nullptr;
+    void showExpiredInviteNotification(const QString &inviterName);
+    void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
+    void updateNotificationPositions();
+
     QPoint m_dragPosition;
 
     QListWidget *m_listWidget = nullptr;
@@ -287,6 +302,7 @@ private:
 
     bool m_globalMicEnabled = true;
     bool m_janusAudioLoaded = false;
+    bool m_janusIgnoreAlone = false;
     QString m_janusDesiredRoomOwnerId;
     QString m_janusActiveRoomOwnerId;
     QTimer *m_janusEnsureTimer = nullptr;

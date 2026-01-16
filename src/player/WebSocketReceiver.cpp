@@ -746,6 +746,7 @@ void WebSocketReceiver::setupWebSocket()
             this, &WebSocketReceiver::onError);
     connect(m_webSocket, &QWebSocket::sslErrors, this, &WebSocketReceiver::onSslErrors);
     connect(m_webSocket, &QWebSocket::stateChanged, this, &WebSocketReceiver::onStateChanged);
+    connect(m_webSocket, &QWebSocket::pong, this, &WebSocketReceiver::onPong);
 
     const QString dump = AppConfig::readConfigValue(QStringLiteral("kickdiag_dump_ws_text")).trimmed();
     const bool dumpWsText = (dump == QStringLiteral("1") || dump.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0);
@@ -1201,6 +1202,7 @@ void WebSocketReceiver::onConnected()
     {
         QMutexLocker locker(&m_mutex);
         m_connected = true;
+        m_lastResponseTime = QDateTime::currentMSecsSinceEpoch();
         m_reconnectAttempts = 0;
         m_connectionStartTime = QDateTime::currentMSecsSinceEpoch();
         stopReconnectTimer();
@@ -1488,6 +1490,11 @@ void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
         return;
     }
 
+    {
+        QMutexLocker locker(&m_mutex);
+        m_lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+    }
+
     QByteArray frameData;
     qint64 captureTimestamp = 0;
 
@@ -1601,6 +1608,10 @@ void WebSocketReceiver::onBinaryMessageReceived(const QByteArray &message)
 
 void WebSocketReceiver::onTextMessageReceived(const QString &message)
 {
+    {
+        QMutexLocker locker(&m_mutex);
+        m_lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+    }
     // 只在调试模式下输出日志，避免影响性能
     
     
@@ -2078,6 +2089,31 @@ void WebSocketReceiver::onTextMessageReceived(const QString &message)
                 // qInfo().noquote() << "[KickDiag] kick_viewer ignored on this session";
             }
             return;
+        } else if (type == "stop_streaming" || type == "viewer_exit") {
+             // 检查是否是当前观看的目标断开
+             QString targetId = obj.value("target_id").toString();
+             QString viewerId = obj.value("viewer_id").toString();
+             QString myTargetId;
+             QString myViewerId;
+             {
+                 QMutexLocker locker(&m_mutex);
+                 myTargetId = m_lastTargetId;
+                 myViewerId = m_lastViewerId;
+             }
+             // 如果是目标端发送的stop_streaming (target_id匹配且viewer_id为空或匹配)
+             // 或者如果是viewer_exit但来自目标端（异常情况）? 通常viewer_exit来自观看端
+             // 主要关注 producer 发出的 stop_streaming
+             if (type == "stop_streaming") {
+                 bool isForMe = false;
+                 if (!targetId.isEmpty() && targetId == myTargetId) {
+                     isForMe = true;
+                 }
+                 if (isForMe) {
+                     emit disconnected();
+                     emit connectionStatusChanged("对方已停止推流");
+                 }
+             }
+             return;
         }
     }
     
@@ -2345,6 +2381,26 @@ void WebSocketReceiver::updateStats()
     
     m_lastStatsUpdateTime = currentTime;
     
+    // 心跳保活与超时检测 (Heartbeat & Watchdog)
+    if (m_connected && m_webSocket) {
+        static int pingCounter = 0;
+        pingCounter++;
+        // 每3秒发送一次Ping
+        if (pingCounter % 3 == 0) {
+            m_webSocket->ping();
+        }
+        
+        // 超过8秒未收到任何数据或Pong，视为断线
+        if (m_lastResponseTime > 0 && (currentTime - m_lastResponseTime > 8000)) {
+            QTimer::singleShot(0, this, [this]() {
+                if (m_webSocket) {
+                    // qInfo() << "[WebSocketReceiver] Connection timed out (watchdog)";
+                    m_webSocket->abort(); 
+                }
+            });
+        }
+    }
+
     emit statsUpdated(m_stats);
     locker.unlock();
 
@@ -3317,5 +3373,14 @@ bool WebSocketReceiver::produceOpusFrame(QByteArray &out)
 
 
 // 瓦片消息处理方法实现已移除
+
+void WebSocketReceiver::onPong(quint64 elapsedTime, const QByteArray &payload)
+{
+    Q_UNUSED(elapsedTime);
+    Q_UNUSED(payload);
+    QMutexLocker locker(&m_mutex);
+    m_lastResponseTime = QDateTime::currentMSecsSinceEpoch();
+}
+
 
 // 瓦片消息处理方法实现已移除

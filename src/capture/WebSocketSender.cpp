@@ -521,8 +521,9 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
         int iconId = obj.value("viewer_icon_id").toInt(-1);
         const QString action = obj.value("action").toString();
         const bool audioOnly = obj.value("audio_only").toBool(false) || action == "audio_only";
+        const bool isInviteResponse = (action == "invite_response");
 
-        if (isManualApprovalEnabled()) {
+        if (isManualApprovalEnabled() && !isInviteResponse) {
             if (m_waitingForApproval) {
                 return;
             }
@@ -543,21 +544,41 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
                 emit viewerNameUpdateReceived(viewerId, viewerName);
                 emit viewerJoined(viewerId);
             }
-            if (m_isStreaming) {
-                stopStreaming();
+            // [Fix] Do not stop streaming if already running to support multiple viewers
+            if (!m_isStreaming) {
+                m_audioOnlyStreaming = audioOnly;
+                startStreaming();
+            } else {
+                // If already streaming video, do not downgrade to audio-only
+                if (m_audioOnlyStreaming && !audioOnly) {
+                     m_audioOnlyStreaming = false; // Upgrade to video
+                }
+                // If currently video (!m_audioOnlyStreaming) and request is audioOnly, 
+                // we keep video to satisfy existing viewers.
+                
+                // [Crucial Fix] Send streaming_ok to the NEW viewer even if we are already streaming.
+                // The new viewer needs this signal (and the stream_url) to start playing.
+                QJsonObject ok;
+                ok["type"] = "streaming_ok";
+                ok["viewer_id"] = viewerId;
+                ok["target_id"] = targetId;
+                QJsonDocument okDoc(ok);
+                sendTextMessage(okDoc.toJson(QJsonDocument::Compact));
             }
-            m_audioOnlyStreaming = audioOnly;
-            startStreaming();
+            
             if (!audioOnly) {
                 emit requestKeyFrame();
             }
             sendWatchAccepted(viewerId, targetId);
         }
     } else if (type == "start_streaming" || type == "start_streaming_request") {
+        const QString action = obj.value("action").toString();
+        const bool isInviteResponse = (action == "invite_response");
+
         const bool manualApproval = isManualApprovalEnabled();
         const bool isLanRelay = AppConfig::lanWsEnabled() && QUrl(m_serverUrl).port() == AppConfig::lanWsPort();
         const bool isStartRequest = (type == "start_streaming_request");
-        if (isStartRequest && manualApproval && !isLanRelay) {
+        if (isStartRequest && manualApproval && !isLanRelay && !isInviteResponse) {
             return;
         }
         if (isStartRequest && manualApproval && isLanRelay) {
@@ -586,7 +607,12 @@ void WebSocketSender::onTextMessageReceived(const QString &message)
             const bool audioOnly = obj.value("audio_only").toBool(false) || action == "audio_only";
             {
                 QMutexLocker locker(&m_mutex);
-                m_audioOnlyStreaming = audioOnly;
+                // [Fix] Do not downgrade to audio-only if already streaming video
+                if (m_isStreaming && !m_audioOnlyStreaming && audioOnly) {
+                    // Keep video
+                } else {
+                    m_audioOnlyStreaming = audioOnly;
+                }
             }
         }
         startStreaming();

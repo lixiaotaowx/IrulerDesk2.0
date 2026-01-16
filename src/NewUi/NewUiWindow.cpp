@@ -1,4 +1,6 @@
 #include "NewUiWindow.h"
+#include "InviteUsersDialog.h"
+#include <QMessageBox>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QPushButton>
@@ -48,8 +50,19 @@
 #include <QWebEngineSettings>
 #include <QWebChannel>
 #include <QSignalBlocker>
+#include <QAbstractButton>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <windowsx.h>
+#include <dwmapi.h>
+#endif
 #include <QDialog>
 #include <QLayout>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QLabel>
+#include <QPushButton>
 #include <QSizePolicy>
 #include <QUrlQuery>
 #include <QtGlobal>
@@ -434,18 +447,18 @@ enum ACCENT_STATE {
 using SetWindowCompositionAttributeFn = BOOL(WINAPI *)(HWND, WINDOWCOMPOSITIONATTRIBDATA *);
 using RtlGetVersionFn = LONG (WINAPI *)(OSVERSIONINFOW*);
 
-static bool isWindows11OrGreater() {
+static DWORD getWindowsBuildNumber() {
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-    if (!ntdll) return false;
+    if (!ntdll) return 0;
     auto fn = reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion"));
-    if (!fn) return false;
+    if (!fn) return 0;
 
     OSVERSIONINFOW rovi = { 0 };
     rovi.dwOSVersionInfoSize = sizeof(rovi);
     if (fn(&rovi) == 0) { // STATUS_SUCCESS
-        return rovi.dwBuildNumber >= 22000;
+        return rovi.dwBuildNumber;
     }
-    return false;
+    return 0;
 }
 
 static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
@@ -462,7 +475,11 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
     data.pvData = &policy;
     data.cbData = sizeof(policy);
 
-    if (isWindows11OrGreater()) {
+    DWORD build = getWindowsBuildNumber();
+
+    // Unified logic: Win10 (1803+) and Win11 use Acrylic with the provided color
+    // This allows testing Win11 visual style on Win10
+    if (build >= 17134) {
         policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
         policy.AccentFlags = 0;
         policy.GradientColor = abgrGradientColor;
@@ -471,13 +488,34 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
         }
     }
 
-    // Windows 10 or fallback
-    // Use darker tint (Black 0x000000) with high alpha (0xE6) to avoid "whiteness"
+    // Fallback (Older Win10 or if Acrylic fails)
     policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
     policy.AccentFlags = 0;
     policy.GradientColor = 0xE6000000;
 
     return fn(hwnd, &data) != FALSE;
+}
+
+static void disableAcrylic(HWND hwnd)
+{
+    if (!hwnd) return;
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) return;
+    auto fn = reinterpret_cast<SetWindowCompositionAttributeFn>(GetProcAddress(user32, "SetWindowCompositionAttribute"));
+    if (!fn) return;
+
+    ACCENT_POLICY policy{};
+    WINDOWCOMPOSITIONATTRIBDATA data{};
+    data.Attrib = WCA_ACCENT_POLICY;
+    data.pvData = &policy;
+    data.cbData = sizeof(policy);
+
+    // Use standard blur or disabled. Standard blur (ACCENT_ENABLE_BLURBEHIND) is faster.
+    policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
+    policy.AccentFlags = 0;
+    policy.GradientColor = 0xE6000000;
+
+    fn(hwnd, &data);
 }
 
 struct DwmMargins {
@@ -552,7 +590,8 @@ static void applyRoundedRegion(HWND hwnd, bool enabled, int radiusPx)
     if (w <= 0 || h <= 0) return;
     const int r = radiusPx > 0 ? radiusPx : 0;
     const int d = r * 2;
-    HRGN rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, d, d);
+    // Removed +1 to ensure correct clipping inside the window rect
+    HRGN rgn = CreateRoundRectRgn(0, 0, w, h, d, d);
     if (!rgn) return;
     if (!SetWindowRgn(hwnd, rgn, TRUE)) {
         DeleteObject(rgn);
@@ -695,6 +734,9 @@ private:
 NewUiWindow::NewUiWindow(QWidget *parent)
     : QWidget(parent)
 {
+    // Ensure object name is set for stylesheet selectors
+    setObjectName("NewUiWindow");
+
     // --- GLOBAL SIZE CONTROL (ONE VALUE TO RULE THEM ALL) ---
     // [User Setting] 只要修改这个数值，所有尺寸自动计算
     m_cardBaseWidth = 300; // 卡片可见区域的宽度 (Changed to 300 as requested)
@@ -725,10 +767,30 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     m_topAreaHeight = m_cardBaseHeight - m_bottomAreaHeight;
     m_marginTop = (m_topAreaHeight - m_imgHeight) / 2;
 
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint);
+    // Remove Qt::FramelessWindowHint to allow native Windows behaviors (Snap, Maximize animation)
+    // We handle WM_NCCALCSIZE to hide the standard frame visually
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
+
+#ifdef _WIN32
+    DWORD build = getWindowsBuildNumber();
+    if (build >= 22000) {
+        // Windows 11
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setAutoFillBackground(false);
+    } else {
+        // Windows 10
+        setAttribute(Qt::WA_TranslucentBackground, false);
+        setAttribute(Qt::WA_NoSystemBackground, false);
+        setAutoFillBackground(true);
+    }
+#else
+    // Default/Other OS
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAutoFillBackground(false);
+#endif
+
     setMouseTracking(true);
     resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
     
@@ -777,6 +839,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Setup StreamClient
     m_streamClient = new StreamClient(this);
     connect(m_streamClient, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
+    connect(m_streamClient, &StreamClient::textMessageReceived, this, &NewUiWindow::onTextMessageReceived);
     connect(m_streamClient, &StreamClient::connected, this, [this]() {
         publishLocalScreenFrameTriggered(QStringLiteral("cloud_connected"), true, true);
     });
@@ -787,6 +850,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     if (AppConfig::lanWsEnabled()) {
         m_streamClientLan = new StreamClient(this);
         connect(m_streamClientLan, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
+        connect(m_streamClientLan, &StreamClient::textMessageReceived, this, &NewUiWindow::onTextMessageReceived);
         connect(m_streamClientLan, &StreamClient::connected, this, [this]() {
             publishLocalScreenFrameTriggered(QStringLiteral("lan_connected"), true, true);
         });
@@ -1479,27 +1543,11 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
         myName = QStringLiteral("我");
     }
     if (watching) {
-        QString targetName = userId;
-        if (QListWidgetItem *it = m_userItems.value(userId, nullptr)) {
-            const QString n = it->data(Qt::UserRole + 1).toString();
-            if (!n.isEmpty()) {
-                targetName = n;
-            }
-        }
-        applyOverlayTextAutoFit(overlay, QStringLiteral("%1在观看%2").arg(myName, targetName));
-        overlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-weight: bold; background-color: rgba(0, 200, 83, 90); border-radius: 8px;");
-        overlay->setVisible(true);
+        // [Fix] Disable "Watching" overlay and text as requested
+        overlay->setVisible(false);
     } else if (beingWatchedBy) {
-        QString viewerName = userId;
-        if (QListWidgetItem *it = m_userItems.value(userId, nullptr)) {
-            const QString n = it->data(Qt::UserRole + 1).toString();
-            if (!n.isEmpty()) {
-                viewerName = n;
-            }
-        }
-        applyOverlayTextAutoFit(overlay, QStringLiteral("%1在观看%2").arg(viewerName, myName));
-        overlay->setStyleSheet("color: rgba(255, 255, 255, 235); font-weight: bold; background-color: rgba(0, 120, 212, 95); border-radius: 8px;");
-        overlay->setVisible(true);
+        // [Fix] Disable "Being Watched" overlay and text as requested
+        overlay->setVisible(false);
     } else {
         overlay->setVisible(false);
     }
@@ -1518,29 +1566,8 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
                     "   border-radius: 15px;"
                     "}"
                 );
-            } else if (watching) {
-                card->setStyleSheet(
-                    "#CardFrame {"
-                    "   background-color: rgba(0, 200, 83, 55);"
-                    "   border: 1px solid #00C853;"
-                    "   border-radius: 15px;"
-                    "}"
-                    "#CardFrame:hover {"
-                    "   background-color: rgba(0, 200, 83, 70);"
-                    "}"
-                );
-            } else if (beingWatchedBy) {
-                card->setStyleSheet(
-                    "#CardFrame {"
-                    "   background-color: rgba(0, 120, 212, 45);"
-                    "   border: 1px solid #0078D4;"
-                    "   border-radius: 15px;"
-                    "}"
-                    "#CardFrame:hover {"
-                    "   background-color: rgba(0, 120, 212, 60);"
-                    "}"
-                );
             } else {
+                // [Fix] Disable color changes for watching/watched status, keep default style
                 card->setStyleSheet(
                     "#CardFrame {"
                     "   background-color: rgba(32, 32, 36, 175);"
@@ -1918,6 +1945,7 @@ void NewUiWindow::enterEmbeddedWatchingUi(const QString &targetId, const QString
     m_embeddedTargetId = targetId;
     if (!targetId.isEmpty()) {
         janusSwitchToUserRoom(targetId);
+        showAudioCallUi(targetId);
     }
     if (m_rightContentStack && m_videoContentPage) {
         m_rightContentStack->setCurrentWidget(m_videoContentPage);
@@ -1937,6 +1965,7 @@ void NewUiWindow::startEmbeddedReceiving(const QString &viewerId,
     setWatchingTarget(targetId);
     if (!targetId.isEmpty()) {
         janusSwitchToUserRoom(targetId);
+        showAudioCallUi(targetId);
     }
     if (m_rightContentStack && m_videoContentPage) {
         m_rightContentStack->setCurrentWidget(m_videoContentPage);
@@ -2028,7 +2057,7 @@ void NewUiWindow::setupUi()
     leftPanel->installEventFilter(this);
     // Use QSS for styling
     // Unified values for both Win10 and Win11 to ensure consistent look and shadow visibility
-    const QString leftBgColor = "rgba(18, 18, 20, 150)";
+    const QString leftBgColor = "rgba(45, 45, 48, 150)";
 
     leftPanel->setStyleSheet(
         "QWidget#LeftPanel {"
@@ -2250,7 +2279,7 @@ void NewUiWindow::setupUi()
     rightPanel->setObjectName("RightPanel");
     
     // Unified values for both Win10 and Win11 to ensure consistent look and shadow visibility
-    const QString rightBgColor = "rgba(18, 18, 20, 120)";
+    const QString rightBgColor = "rgba(22, 22, 24, 120)";
 
     rightPanel->setStyleSheet(
         "QWidget#RightPanel {"
@@ -2285,7 +2314,7 @@ void NewUiWindow::setupUi()
     toolsContainer->installEventFilter(this);
     toolsContainer->setStyleSheet(
         "#ToolsContainer {"
-        "   background-color: rgba(25, 25, 28, 160);"
+        "   background-color: rgba(90, 90, 96, 160);"
         "   border: 1px solid rgba(255, 255, 255, 18);"
         "   border-radius: 20px;"
         "}"
@@ -2341,6 +2370,50 @@ void NewUiWindow::setupUi()
 
     titleLayout->addSpacing(8);
     titleLayout->addWidget(toolsContainer);
+
+    // Meeting Button Container
+    QFrame *meetingContainer = new QFrame(titleBar);
+    meetingContainer->setObjectName("MeetingContainer");
+    meetingContainer->setFixedSize(60, 40); 
+    meetingContainer->setFrameShape(QFrame::NoFrame);
+    meetingContainer->installEventFilter(this);
+    meetingContainer->setStyleSheet(
+        "#MeetingContainer {"
+        "   background-color: rgba(90, 90, 96, 160);"
+        "   border: 1px solid rgba(255, 255, 255, 18);"
+        "   border-radius: 20px;"
+        "}"
+        "QPushButton {"
+        "   background-color: transparent;"
+        "   border: none;"
+        "   margin: 3px;"
+        "}"
+        "QPushButton:hover {"
+        "   background-color: rgba(255, 255, 255, 28);"
+        "   border-radius: 17px;"
+        "}"
+        "QPushButton:pressed {"
+        "   background-color: rgba(255, 255, 255, 40);"
+        "}"
+    );
+
+    QHBoxLayout *meetingLayout = new QHBoxLayout(meetingContainer);
+    meetingLayout->setContentsMargins(5, 0, 5, 0);
+    meetingLayout->setAlignment(Qt::AlignCenter);
+
+    ResponsiveButton *meetingBtn = new ResponsiveButton();
+    meetingBtn->setFixedSize(40, 40);
+    meetingBtn->setIcon(QIcon(appDir + "/maps/logo/Meeting.png"));
+    meetingBtn->setIconSize(QSize(24, 24));
+    meetingBtn->setCursor(Qt::PointingHandCursor);
+    meetingBtn->setToolTip("发起会议邀请");
+    meetingBtn->installEventFilter(this);
+    connect(meetingBtn, &QPushButton::clicked, this, &NewUiWindow::onMeetingBtnClicked);
+
+    meetingLayout->addWidget(meetingBtn);
+    
+    titleLayout->addSpacing(8);
+    titleLayout->addWidget(meetingContainer);
     titleLayout->addStretch();
 
     titleLayout->addStretch();
@@ -2501,9 +2574,9 @@ void NewUiWindow::setupUi()
         
         contextMenu.setStyleSheet(
             "QMenu {"
-            "    background-color: rgba(20, 20, 24, 210);"
-            "    border: 1px solid rgba(255, 255, 255, 22);"
-            "    border-radius: 12px;"
+        "    background-color: rgba(29, 29, 35, 210);" /* Brightened from 24,24,29 */
+        "    border: 1px solid rgba(255, 255, 255, 22);"
+        "    border-radius: 12px;"
             "    padding: 6px;"
             "    color: #e0e0e0;"
             "    font-size: 13px;"
@@ -2525,6 +2598,8 @@ void NewUiWindow::setupUi()
             "}"
         );
 
+        /*
+        // [Fix] Kick menu removed as requested
         if (!itemUserId.isEmpty() && itemUserId == m_myStreamId && row == 0) {
             const QStringList viewerIds = getViewerIds();
             QMenu *kickMenu = contextMenu.addMenu(QStringLiteral("踢出观看者"));
@@ -2565,6 +2640,10 @@ void NewUiWindow::setupUi()
             } else {
                 return;
             }
+        }
+        */
+        if (itemUserId.isEmpty() && row != 0) {
+            return;
         }
 
         contextMenu.exec(m_listWidget->mapToGlobal(pos));
@@ -3234,17 +3313,47 @@ bool NewUiWindow::event(QEvent *event)
     if (event && (event->type() == QEvent::Show || event->type() == QEvent::WinIdChange)) {
         QTimer::singleShot(0, this, [this]() {
             HWND hwnd = reinterpret_cast<HWND>(winId());
-            setAttribute(Qt::WA_TranslucentBackground, true);
-            setAttribute(Qt::WA_NoSystemBackground, true);
-            setAutoFillBackground(false);
-            tryExtendGlassFrame(hwnd);
-            ensureLayeredForAcrylic(hwnd);
-            if (!tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr)) {
-                if (!tryEnableDwmBackdropSimple(hwnd, 3, true)) {
-                    SetLayeredWindowAttributes(hwnd, 0, 235, LWA_ALPHA);
+            DWORD build = getWindowsBuildNumber();
+            
+            // Windows 11 (Build 22000+)
+            if (build >= 22000) {
+                setAttribute(Qt::WA_TranslucentBackground, true);
+                setAttribute(Qt::WA_NoSystemBackground, true);
+                setAutoFillBackground(false);
+                tryExtendGlassFrame(hwnd);
+                ensureLayeredForAcrylic(hwnd);
+                if (!tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr)) {
+                    if (!tryEnableDwmBackdropSimple(hwnd, 3, true)) {
+                        SetLayeredWindowAttributes(hwnd, 0, 235, LWA_ALPHA);
+                    }
                 }
+                applyHwndCornerStyle(hwnd, !(windowState() & Qt::WindowMaximized));
+            } 
+            // Windows 10 or older
+            else {
+                // Disable transparency effects
+                setAttribute(Qt::WA_TranslucentBackground, false);
+                setAttribute(Qt::WA_NoSystemBackground, false);
+                setAutoFillBackground(true);
+                
+                // Extend the frame into the client area to ensure WM_NCCALCSIZE works correctly
+                // and hides the standard title bar while keeping native behaviors
+                tryExtendGlassFrame(hwnd);
+
+                // Use a gradient stylesheet to simulate glass/sheen
+                // We use a linear gradient from top-left to bottom-right
+                // High saturation Blue -> Purple gradient
+                setStyleSheet("QWidget#NewUiWindow {"
+                              "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                              "    stop:0 #5575b0ff, stop:1 #8b5895ff);"
+                              "}");
+                
+                // Ensure no DWM effects that might cause issues
+                disableAcrylic(hwnd);
+                
+                // Still try to apply rounded corners if possible (software fallback in applyHwndCornerStyle)
+                applyHwndCornerStyle(hwnd, !(windowState() & Qt::WindowMaximized));
             }
-            applyHwndCornerStyle(hwnd, !(windowState() & Qt::WindowMaximized));
         });
     }
 #endif
@@ -3295,21 +3404,47 @@ bool NewUiWindow::event(QEvent *event)
     return QWidget::event(event);
 }
 
+bool NewUiWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+#ifdef _WIN32
+    if (eventType == "windows_generic_MSG") {
+        MSG *msg = static_cast<MSG *>(message);
+        if (msg->message == WM_NCHITTEST) {
+            POINT nativePos = { GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam) };
+            QPoint globalPos(nativePos.x, nativePos.y);
+            QPoint localPos = mapFromGlobal(globalPos);
+
+            // Title bar area: Top 80px (approx)
+            // We exclude buttons from dragging
+            if (localPos.y() <= 80) {
+                QWidget *child = childAt(localPos);
+                bool isInteractive = false;
+                if (child) {
+                    if (qobject_cast<QAbstractButton*>(child)) {
+                        isInteractive = true;
+                    }
+                }
+                
+                if (!isInteractive) {
+                    *result = HTCAPTION;
+                    return true;
+                }
+            }
+        } else if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {
+            // Remove standard window frame
+            *result = 0;
+            return true;
+        }
+    }
+#endif
+    return QWidget::nativeEvent(eventType, message, result);
+}
+
 void NewUiWindow::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
-        const QPoint localPos = event->position().toPoint();
-        if (localPos.y() <= 80) {
-            m_titleBarDragging = true;
-            m_titleBarPendingRestore = (windowState() & Qt::WindowMaximized);
-            m_titleBarSnapMaximize = false;
-            m_titleBarPressGlobal = event->globalPosition().toPoint();
-            m_titleBarPressLocalInWindow = localPos;
-            m_titleBarDragOffset = m_titleBarPressGlobal - frameGeometry().topLeft();
-            m_dragging = false;
-            event->accept();
-            return;
-        }
+        // Manual dragging logic for non-titlebar areas (if desired)
+        // Note: Title bar dragging is handled by WM_NCHITTEST in nativeEvent
         m_dragging = true;
         // Use globalPosition() for Qt6
         m_dragPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
@@ -3319,32 +3454,6 @@ void NewUiWindow::mousePressEvent(QMouseEvent *event)
 
 void NewUiWindow::mouseMoveEvent(QMouseEvent *event)
 {
-    if ((event->buttons() & Qt::LeftButton) && m_titleBarDragging) {
-        const QPoint globalPos = event->globalPosition().toPoint();
-        if (m_titleBarPendingRestore) {
-            m_titleBarPendingRestore = false;
-            const QRect restore = normalGeometry().isValid() ? normalGeometry() : geometry();
-            const int restoreW = qMax(200, restore.width());
-            const int restoreH = qMax(200, restore.height());
-            const qreal xRatio = width() > 0 ? (qreal)m_titleBarPressLocalInWindow.x() / (qreal)width() : 0.5;
-            const int newX = globalPos.x() - qRound(xRatio * restoreW);
-            const int newY = globalPos.y() - m_titleBarPressLocalInWindow.y();
-            showNormal();
-            setGeometry(QRect(QPoint(newX, newY), QSize(restoreW, restoreH)));
-            m_titleBarDragOffset = globalPos - frameGeometry().topLeft();
-        } else {
-            move(globalPos - m_titleBarDragOffset);
-        }
-
-        if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
-            const QRect avail = screen->availableGeometry();
-            m_titleBarSnapMaximize = (globalPos.y() <= avail.top() + 24);
-        } else {
-            m_titleBarSnapMaximize = false;
-        }
-        event->accept();
-        return;
-    }
     if (event->buttons() & Qt::LeftButton && m_dragging) {
         move(event->globalPosition().toPoint() - m_dragPosition);
         event->accept();
@@ -3354,17 +3463,6 @@ void NewUiWindow::mouseMoveEvent(QMouseEvent *event)
 void NewUiWindow::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
-        if (m_titleBarDragging) {
-            const bool doMaximize = m_titleBarSnapMaximize && !(windowState() & Qt::WindowMaximized);
-            m_titleBarDragging = false;
-            m_titleBarPendingRestore = false;
-            m_titleBarSnapMaximize = false;
-            if (doMaximize) {
-                toggleFunction1Maximize();
-            }
-            event->accept();
-            return;
-        }
         m_dragging = false;
         event->accept();
     }
@@ -3372,14 +3470,6 @@ void NewUiWindow::mouseReleaseEvent(QMouseEvent *event)
 
 void NewUiWindow::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton) {
-        const QPoint localPos = event->position().toPoint();
-        if (localPos.y() <= 80) {
-            toggleFunction1Maximize();
-            event->accept();
-            return;
-        }
-    }
     QWidget::mouseDoubleClickEvent(event);
 }
 
@@ -3402,6 +3492,7 @@ void NewUiWindow::resizeEvent(QResizeEvent *event)
         m_farRightPanel->setGeometry(width() - outerMargin - panelW, yTop, panelW, panelH);
         m_farRightPanel->raise();
     }
+    updateNotificationPositions();
 }
 
 bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
@@ -3472,7 +3563,7 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
                 if (me->button() == Qt::LeftButton) {
                     m_audioCallMiniBarDragging = false;
                     setAudioCallMiniHidden(false);
-                    hideAudioCallMiniBar();
+                    // hideAudioCallMiniBar();
                     if (m_audioCallDialog && !m_audioCallPeerId.isEmpty()) {
                         m_audioCallDialog->show();
                         m_audioCallDialog->raise();
@@ -3771,6 +3862,504 @@ void NewUiWindow::onBroadcastBtnClicked()
     BroadcastNoticeDialog dlg(this);
     connect(&dlg, &BroadcastNoticeDialog::publishRequested, this, &NewUiWindow::broadcastRequested);
     dlg.exec();
+}
+
+void NewUiWindow::onMeetingBtnClicked()
+{
+    QMap<QString, QString> users;
+    QMap<QString, QPixmap> avatars;
+
+    // Iterate over m_userItems to get available users
+    for (auto it = m_userItems.begin(); it != m_userItems.end(); ++it) {
+        QString userId = it.key();
+        QListWidgetItem *item = it.value();
+        if (!item) continue;
+        
+        QString userName = item->data(Qt::UserRole + 1).toString();
+        if (userName.isEmpty()) {
+            userName = userId;
+        }
+        users.insert(userId, userName);
+
+        // Get avatar
+        if (m_userAvatarLabels.contains(userId)) {
+            QLabel *label = m_userAvatarLabels.value(userId);
+            if (label && !label->pixmap().isNull()) {
+                avatars.insert(userId, label->pixmap());
+            }
+        }
+    }
+    
+    InviteUsersDialog dialog(users, avatars, this);
+    connect(&dialog, &InviteUsersDialog::inviteRequested, this, &NewUiWindow::onInviteRequested);
+    dialog.exec();
+}
+
+void NewUiWindow::onInviteRequested(const QStringList &userIds)
+{
+    if (userIds.isEmpty()) return;
+
+    // [Fix] 预先初始化 Janus 房间，避免多人同时加入时的竞态条件
+    janusSwitchToMyRoom();
+
+    // 如果当前已经在等待或者没有观众，显示等待弹窗
+    if (m_inviteWaitDialog) {
+        m_inviteWaitDialog->raise();
+    } else {
+        // 检查当前是否有观众，如果没有则显示等待
+        // 注意：refreshAudioCallParticipants 还没跑，所以可能不知道具体人数，但 m_viewerList 可能有
+        // 不过最稳妥的是：如果我们是发起者，且没人，就显示等待
+        // 简单起见，只要发起邀请，就认为需要等待（除非已经有很多人）
+        // 这里我们启用 "ignoreAlone" 防止没人进时自动关闭
+        m_isWaitingForAttendees = true;
+        janusSetIgnoreAlone(true);
+
+        m_inviteWaitDialog = new QMessageBox(this);
+        m_inviteWaitDialog->setAttribute(Qt::WA_DeleteOnClose);
+        m_inviteWaitDialog->setWindowTitle(QStringLiteral("等待加入"));
+        m_inviteWaitDialog->setText(QStringLiteral("正在等待观众加入...\n如果没有人加入，房间将保持开启。"));
+        m_inviteWaitDialog->setStandardButtons(QMessageBox::Cancel);
+        m_inviteWaitDialog->button(QMessageBox::Cancel)->setText(QStringLiteral("取消邀请"));
+        
+        // 30s Timeout for inviter wait dialog
+        QTimer *waitTimer = new QTimer(m_inviteWaitDialog);
+        waitTimer->setSingleShot(true);
+        waitTimer->setInterval(30000);
+        connect(waitTimer, &QTimer::timeout, m_inviteWaitDialog, [this]() {
+            if (m_inviteWaitDialog) {
+                m_inviteWaitDialog->reject(); // Close dialog
+            }
+        });
+        waitTimer->start();
+
+        connect(m_inviteWaitDialog, &QMessageBox::finished, this, [this](int result) {
+            if (result == QMessageBox::Cancel) {
+                // 用户取消，恢复自动关闭逻辑，并可能挂断
+                m_isWaitingForAttendees = false;
+                janusSetIgnoreAlone(false);
+                // 如果此时房间里还是没人，janusStop? 或者仅仅恢复检查
+                // 用户说"挂断弹窗"，意味着取消就是不再等待，可能也就是不玩了
+                janusStop();
+            }
+            // Dialog closes itself
+        });
+        m_inviteWaitDialog->show();
+    }
+
+    for (const QString &targetId : userIds) {
+        if (targetId.isEmpty()) continue;
+
+        // Use watch_request_accepted type because the server forwards it to the viewer_id.
+        // We add "is_invite" to distinguish it from a normal acceptance.
+        QJsonObject invite;
+        invite["type"] = "watch_request_accepted";
+        invite["viewer_id"] = targetId; // The user we are inviting
+        invite["target_id"] = m_myStreamId; // Me (The inviter)
+        invite["is_invite"] = true;
+        invite["inviter_name"] = m_myUserName;
+        
+        QJsonDocument doc(invite);
+        QByteArray data = doc.toJson(QJsonDocument::Compact);
+
+        bool sent = false;
+        // Send via Cloud StreamClient
+        if (m_streamClient && m_streamClient->isConnected()) {
+            m_streamClient->sendTextMessage(QString::fromUtf8(data));
+            sent = true;
+            qInfo() << "[NewUiWindow] Sent invite to" << targetId << "via Cloud StreamClient";
+        } else {
+            qWarning() << "[NewUiWindow] Cloud StreamClient not connected, cannot send invite to" << targetId;
+        }
+        
+        // Optionally send via LAN if applicable
+        if (m_streamClientLan && m_streamClientLan->isConnected()) {
+             m_streamClientLan->sendTextMessage(QString::fromUtf8(data));
+             if (!sent) sent = true;
+             qInfo() << "[NewUiWindow] Sent invite to" << targetId << "via LAN StreamClient";
+        }
+        
+        if (!sent) {
+            QMessageBox::warning(this, QStringLiteral("发送失败"), 
+                QStringLiteral("无法发送邀请给 %1，未连接到服务器").arg(targetId));
+        }
+    }
+}
+
+void NewUiWindow::showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type)
+{
+    if (m_activeInviteNotification) {
+        m_activeInviteNotification->deleteLater();
+        m_activeInviteNotification = nullptr;
+    }
+
+    m_activeInviteNotification = new QWidget(this);
+    m_activeInviteNotification->setObjectName("InviteNotification");
+    m_activeInviteNotification->setStyleSheet(
+        "QWidget#InviteNotification {"
+        "   background-color: rgba(40, 40, 45, 230);"
+        "   border: 1px solid rgba(0, 200, 83, 100);"
+        "   border-radius: 8px;"
+        "}"
+        "QLabel {"
+        "   color: #e0e0e0;"
+        "   font-size: 13px;"
+        "}"
+        "QPushButton {"
+        "   background-color: rgba(255, 255, 255, 15);"
+        "   border: 1px solid rgba(255, 255, 255, 30);"
+        "   border-radius: 4px;"
+        "   color: #e0e0e0;"
+        "   padding: 4px 12px;"
+        "}"
+        "QPushButton:hover {"
+        "   background-color: rgba(255, 255, 255, 25);"
+        "   color: #fff;"
+        "}"
+        "QPushButton#AcceptBtn {"
+        "   background-color: rgba(0, 200, 83, 60);"
+        "   border: 1px solid rgba(0, 200, 83, 100);"
+        "}"
+        "QPushButton#AcceptBtn:hover {"
+        "   background-color: rgba(0, 200, 83, 100);"
+        "}"
+        "QPushButton#RejectBtn {"
+        "   background-color: rgba(255, 80, 80, 60);"
+        "   border: 1px solid rgba(255, 80, 80, 100);"
+        "}"
+        "QPushButton#RejectBtn:hover {"
+        "   background-color: rgba(255, 80, 80, 100);"
+        "}"
+    );
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(m_activeInviteNotification);
+    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setSpacing(8);
+
+    QLabel *titleLabel = new QLabel(QStringLiteral("会议邀请"), m_activeInviteNotification);
+    titleLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;");
+    
+    QLabel *textLabel = new QLabel(QStringLiteral("%1 邀请您加入视频通话").arg(inviterName), m_activeInviteNotification);
+    textLabel->setWordWrap(true);
+
+    QHBoxLayout *btnLayout = new QHBoxLayout();
+    btnLayout->setSpacing(10);
+
+    QPushButton *acceptBtn = new QPushButton(QStringLiteral("接受"), m_activeInviteNotification);
+    acceptBtn->setObjectName("AcceptBtn");
+    acceptBtn->setCursor(Qt::PointingHandCursor);
+
+    QPushButton *rejectBtn = new QPushButton(QStringLiteral("拒绝"), m_activeInviteNotification);
+    rejectBtn->setObjectName("RejectBtn");
+    rejectBtn->setCursor(Qt::PointingHandCursor);
+
+    btnLayout->addStretch();
+    btnLayout->addWidget(rejectBtn);
+    btnLayout->addWidget(acceptBtn);
+
+    mainLayout->addWidget(titleLabel);
+    mainLayout->addWidget(textLabel);
+    mainLayout->addLayout(btnLayout);
+
+    // Timer for auto-expire
+    QTimer *timer = new QTimer(m_activeInviteNotification);
+    timer->setSingleShot(true);
+    timer->setInterval(30000);
+    
+    connect(timer, &QTimer::timeout, this, [this, inviterName, inviterId]() {
+        if (m_activeInviteNotification) {
+            m_activeInviteNotification->deleteLater();
+            m_activeInviteNotification = nullptr;
+            showExpiredInviteNotification(inviterName);
+            
+            // Auto-reject: Send rejection to server
+            QJsonObject rejectMsg;
+            rejectMsg["type"] = "watch_request_rejected";
+            rejectMsg["viewer_id"] = m_myStreamId;
+            rejectMsg["target_id"] = inviterId;
+            
+            QJsonDocument rejectDoc(rejectMsg);
+            QByteArray data = rejectDoc.toJson(QJsonDocument::Compact);
+            
+            if (m_streamClient && m_streamClient->isConnected()) {
+                m_streamClient->sendTextMessage(QString::fromUtf8(data));
+            }
+            if (m_streamClientLan && m_streamClientLan->isConnected()) {
+                m_streamClientLan->sendTextMessage(QString::fromUtf8(data));
+            }
+        }
+    });
+    timer->start();
+
+    // Connect Buttons
+    connect(rejectBtn, &QPushButton::clicked, this, [this, inviterId]() {
+        if (m_activeInviteNotification) {
+            m_activeInviteNotification->deleteLater();
+            m_activeInviteNotification = nullptr;
+            
+            // Send rejection to server
+            QJsonObject rejectMsg;
+            rejectMsg["type"] = "watch_request_rejected";
+            rejectMsg["viewer_id"] = m_myStreamId;
+            rejectMsg["target_id"] = inviterId;
+            
+            QJsonDocument rejectDoc(rejectMsg);
+            QByteArray data = rejectDoc.toJson(QJsonDocument::Compact);
+            
+            if (m_streamClient && m_streamClient->isConnected()) {
+                m_streamClient->sendTextMessage(QString::fromUtf8(data));
+            }
+            if (m_streamClientLan && m_streamClientLan->isConnected()) {
+                m_streamClientLan->sendTextMessage(QString::fromUtf8(data));
+            }
+        }
+    });
+
+    connect(acceptBtn, &QPushButton::clicked, this, [this, inviterId, type]() {
+        if (m_activeInviteNotification) {
+            m_activeInviteNotification->deleteLater();
+            m_activeInviteNotification = nullptr;
+        }
+
+        if (type == QStringLiteral("invite_to_room")) {
+             if (!inviterId.isEmpty()) {
+                 if (m_userItems.contains(inviterId)) {
+                     QListWidgetItem *item = m_userItems.value(inviterId);
+                     if (item && m_listWidget) {
+                         m_listWidget->setCurrentItem(item);
+                     }
+                 } else {
+                     qWarning() << "Inviter ID not found in user list:" << inviterId;
+                 }
+             }
+        } else if (type == QStringLiteral("watch_request_accepted")) {
+            QJsonObject req;
+            req["type"] = "watch_request";
+            req["viewer_id"] = m_myStreamId;
+            req["target_id"] = inviterId;
+            req["action"] = "invite_response";
+            
+            QByteArray data = QJsonDocument(req).toJson(QJsonDocument::Compact);
+            if (m_streamClient && m_streamClient->isConnected()) {
+                m_streamClient->sendTextMessage(QString::fromUtf8(data));
+            }
+            
+            if (m_userItems.contains(inviterId)) {
+                 QListWidgetItem *item = m_userItems.value(inviterId);
+                 if (item && m_listWidget) {
+                     m_listWidget->setCurrentItem(item);
+                 }
+            }
+        }
+    });
+
+    m_activeInviteNotification->adjustSize();
+    updateNotificationPositions();
+    m_activeInviteNotification->show();
+    m_activeInviteNotification->raise();
+}
+
+void NewUiWindow::updateNotificationPositions()
+{
+    const int margin = 20;
+    int bottomY = height() - margin;
+    
+    if (m_expiredInviteNotification) {
+        m_expiredInviteNotification->adjustSize();
+        bottomY -= m_expiredInviteNotification->height();
+        m_expiredInviteNotification->move(width() - m_expiredInviteNotification->width() - margin, bottomY);
+        bottomY -= 10; // Spacing
+    }
+    
+    if (m_activeInviteNotification) {
+        m_activeInviteNotification->adjustSize();
+        bottomY -= m_activeInviteNotification->height();
+        m_activeInviteNotification->move(width() - m_activeInviteNotification->width() - margin, bottomY);
+    }
+}
+
+void NewUiWindow::showExpiredInviteNotification(const QString &inviterName)
+{
+    if (m_expiredInviteNotification) {
+        m_expiredInviteNotification->deleteLater();
+        m_expiredInviteNotification = nullptr;
+    }
+
+    m_expiredInviteNotification = new QWidget(this);
+    m_expiredInviteNotification->setObjectName("ExpiredInviteNotification");
+    m_expiredInviteNotification->setStyleSheet(
+        "QWidget#ExpiredInviteNotification {"
+        "   background-color: rgba(40, 40, 45, 230);"
+        "   border: 1px solid rgba(255, 80, 80, 100);"
+        "   border-radius: 8px;"
+        "}"
+        "QLabel {"
+        "   color: #e0e0e0;"
+        "   font-size: 13px;"
+        "}"
+        "QPushButton {"
+        "   background: transparent;"
+        "   border: none;"
+        "   color: #aaa;"
+        "   font-weight: bold;"
+        "}"
+        "QPushButton:hover {"
+        "   color: #fff;"
+        "}"
+    );
+
+    QHBoxLayout *layout = new QHBoxLayout(m_expiredInviteNotification);
+    layout->setContentsMargins(12, 8, 8, 8);
+    layout->setSpacing(10);
+
+    QLabel *textLabel = new QLabel(m_expiredInviteNotification);
+    
+    QPushButton *closeBtn = new QPushButton("X", m_expiredInviteNotification);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setFixedSize(20, 20);
+    connect(closeBtn, &QPushButton::clicked, this, [this]() {
+        if (m_expiredInviteNotification) {
+            m_expiredInviteNotification->deleteLater();
+            m_expiredInviteNotification = nullptr;
+        }
+    });
+
+    layout->addWidget(textLabel);
+    layout->addWidget(closeBtn);
+
+    // Timer logic
+    QDateTime startTime = QDateTime::currentDateTime();
+    QTimer *updateTimer = new QTimer(m_expiredInviteNotification);
+    auto updateFunc = [textLabel, inviterName, startTime]() {
+        if (!textLabel) return;
+        qint64 diff = startTime.secsTo(QDateTime::currentDateTime());
+        int h = diff / 3600;
+        int m = (diff % 3600) / 60;
+        int s = diff % 60;
+        textLabel->setText(QStringLiteral("用户%1的视频邀请已过时%2小时%3分钟%4秒")
+                       .arg(inviterName).arg(h).arg(m).arg(s));
+    };
+    
+    updateFunc();
+    connect(updateTimer, &QTimer::timeout, m_expiredInviteNotification, updateFunc);
+    updateTimer->start(1000);
+
+    m_expiredInviteNotification->adjustSize();
+    
+    updateNotificationPositions();
+    m_expiredInviteNotification->show();
+    m_expiredInviteNotification->raise();
+}
+
+void NewUiWindow::onTextMessageReceived(const QString &message)
+{
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8(), &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return;
+    }
+
+    const QJsonObject obj = doc.object();
+    const QString type = obj.value("type").toString();
+    // Some messages might not have target_user_id but rely on viewer_id/target_id pair
+    const QString targetUserId = obj.value("target_user_id").toString();
+    
+    // Check if the message is for me (if target_user_id is specified)
+    if (!targetUserId.isEmpty() && targetUserId != m_myStreamId) {
+        return; 
+    }
+
+    if (type == QStringLiteral("invite_to_room")) {
+        // Fallback for legacy or direct messages
+        const QString fromUserId = obj.value("from_user_id").toString();
+        const QString fromUserName = obj.value("from_user_name").toString();
+        const QString displayName = fromUserName.isEmpty() ? fromUserId : fromUserName;
+        
+        showInviteNotification(fromUserId, displayName, type);
+    } else if (type == QStringLiteral("watch_request_accepted")) {
+        if (obj.value("is_invite").toBool()) {
+            const QString viewerId = obj.value("viewer_id").toString();
+            // Ensure this invite is meant for ME (as the viewer/invitee)
+            if (viewerId != m_myStreamId) {
+                return;
+            }
+
+            const QString targetId = obj.value("target_id").toString(); // Inviter
+            const QString inviterName = obj.value("inviter_name").toString();
+            const QString displayName = inviterName.isEmpty() ? targetId : inviterName;
+
+            showInviteNotification(targetId, displayName, type);
+        }
+    } else if (type == QStringLiteral("start_streaming_request")) {
+        const QString action = obj.value("action").toString();
+        if (action == QStringLiteral("invite_response")) {
+            // This is a response to our invite. Auto-approve it.
+            const QString viewerId = obj.value("viewer_id").toString();
+            
+            // Close the wait dialog if it exists, as someone is joining
+            if (m_inviteWaitDialog) {
+                // Note: We don't disable ignoreAlone here immediately to ensure the room stays open 
+                // until the connection is fully established. It will be disabled if the user manually cancels
+                // or we can leave it enabled until the session ends.
+                // However, to keep UI clean, we close the dialog.
+                m_inviteWaitDialog->close(); 
+                m_inviteWaitDialog = nullptr;
+                // We keep m_janusIgnoreAlone = true for a bit? 
+                // Actually, if we close the dialog, the 'finished' signal fires.
+                // In onInviteRequested, 'finished' calls janusSetIgnoreAlone(false).
+                // So we are relying on the timeouts (now 30s/45s) to bridge the gap.
+            }
+
+            // 1. Send Accepted
+            QJsonObject accepted;
+            accepted["type"] = "watch_request_accepted";
+            accepted["viewer_id"] = viewerId;
+            accepted["target_id"] = m_myStreamId;
+            QByteArray accData = QJsonDocument(accepted).toJson(QJsonDocument::Compact);
+            if (m_streamClient && m_streamClient->isConnected()) {
+                m_streamClient->sendTextMessage(QString::fromUtf8(accData));
+            }
+            
+            // 2. Start Streaming if not already
+            // Assuming startStreaming() or equivalent exists. 
+            // In NewUiWindow, streaming might be managed via Janus or direct.
+            // If we are using StreamClient for signaling, we might need to tell Janus to publish.
+            // Let's assume onBroadcastBtnClicked logic or similar.
+            // But wait, NewUiWindow usually handles publishing when "start_streaming" is received?
+            // No, "start_streaming" is sent BY server to tell Publisher to publish.
+            // Actually, in `websocket_server_with_routing.cpp`:
+            // Server sends `start_streaming` to Publisher when `streaming_ok` is received from Publisher?
+            // No, when `streaming_ok` is received from Publisher (forwarded to Viewer), server sends `start_streaming` to Publisher?
+            
+            // Let's look at server logic again (lines 416+):
+            // if type == "streaming_ok":
+            // ... forwards to viewer ...
+            // ... sends "start_streaming" to Publisher (Target) ...
+            
+            // So, as Publisher, I must send "streaming_ok" to Viewer.
+            // Then Server will send "start_streaming" to Me.
+            // Then I start publishing.
+            
+            // 3. Send Streaming OK
+            QJsonObject okMsg;
+            okMsg["type"] = "streaming_ok";
+            okMsg["viewer_id"] = viewerId;
+            okMsg["target_id"] = m_myStreamId;
+            // The URL is usually constructed by client or server. 
+            // In MainWindow it sends "stream_url".
+            // Here we can send it too.
+            okMsg["stream_url"] = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), m_myStreamId);
+            
+            QByteArray okData = QJsonDocument(okMsg).toJson(QJsonDocument::Compact);
+            if (m_streamClient && m_streamClient->isConnected()) {
+                m_streamClient->sendTextMessage(QString::fromUtf8(okData));
+            }
+        }
+    } else if (type == QStringLiteral("start_streaming")) {
+        // Handle server telling us to start streaming
+        if (m_timer) {
+            m_timer->start(100); // Start streaming at 10 FPS
+        }
+    }
 }
 
 #include "NewUiWindow.moc"

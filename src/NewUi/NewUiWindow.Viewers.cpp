@@ -282,12 +282,7 @@ void NewUiWindow::updateLocalWatchedOverlay()
     if (!m_localWatchedOverlay) {
         return;
     }
-    int c = getViewerCount();
-    if (c <= 0) {
-        m_localWatchedOverlay->setVisible(false);
-        return;
-    }
-    m_localWatchedOverlay->setText(QStringLiteral("%1人在看你").arg(c));
-    m_localWatchedOverlay->setVisible(true);
+    // [Fix] Disable "watched by N" overlay as requested
+    m_localWatchedOverlay->setVisible(false);
 }
 

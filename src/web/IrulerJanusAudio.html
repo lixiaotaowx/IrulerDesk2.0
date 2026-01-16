@@ -57,7 +57,8 @@
       reconnectInFlight: false,
       lastDisconnectAtMs: 0,
       lastStopReason: "",
-      lastStopAtMs: 0
+      lastStopAtMs: 0,
+      quickExitTimer: null
     };
 
     function logLine(line) {
@@ -300,6 +301,12 @@
             state.joinWaiter = null;
             w(d);
           }
+          if (evName === "joined") {
+            cancelQuickExit();
+            state.aloneSinceMs = 0;
+          } else if (evName === "left") {
+            scheduleQuickExit();
+          }
         } else if (d.room || d.participants) {
           logLine("ab event" + extra);
         }
@@ -487,41 +494,60 @@
     }
 
     async function joinRoom(room, display) {
-      await createRoomIfNeeded(room);
-      const joinEvent = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("join timeout")), 12000);
-        state.joinWaiter = (d) => { clearTimeout(timer); resolve(d); };
-      });
-      const joinReply = await janusMessage({request:"join", room: room, display: display, muted: state.muted});
-      try {
-        let extra = " janus=" + (joinReply && joinReply.janus ? joinReply.janus : "-");
-        if (joinReply && joinReply.error) {
-          if (typeof joinReply.error.code !== "undefined") extra += " err_code=" + joinReply.error.code;
-          if (typeof joinReply.error.reason !== "undefined") extra += " err_reason=" + joinReply.error.reason;
+      let retryCount = 0;
+      while (true) {
+        try {
+          await createRoomIfNeeded(room);
+          const joinEvent = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("join timeout")), 12000);
+            state.joinWaiter = (d) => { clearTimeout(timer); resolve(d); };
+          });
+          const joinReply = await janusMessage({request:"join", room: room, display: display, muted: state.muted});
+          try {
+            let extra = " janus=" + (joinReply && joinReply.janus ? joinReply.janus : "-");
+            if (joinReply && joinReply.error) {
+              if (typeof joinReply.error.code !== "undefined") extra += " err_code=" + joinReply.error.code;
+              if (typeof joinReply.error.reason !== "undefined") extra += " err_reason=" + joinReply.error.reason;
+            }
+            logLine("join sent room=" + room + extra);
+          } catch (_) {}
+          
+          if (joinReply && joinReply.janus === "error") {
+             throw new Error("join error: " + (joinReply.error && joinReply.error.reason ? joinReply.error.reason : "unknown"));
+          }
+
+          let joined;
+          try { joined = await joinEvent; } catch (e) { state.joinWaiter = null; throw e; }
+          
+          try {
+            let msg = "joined_ack room=" + room;
+            if (joined && typeof joined.id !== "undefined") msg += " id=" + joined.id;
+            if (joined && typeof joined.room !== "undefined") msg += " server_room=" + joined.room;
+            if (joined && Array.isArray(joined.participants)) msg += " participants=" + joined.participants.length;
+            logLine(msg);
+          } catch (_) {}
+          try {
+            const lp = await janusMessage({request:"listparticipants", room: room});
+            updateParticipantsFromReply(lp);
+            const n = participantsCountFromReply(lp);
+            if (n !== null) logLine("listparticipants room=" + room + " count=" + n);
+            else logLine("listparticipants room=" + room + " janus=" + (lp && lp.janus ? lp.janus : "-"));
+          } catch (e) {
+            try { logLine("listparticipants failed: " + (e && e.message ? e.message : String(e))); } catch (_) {}
+          }
+          await createPeer();
+          await negotiate();
+          logLine("joined room " + room);
+          break;
+        } catch (e) {
+          retryCount++;
+          state.joinWaiter = null;
+          if (retryCount >= 10) throw e;
+          const delay = 1000 + (retryCount * 1000);
+          try { logLine("join failed, retrying (" + retryCount + ") in " + delay + "ms: " + (e && e.message ? e.message : String(e))); } catch (_) {}
+          await new Promise(r => setTimeout(r, delay));
         }
-        logLine("join sent room=" + room + extra);
-      } catch (_) {}
-      let joined;
-      try { joined = await joinEvent; } catch (e) { state.joinWaiter = null; throw e; }
-      try {
-        let msg = "joined_ack room=" + room;
-        if (joined && typeof joined.id !== "undefined") msg += " id=" + joined.id;
-        if (joined && typeof joined.room !== "undefined") msg += " server_room=" + joined.room;
-        if (joined && Array.isArray(joined.participants)) msg += " participants=" + joined.participants.length;
-        logLine(msg);
-      } catch (_) {}
-      try {
-        const lp = await janusMessage({request:"listparticipants", room: room});
-        updateParticipantsFromReply(lp);
-        const n = participantsCountFromReply(lp);
-        if (n !== null) logLine("listparticipants room=" + room + " count=" + n);
-        else logLine("listparticipants room=" + room + " janus=" + (lp && lp.janus ? lp.janus : "-"));
-      } catch (e) {
-        try { logLine("listparticipants failed: " + (e && e.message ? e.message : String(e))); } catch (_) {}
       }
-      await createPeer();
-      await negotiate();
-      logLine("joined room " + room);
     }
 
     async function destroySession() {
@@ -537,6 +563,31 @@
         state.aloneCheckTimer = null;
       }
       state.aloneSinceMs = 0;
+      cancelQuickExit();
+    }
+
+    function cancelQuickExit() {
+      if (state.quickExitTimer) {
+        clearTimeout(state.quickExitTimer);
+        state.quickExitTimer = null;
+      }
+    }
+
+    function scheduleQuickExit() {
+      if (state.quickExitTimer) return;
+      state.quickExitTimer = setTimeout(async () => {
+        state.quickExitTimer = null;
+        if (state.ignoreAlone) return; // Respect ignoreAlone
+        if (!state.room || !state.sessionId) return;
+        try {
+          const lp = await janusMessage({request:"listparticipants", room: state.room});
+          updateParticipantsFromReply(lp);
+          const n = participantsCountFromReply(lp);
+          if (typeof n === "number" && n <= 1) {
+            stopAll("alone_3s");
+          }
+        } catch (_) {}
+      }, 30000); // Extended to 30s to allow viewers to join without premature exit
     }
 
     async function resetAll() {
@@ -572,8 +623,11 @@
 
     function startAloneWatch(room) {
       stopAloneWatch();
+      if (state.ignoreAlone) return; // Immediate check
+      
       state.aloneSinceMs = 0;
       state.aloneCheckTimer = setInterval(async () => {
+        if (state.ignoreAlone) { stopAloneWatch(); return; } // Runtime check
         if (!state.sessionId || !state.handleId) return;
         if (state.room !== room) return;
         try {
@@ -583,7 +637,11 @@
           if (typeof n !== "number") return;
           if (n <= 1) {
             const nowMs = Date.now();
-            if (!state.aloneSinceMs) state.aloneSinceMs = nowMs;
+            if (!state.aloneSinceMs) {
+              state.aloneSinceMs = nowMs;
+            } else if (nowMs - state.aloneSinceMs > 45000) { // Extended to 45s
+              stopAll("alone_3s");
+            }
           } else {
             state.aloneSinceMs = 0;
           }
@@ -638,7 +696,27 @@
     }
 
     window.IrulerJanusAudio = {
-      switchRoom: (room, display, muted) => switchRoom(Number(room), String(display || ""), !!muted),
+      setIgnoreAlone: (ignore) => {
+        state.ignoreAlone = !!ignore;
+        if (state.ignoreAlone) {
+            stopAloneWatch();
+        } else if (state.room) {
+            startAloneWatch(state.room);
+        }
+      },
+      switchRoom: (room, display, muted) => {
+          // Preserve ignoreAlone state across switches or reset?
+          // If we are switching, we likely want to keep the ignore state if it was set for this session intent
+          // But to be safe, let's allow it to persist if explicitly set.
+          // However, switchRoom resets state. Let's fix that.
+          const wasIgnore = state.ignoreAlone;
+          switchRoom(Number(room), String(display || ""), !!muted).then(() => {
+              if (wasIgnore) {
+                  state.ignoreAlone = true;
+                  stopAloneWatch();
+              }
+          });
+      },
       setMuted: (muted) => setMuted(!!muted),
       setSpeakerEnabled: (enabled) => setSpeakerEnabled(!!enabled),
       stop: (reason) => stopAll(String(reason || "")),

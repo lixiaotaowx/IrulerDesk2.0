@@ -273,6 +273,11 @@ private:
     // 自动更新
     AutoUpdater *m_autoUpdater = nullptr;
     class QProgressDialog *m_updateProgressDialog = nullptr;
+
+    // 邀请弹窗管理
+    QWidget *m_activeInviteNotification = nullptr;
+    void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
+    void showExpiredInviteNotification(const QString &inviterName);
 };
 
 #endif // MAINWINDOW_H

@@ -121,6 +121,12 @@ void NewUiWindow::ensureJanusAudioLoaded()
         if (!ok) {
             return;
         }
+        if (m_janusIgnoreAlone) {
+             const QString ignoreJs = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.setIgnoreAlone(true);");
+             if (m_function1WebView && m_function1WebView->page()) {
+                 m_function1WebView->page()->runJavaScript(ignoreJs);
+             }
+        }
         applyJanusAudioState();
     });
 
@@ -194,6 +200,13 @@ void NewUiWindow::applyJanusAudioState()
                                               toJsStringLiteral(display),
                                               muted ? QStringLiteral("true") : QStringLiteral("false"));
             m_function1WebView->page()->runJavaScript(switchJs);
+
+            // [Fix] Ensure ignoreAlone state is synced after switch
+            if (m_janusIgnoreAlone) {
+                const QString ignoreJs = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.setIgnoreAlone(true);");
+                m_function1WebView->page()->runJavaScript(ignoreJs);
+            }
+
             m_janusActiveRoomOwnerId = desiredOwnerId;
         });
 }
@@ -629,6 +642,7 @@ void NewUiWindow::showAudioCallUiInternal(const QString &peerId, bool forceEnabl
     m_audioCallPeerId = peerId;
     setAudioCallMiniHidden(false);
     hideAudioCallMiniBar();
+
     updateTalkButtonsAvailability();
     if (m_audioCallMuteBtn) {
         QSignalBlocker blocker(m_audioCallMuteBtn);
@@ -649,6 +663,10 @@ void NewUiWindow::showAudioCallUiInternal(const QString &peerId, bool forceEnabl
         m_audioCallPollTimer->start();
     }
     if (!m_audioCallDialog->isVisible()) {
+        const QRect parentRect = this->geometry();
+        const int x = parentRect.center().x() - m_audioCallDialog->width() / 2;
+        const int y = parentRect.center().y() - m_audioCallDialog->height() / 2;
+        m_audioCallDialog->move(x, y);
         m_audioCallDialog->show();
     }
     m_audioCallDialog->raise();
@@ -729,6 +747,18 @@ void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
     const int spacing = m_audioCallParticipantsLayout->spacing();
     const int count = finalNames.size();
     const int totalWidth = (count <= 0) ? 0 : (count * cellWidth + qMax(0, count - 1) * spacing);
+    
+    // [Fix] Adaptive width: Resize dialog to fit participants
+    if (m_audioCallDialog && totalWidth > 0) {
+        const int minW = 320;
+        const int maxW = 1200; // Safe limit
+        const int padding = 60; // Margins
+        const int newW = qBound(minW, totalWidth + padding, maxW);
+        if (m_audioCallDialog->width() != newW) {
+            m_audioCallDialog->resize(newW, m_audioCallDialog->height());
+        }
+    }
+
     const int viewportWidth = (m_audioCallParticipantsArea && m_audioCallParticipantsArea->viewport())
                                   ? m_audioCallParticipantsArea->viewport()->width()
                                   : 0;
@@ -745,7 +775,8 @@ void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
         auto *vl = new QVBoxLayout(cell);
         vl->setContentsMargins(0, 0, 0, 0);
         vl->setSpacing(6);
-        vl->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+        // [Fix] Align avatars to Top
+        vl->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
 
         auto *av = new QLabel(cell);
         av->setFixedSize(avatarSize, avatarSize);
@@ -754,16 +785,23 @@ void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
         QPixmap avatar = QPixmap();
         const QString uid = findUserIdByDisplayName(name);
         cell->setProperty("viewerId", uid);
+        
+        // [Fix] Crash protection: Use QPointer and safe menu parenting
+        QPointer<QWidget> cellPtr = cell;
+        
         if (!uid.isEmpty() && uid != m_myStreamId) {
             cell->setContextMenuPolicy(Qt::CustomContextMenu);
-            connect(cell, &QWidget::customContextMenuRequested, this, [this, cell](const QPoint &pos) {
-                const QString viewerId = cell->property("viewerId").toString();
+            connect(cell, &QWidget::customContextMenuRequested, this, [this, cellPtr](const QPoint &pos) {
+                if (!cellPtr) return;
+                const QString viewerId = cellPtr->property("viewerId").toString();
                 if (viewerId.isEmpty() || viewerId == m_myStreamId) {
                     return;
                 }
-                QMenu menu(cell);
+                // Parent menu to dialog to survive cell destruction
+                QMenu menu(m_audioCallDialog); 
+                menu.setAttribute(Qt::WA_DeleteOnClose);
                 QAction *kickAct = menu.addAction(QStringLiteral("踢出"));
-                QAction *picked = menu.exec(cell->mapToGlobal(pos));
+                QAction *picked = menu.exec(cellPtr->mapToGlobal(pos));
                 if (picked == kickAct) {
                     emit kickViewerRequested(viewerId);
                 }
@@ -782,17 +820,44 @@ void NewUiWindow::rebuildAudioCallParticipantsUi(const QStringList &names)
             av->setPixmap(avatar.scaled(avatarSize, avatarSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
         }
 
-        auto *lb = new QLabel(name, cell);
+        // [Fix] Add (房主) label to Host
+        QString labelText = name;
+        if (!uid.isEmpty() && !m_janusDesiredRoomOwnerId.isEmpty() && uid == m_janusDesiredRoomOwnerId) {
+             labelText += QStringLiteral("\n(房主)");
+        }
+
+        auto *lb = new QLabel(labelText, cell);
         lb->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
         lb->setStyleSheet("color: #e0e0e0; font-size: 12px; background: transparent;");
         lb->setFixedWidth(cellWidth);
-        lb->setFixedHeight(32);
+        // lb->setFixedHeight(32); // Allow height expansion for 2 lines
         lb->setWordWrap(true);
 
         vl->addWidget(av, 0, Qt::AlignHCenter);
         vl->addWidget(lb, 0, Qt::AlignHCenter);
 
         m_audioCallParticipantsLayout->addWidget(cell);
+
+        // [Fix] Allow Host to kick others with Crash Protection
+        cell->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(cell, &QWidget::customContextMenuRequested, this, [this, cellPtr](const QPoint &pos) {
+            if (!cellPtr) return;
+            const QString viewerId = cellPtr->property("viewerId").toString();
+            const bool iAmHost = (m_myStreamId == m_janusDesiredRoomOwnerId);
+            const bool targetIsMe = (viewerId == m_myStreamId);
+
+            if (viewerId.isEmpty() || targetIsMe || !iAmHost) {
+                return;
+            }
+            // Parent menu to dialog to survive cell destruction
+            QMenu menu(m_audioCallDialog);
+            menu.setAttribute(Qt::WA_DeleteOnClose);
+            QAction *kickAct = menu.addAction(QStringLiteral("踢出"));
+            QAction *picked = menu.exec(cellPtr->mapToGlobal(pos));
+            if (picked == kickAct) {
+                emit kickViewerRequested(viewerId);
+            }
+        });
     }
 
     if (shouldCenter) {
@@ -901,7 +966,8 @@ void NewUiWindow::refreshAudioCallParticipants()
 
         const int room = state.value(QStringLiteral("room")).toInt();
         const QString stopReason = state.value(QStringLiteral("lastStopReason")).toString();
-        if (room == 0 && stopReason == QStringLiteral("alone_30s")) {
+        // [Fix] Handle both 30s and 3s (quick exit) reasons
+        if (room == 0 && (stopReason == QStringLiteral("alone_30s") || stopReason == QStringLiteral("alone_3s"))) {
             hangupAudioCallUi();
             return;
         }
@@ -913,6 +979,25 @@ void NewUiWindow::refreshAudioCallParticipants()
                 names.append(s);
             }
         }
+
+        // [Fix] Auto-close waiting dialog when someone joins
+        if (m_isWaitingForAttendees && names.size() > 1) {
+            m_isWaitingForAttendees = false;
+            janusSetIgnoreAlone(false);
+            if (m_inviteWaitDialog) {
+                m_inviteWaitDialog->accept();
+            }
+        }
+
         rebuildAudioCallParticipantsUi(names);
     });
+}
+
+void NewUiWindow::janusSetIgnoreAlone(bool ignore)
+{
+    m_janusIgnoreAlone = ignore;
+    if (!m_function1WebView || !m_function1WebView->page()) return;
+    QString js = QStringLiteral("if (window.IrulerJanusAudio && IrulerJanusAudio.setIgnoreAlone) { IrulerJanusAudio.setIgnoreAlone(%1); }")
+        .arg(ignore ? "true" : "false");
+    m_function1WebView->page()->runJavaScript(js);
 }

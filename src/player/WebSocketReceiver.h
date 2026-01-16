@@ -141,6 +141,7 @@ private slots:
     void onStateChanged(QAbstractSocket::SocketState state);
     void attemptReconnect();
     void updateStats();
+    void onPong(quint64 elapsedTime, const QByteArray &payload);
     
 private:
     void setupWebSocket();
@@ -192,6 +193,7 @@ private:
     // 性能监控相关变量
     QList<qint64> m_latencyMeasurements;  // 延迟测量记录
     qint64 m_lastStatsUpdateTime;         // 上次统计更新时间
+    qint64 m_lastResponseTime = 0;        // 上次收到响应的时间
     qint64 m_totalDowntimeStart;          // 断线开始时间
     
     QRecursiveMutex m_mutex;

@@ -1,12 +1,14 @@
 #include <QApplication>
 #include "NewUiWindow.h"
 #include "../common/AppConfig.h"
+#include "../common/CrashGuard.h"
 #include <QNetworkProxy>
 #include <QNetworkProxyFactory>
 #include <QWebEngineUrlScheme>
 
 int main(int argc, char *argv[])
 {
+    CrashGuard::install();
     {
         static bool done = false;
         if (!done) {

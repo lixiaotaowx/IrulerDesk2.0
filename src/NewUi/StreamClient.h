@@ -29,6 +29,7 @@ signals:
     void frameReceived(const QPixmap &frame);
     void startStreamingRequested();
     void hoverStreamRequested(const QString &targetId, const QString &channelId, int fps, bool enabled);
+    void textMessageReceived(const QString &message);
 
 private slots:
     void onConnected();

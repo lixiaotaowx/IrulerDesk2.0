@@ -641,6 +641,31 @@ private slots:
                     }
                     m_subscriberViewerIds.remove(sender);
                 }
+            } else if (role == "publisher") {
+                // [Fix] Handle invite/streaming messages from Publisher (NewUiWindow)
+                if (type == "watch_request_accepted" || type == "streaming_ok") {
+                    QString viewerId = obj.value("viewer_id").toString();
+                    // Forward to Viewer (Login Client)
+                    QWebSocket *viewerSocket = nullptr;
+                    for (auto it = m_loginUsers.begin(); it != m_loginUsers.end(); ++it) {
+                        if (it.value().first == viewerId) { viewerSocket = it.key(); break; }
+                    }
+                    if (viewerSocket && viewerSocket->state() == QAbstractSocket::ConnectedState) {
+                        viewerSocket->sendTextMessage(message);
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "Publisher" << roomId << "forwarded" << type << "to viewer" << viewerId;
+                    }
+
+                    // For streaming_ok, also trigger start_streaming for self (Publisher)
+                    if (type == "streaming_ok") {
+                        QJsonObject startMsg;
+                        startMsg["type"] = "start_streaming";
+                        sender->sendTextMessage(QJsonDocument(startMsg).toJson(QJsonDocument::Compact));
+                        qDebug() << QDateTime::currentDateTime().toString()
+                                 << "Publisher" << roomId << "triggered start_streaming for self";
+                    }
+                    return;
+                }
             }
             
             // 处理鼠标位置消息 - 只从推流端转发给订阅者

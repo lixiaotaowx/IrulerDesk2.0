@@ -555,6 +555,8 @@ void StreamClient::onTextMessageReceived(const QString &message)
         }
         handleLanOfferMessage(obj);
     }
+    
+    emit textMessageReceived(message);
 }
 
 void StreamClient::onBinaryMessageReceived(const QByteArray &message)

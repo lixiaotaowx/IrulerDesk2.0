@@ -134,6 +134,7 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     });
 
     connect(m_receiver.get(), &WebSocketReceiver::disconnected, this, [this]() {
+        showOfflineReminder(QStringLiteral("连接已断开"));
         scheduleAutoReconnect();
     });
 
@@ -1612,6 +1613,7 @@ void VideoDisplayWidget::recreateReceiver()
     });
 
     connect(m_receiver.get(), &WebSocketReceiver::disconnected, this, [this]() {
+        showOfflineReminder(QStringLiteral("连接已断开"));
         scheduleAutoReconnect();
     });
 

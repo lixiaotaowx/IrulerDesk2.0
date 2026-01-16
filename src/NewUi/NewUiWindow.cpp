@@ -1926,6 +1926,99 @@ VideoDisplayWidget* NewUiWindow::embeddedVideoWidget() const
     return m_embeddedVideoWidget;
 }
 
+void NewUiWindow::updateEmbeddedFullscreenOverlayGeometry()
+{
+    if (!m_embeddedFullscreenOverlay || !m_embeddedVideoWidget) {
+        return;
+    }
+
+    const int overlayHeight = 56;
+    m_embeddedFullscreenOverlay->setGeometry(0, 0, m_embeddedVideoWidget->width(), overlayHeight);
+    m_embeddedFullscreenOverlay->raise();
+}
+
+void NewUiWindow::toggleEmbeddedVideoFullscreen(bool maximized)
+{
+    if (!m_embeddedVideoWidget) return;
+    
+    // Update local toolbar state
+    if (m_annotationToolbar) {
+        m_annotationToolbar->setMaximizedState(maximized);
+    }
+
+    if (maximized) {
+        m_embeddedFullscreenActive = true;
+        m_embeddedVideoWidget->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+        m_embeddedVideoWidget->showFullScreen();
+
+        if (!m_embeddedFullscreenOverlay) {
+            m_embeddedFullscreenOverlay = new QWidget(m_embeddedVideoWidget);
+            m_embeddedFullscreenOverlay->setAttribute(Qt::WA_TranslucentBackground);
+            m_embeddedFullscreenOverlay->setStyleSheet(QStringLiteral("background: transparent;"));
+            m_embeddedFullscreenOverlay->setFixedHeight(56);
+
+            QHBoxLayout *overlayLayout = new QHBoxLayout(m_embeddedFullscreenOverlay);
+            overlayLayout->setContentsMargins(0, 8, 0, 0);
+            overlayLayout->setSpacing(0);
+            overlayLayout->addStretch();
+            if (m_annotationContainer) {
+                m_annotationContainer->setParent(m_embeddedFullscreenOverlay);
+                overlayLayout->addWidget(m_annotationContainer);
+            }
+            overlayLayout->addStretch();
+        } else {
+            m_embeddedFullscreenOverlay->setParent(m_embeddedVideoWidget);
+            m_embeddedFullscreenOverlay->show();
+            if (m_annotationContainer && m_annotationContainer->parent() != m_embeddedFullscreenOverlay) {
+                m_annotationContainer->setParent(m_embeddedFullscreenOverlay);
+            }
+        }
+
+        m_embeddedFullscreenOverlay->show();
+        updateEmbeddedFullscreenOverlayGeometry();
+        QTimer::singleShot(0, this, [this]() { updateEmbeddedFullscreenOverlayGeometry(); });
+    } else {
+        m_embeddedFullscreenActive = false;
+        m_embeddedVideoWidget->setWindowFlags(Qt::Widget);
+        if (m_videoContentPage) {
+            QVBoxLayout *layout = qobject_cast<QVBoxLayout*>(m_videoContentPage->layout());
+            if (layout) {
+                layout->addWidget(m_embeddedVideoWidget);
+            }
+        }
+        m_embeddedVideoWidget->show();
+
+        if (m_embeddedFullscreenOverlay) {
+            m_embeddedFullscreenOverlay->hide();
+        }
+
+        if (m_annotationContainer && m_videoTopBar) {
+            QHBoxLayout *videoTopLayout = qobject_cast<QHBoxLayout*>(m_videoTopBar->layout());
+            if (videoTopLayout) {
+                m_annotationContainer->setParent(m_videoTopBar);
+                if (videoTopLayout->indexOf(m_annotationContainer) == -1) {
+                    while (QLayoutItem *it = videoTopLayout->takeAt(0)) {
+                        delete it;
+                    }
+                    videoTopLayout->addSpacing(8);
+                    if (m_titleBackBtn) {
+                        videoTopLayout->addWidget(m_titleBackBtn);
+                    }
+                    videoTopLayout->addStretch();
+                    videoTopLayout->addWidget(m_annotationContainer, 0, Qt::AlignHCenter);
+                    videoTopLayout->addStretch();
+                    if (m_videoTopRightPlaceholder) {
+                        videoTopLayout->addWidget(m_videoTopRightPlaceholder);
+                    }
+                    videoTopLayout->addSpacing(8);
+                }
+            }
+        }
+    }
+    
+    emit videoFullscreenToggled(maximized);
+}
+
 bool NewUiWindow::isEmbeddedWatching() const
 {
     return !m_embeddedTargetId.isEmpty();
@@ -3048,14 +3141,14 @@ void NewUiWindow::setupUi()
     videoLayout->setContentsMargins(0, 0, 0, 0);
     videoLayout->setSpacing(0);
 
-    QWidget *videoTopBar = new QWidget(videoContainer);
-    videoTopBar->setFixedHeight(50);
-    videoTopBar->setStyleSheet("background-color: transparent;");
-    QHBoxLayout *videoTopLayout = new QHBoxLayout(videoTopBar);
+    m_videoTopBar = new QWidget(videoContainer);
+    m_videoTopBar->setFixedHeight(50);
+    m_videoTopBar->setStyleSheet("background-color: transparent;");
+    QHBoxLayout *videoTopLayout = new QHBoxLayout(m_videoTopBar);
     videoTopLayout->setContentsMargins(0, 0, 0, 0);
     videoTopLayout->setSpacing(8);
 
-    ResponsiveButton *backBtn = new ResponsiveButton(videoTopBar);
+    ResponsiveButton *backBtn = new ResponsiveButton(m_videoTopBar);
     backBtn->setFixedSize(40, 40);
     backBtn->setText(QStringLiteral("←"));
     backBtn->setCursor(Qt::PointingHandCursor);
@@ -3074,21 +3167,26 @@ void NewUiWindow::setupUi()
     connect(backBtn, &QPushButton::clicked, this, [this]() { stopEmbeddedWatching(); });
     m_titleBackBtn = backBtn;
 
-    QFrame *annotationContainer = new QFrame(videoTopBar);
-    annotationContainer->setObjectName("VideoAnnotationContainer");
-    annotationContainer->setFixedHeight(40);
-    annotationContainer->setFrameShape(QFrame::NoFrame);
-    annotationContainer->setStyleSheet(
+    m_videoTopRightPlaceholder = new QWidget(m_videoTopBar);
+    m_videoTopRightPlaceholder->setObjectName("VideoTopRightPlaceholder");
+    m_videoTopRightPlaceholder->setFixedSize(backBtn->size());
+    m_videoTopRightPlaceholder->setStyleSheet(QStringLiteral("background: transparent;"));
+
+    m_annotationContainer = new QFrame(m_videoTopBar);
+    m_annotationContainer->setObjectName("VideoAnnotationContainer");
+    m_annotationContainer->setFixedHeight(40);
+    m_annotationContainer->setFrameShape(QFrame::NoFrame);
+    m_annotationContainer->setStyleSheet(
         "#VideoAnnotationContainer {"
         "   background-color: rgba(25, 25, 28, 160);"
         "   border: 1px solid rgba(255, 255, 255, 18);"
         "   border-radius: 20px;"
         "}"
     );
-    QHBoxLayout *annotationLayout = new QHBoxLayout(annotationContainer);
+    QHBoxLayout *annotationLayout = new QHBoxLayout(m_annotationContainer);
     annotationLayout->setContentsMargins(10, 0, 10, 0);
     annotationLayout->setSpacing(0);
-    m_annotationToolbar = new AnnotationToolbar(annotationContainer);
+    m_annotationToolbar = new AnnotationToolbar(m_annotationContainer);
     annotationLayout->addWidget(m_annotationToolbar);
 
     if (m_annotationToolbar) {
@@ -3134,17 +3232,24 @@ void NewUiWindow::setupUi()
         connect(m_annotationToolbar, &AnnotationToolbar::remoteControlToggled, this, [this](bool checked) {
             if (m_embeddedVideoWidget) m_embeddedVideoWidget->setRemoteControlEnabled(checked);
         });
+        connect(m_annotationToolbar, &AnnotationToolbar::maximizeRequested, this, [this](bool maximized) {
+            toggleEmbeddedVideoFullscreen(maximized);
+        });
     }
 
     videoTopLayout->addSpacing(8);
     videoTopLayout->addWidget(backBtn);
-    videoTopLayout->addWidget(annotationContainer);
     videoTopLayout->addStretch();
+    videoTopLayout->addWidget(m_annotationContainer, 0, Qt::AlignHCenter);
+    videoTopLayout->addStretch();
+    videoTopLayout->addWidget(m_videoTopRightPlaceholder);
+    videoTopLayout->addSpacing(8);
 
-    videoLayout->addWidget(videoTopBar);
+    videoLayout->addWidget(m_videoTopBar);
     m_embeddedVideoWidget = new VideoDisplayWidget(videoContainer);
     m_embeddedVideoWidget->setShowControls(false);
     m_embeddedVideoWidget->setAutoResize(true);
+    m_embeddedVideoWidget->installEventFilter(this);
     m_embeddedVideoWidget->setStyleSheet(
         "VideoDisplayWidget {"
         "    background-color: #000000;"
@@ -3836,6 +3941,12 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
             QString name = watched->property("userName").toString();
             emit startWatchingRequested(userId, name);
             return true; // Event handled
+        }
+    }
+
+    if (watched == m_embeddedVideoWidget && m_embeddedFullscreenActive) {
+        if (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::WindowStateChange) {
+            updateEmbeddedFullscreenOverlayGeometry();
         }
     }
     return QWidget::eventFilter(watched, event);

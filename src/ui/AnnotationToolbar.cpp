@@ -2,8 +2,10 @@
 #include <QApplication>
 #include <QDebug>
 
-AnnotationToolbar::AnnotationToolbar(QWidget *parent)
+AnnotationToolbar::AnnotationToolbar(QWidget *parent, bool showRemoteControlButton, bool showMaximizeButton)
     : QWidget(parent)
+    , m_showRemoteControlButton(showRemoteControlButton)
+    , m_showMaximizeButton(showMaximizeButton)
 {
     // Ensure transparent background so it blends with the capsule
     setAttribute(Qt::WA_TranslucentBackground);
@@ -108,24 +110,34 @@ void AnnotationToolbar::setupUI()
     );
     connect(m_clearButton, &QPushButton::clicked, this, &AnnotationToolbar::clearRequested);
 
-    // Remote Control Button
-    m_remoteCtrlButton = new QPushButton("控", this);
-    m_remoteCtrlButton->setCheckable(true);
-    m_remoteCtrlButton->setFixedSize(24, 24);
-    m_remoteCtrlButton->setToolTip(QStringLiteral("远程控制"));
-    m_remoteCtrlButton->setStyleSheet(
-        "QPushButton { "
-        "   background-color: transparent; "
-        "   color: white; "
-        "   border: none; "
-        "   border-radius: 4px; "
-        "   font-weight: bold;"
-        "   font-family: 'Microsoft YaHei';"
-        "} "
-        "QPushButton:hover { background-color: rgba(255, 255, 255, 20); }"
-        "QPushButton:checked { background-color: rgba(64, 158, 255, 180); border: 1px solid #409EFF; }"
-    );
-    connect(m_remoteCtrlButton, &QPushButton::toggled, this, &AnnotationToolbar::remoteControlToggled);
+    m_remoteCtrlButton = nullptr;
+    if (m_showRemoteControlButton) {
+        m_remoteCtrlButton = new QPushButton("控", this);
+        m_remoteCtrlButton->setCheckable(true);
+        m_remoteCtrlButton->setFixedSize(24, 24);
+        m_remoteCtrlButton->setToolTip(QStringLiteral("远程控制"));
+        m_remoteCtrlButton->setStyleSheet(
+            "QPushButton { "
+            "   background-color: transparent; "
+            "   color: white; "
+            "   border: none; "
+            "   border-radius: 4px; "
+            "   font-weight: bold;"
+            "   font-family: 'Microsoft YaHei';"
+            "} "
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 20); }"
+            "QPushButton:checked { background-color: rgba(64, 158, 255, 180); border: 1px solid #409EFF; }"
+        );
+        connect(m_remoteCtrlButton, &QPushButton::toggled, this, &AnnotationToolbar::remoteControlToggled);
+    }
+
+    m_vmaxButton = nullptr;
+    if (m_showMaximizeButton) {
+        m_vmaxButton = createNormalBtn("vmax.png", QStringLiteral("最大化"));
+        connect(m_vmaxButton, &QPushButton::clicked, this, [this]() {
+            emit maximizeRequested(!m_isMaximized);
+        });
+    }
 
     // Layout
     m_layout->addWidget(m_colorButton);
@@ -149,8 +161,22 @@ void AnnotationToolbar::setupUI()
     m_layout->addWidget(m_snippetButton);
     m_layout->addSpacing(2);
     m_layout->addWidget(m_clearButton);
-    m_layout->addSpacing(2);
-    m_layout->addWidget(m_remoteCtrlButton);
+    if (m_remoteCtrlButton) {
+        m_layout->addSpacing(2);
+        m_layout->addWidget(m_remoteCtrlButton);
+    }
+    if (m_vmaxButton) {
+        m_layout->addSpacing(2);
+        m_layout->addWidget(m_vmaxButton);
+    }
+}
+
+void AnnotationToolbar::setMaximizedState(bool maximized)
+{
+    m_isMaximized = maximized;
+    if (m_vmaxButton) {
+        m_vmaxButton->setToolTip(maximized ? QStringLiteral("还原") : QStringLiteral("最大化"));
+    }
 }
 
 void AnnotationToolbar::onToolToggled(bool checked)

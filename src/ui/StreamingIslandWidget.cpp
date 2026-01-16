@@ -77,7 +77,7 @@ void StreamingIslandWidget::setupUI()
     m_layout->setSpacing(2); // Match VideoWindow spacing
 
     // Toolbar
-    m_toolbar = new AnnotationToolbar(m_contentWidget);
+    m_toolbar = new AnnotationToolbar(m_contentWidget, false, false);
     m_layout->addWidget(m_toolbar);
     
     // Add spacing to align with VideoWindow's stretch/gap
@@ -179,7 +179,6 @@ void StreamingIslandWidget::setupUI()
     
     connect(m_toolbar, &AnnotationToolbar::clearRequested, m_annotationWidget, &ScreenAnnotationWidget::clear);
 
-    connect(m_toolbar, &AnnotationToolbar::remoteControlToggled, this, &StreamingIslandWidget::remoteControlRequested);
 }
 
 void StreamingIslandWidget::showOnScreen()

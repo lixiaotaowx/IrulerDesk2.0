@@ -93,6 +93,7 @@ public:
     void onVideoReceivingStopped(const QString &targetId);
     QString getCurrentUserId() const; // Returns the local user ID
     VideoDisplayWidget* embeddedVideoWidget() const;
+    void toggleEmbeddedVideoFullscreen(bool maximized);
     void enterEmbeddedWatchingUi(const QString &targetId, const QString &targetName = QString());
     void startEmbeddedReceiving(const QString &viewerId,
                                const QString &targetId,
@@ -117,12 +118,15 @@ signals:
     void audioCallRestoreAvailableChanged(bool available);
     void stopWatchingRequested(const QString &targetId);
     void videoReceivingStopped(const QString &targetId);
+    void videoFullscreenToggled(bool maximized);
 
 private:
     void setupUi();
     void showFunction1Browser();
     void showHomeContent();
     void updateTitleMaximizeButton();
+    void updateEmbeddedFullscreenOverlayGeometry();
+    // void toggleEmbeddedVideoFullscreen(bool maximized); // Moved to public
     void updateListWidget(const QJsonArray &users);
     void updateTalkOverlay(const QString &userId);
     QIcon buildSpinnerIcon(int size, int angleDeg) const;
@@ -243,6 +247,11 @@ private:
     QString m_embeddedTargetId;
     VideoDisplayWidget *m_embeddedVideoWidget = nullptr;
     AnnotationToolbar *m_annotationToolbar = nullptr;
+    QFrame *m_annotationContainer = nullptr;
+    QWidget *m_videoTopBar = nullptr;
+    QWidget *m_videoTopRightPlaceholder = nullptr;
+    QWidget *m_embeddedFullscreenOverlay = nullptr;
+    bool m_embeddedFullscreenActive = false;
 
     QWidget *m_titleBar = nullptr;
     bool m_titleBarDragging = false;

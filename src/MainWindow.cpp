@@ -1170,14 +1170,6 @@ void MainWindow::setupUI()
     // Initialize Streaming Island
     m_islandWidget = new StreamingIslandWidget(nullptr); 
     connect(m_islandWidget, &StreamingIslandWidget::stopStreamingRequested, this, &MainWindow::stopStreaming);
-    connect(m_islandWidget, &StreamingIslandWidget::remoteControlRequested, this, [this](bool enabled) {
-        if (m_videoWindow && m_videoWindow->getVideoDisplayWidget()) {
-            m_videoWindow->getVideoDisplayWidget()->setRemoteControlEnabled(enabled);
-        }
-        if (m_transparentImageList && m_transparentImageList->embeddedVideoWidget()) {
-            m_transparentImageList->embeddedVideoWidget()->setRemoteControlEnabled(enabled);
-        }
-    });
 }
 
 void MainWindow::setupStatusBar()

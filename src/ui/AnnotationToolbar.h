@@ -12,7 +12,7 @@ class AnnotationToolbar : public QWidget
     Q_OBJECT
 
 public:
-    explicit AnnotationToolbar(QWidget *parent = nullptr);
+    explicit AnnotationToolbar(QWidget *parent = nullptr, bool showRemoteControlButton = true, bool showMaximizeButton = true);
     ~AnnotationToolbar();
 
     // Reset all tools to unselected state
@@ -20,6 +20,9 @@ public:
 
     // Get current color ID
     int currentColorId() const;
+
+public slots:
+    void setMaximizedState(bool maximized);
 
 signals:
     void toolSelected(int mode); // 0:None, 1:Pen, 2:Rect, 3:Circle, 4:Arrow, 5:Text, 6:Eraser
@@ -29,6 +32,7 @@ signals:
     void snippetRequested();
     void clearRequested();
     void remoteControlToggled(bool enabled);
+    void maximizeRequested(bool maximized);
 
 private slots:
     void onToolToggled(bool checked);
@@ -36,6 +40,8 @@ private slots:
 
 private:
     void setupUI();
+    const bool m_showRemoteControlButton;
+    const bool m_showMaximizeButton;
 
     QHBoxLayout *m_layout;
     ColorCircleButton *m_colorButton;
@@ -50,9 +56,11 @@ private:
     QPushButton *m_snippetButton;
     QPushButton *m_clearButton;
     QPushButton *m_remoteCtrlButton;
+    QPushButton *m_vmaxButton;
 
     QString m_micButtonStyle;
     QString m_selectedToolStyle;
+    bool m_isMaximized = false;
 };
 
 #endif // ANNOTATIONTOOLBAR_H

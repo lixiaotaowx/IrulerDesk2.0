@@ -85,6 +85,15 @@ void InviteUsersDialog::setupUi() {
         "QListWidget::item:selected { background-color: #3e3e42; }"
     );
     m_userListWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    connect(m_userListWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+        QWidget *widget = m_userListWidget->itemWidget(item);
+        if (widget) {
+            QCheckBox *checkBox = widget->findChild<QCheckBox*>();
+            if (checkBox) {
+                checkBox->setChecked(!checkBox->isChecked());
+            }
+        }
+    });
     contentLayout->addWidget(m_userListWidget);
 
     // Invite Button

@@ -3917,7 +3917,7 @@ void NewUiWindow::onInviteRequested(const QStringList &userIds)
         m_inviteWaitDialog = new QMessageBox(this);
         m_inviteWaitDialog->setAttribute(Qt::WA_DeleteOnClose);
         m_inviteWaitDialog->setWindowTitle(QStringLiteral("等待加入"));
-        m_inviteWaitDialog->setText(QStringLiteral("正在等待观众加入...\n如果没有人加入，房间将保持开启。"));
+        m_inviteWaitDialog->setText(QStringLiteral("正在等待观众加入..."));
         m_inviteWaitDialog->setStandardButtons(QMessageBox::Cancel);
         m_inviteWaitDialog->button(QMessageBox::Cancel)->setText(QStringLiteral("取消邀请"));
         

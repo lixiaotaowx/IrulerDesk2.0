@@ -156,6 +156,15 @@ void FirstLaunchWizard::updateNav()
     m_nextBtn->setVisible(!last);
     m_finishBtn->setVisible(last);
     if (m_skipBtn) m_skipBtn->setVisible(first);
+
+    // Allow Enter key to trigger Next or Finish
+    if (last) {
+        m_nextBtn->setDefault(false);
+        m_finishBtn->setDefault(true);
+    } else {
+        m_finishBtn->setDefault(false);
+        m_nextBtn->setDefault(true);
+    }
 }
 
 void FirstLaunchWizard::closeEvent(QCloseEvent* e)

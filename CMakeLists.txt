@@ -57,28 +57,18 @@ set(MAIN_SOURCES
     src/common/AutoUpdater.h              # 自动更新逻辑声明
     src/video_components/VideoDisplayWidget.cpp # 视频显示控件实现：绘制视频帧与批注事件处理
     src/video_components/VideoDisplayWidget.h   # 视频显示控件声明：接口与状态
-    src/VideoWindow.cpp                   # 独立视频窗口实现：承载显示控件、拦截原生事件
-    src/VideoWindow.h                     # 独立视频窗口声明：公开接口与成员
     src/ui/ScreenAnnotationWidget.cpp     # 屏幕批注透明层实现
     src/ui/ScreenAnnotationWidget.h       # 屏幕批注透明层声明
     src/ui/AnnotationToolbar.cpp          # 批注工具条实现
     src/ui/AnnotationToolbar.h            # 批注工具条声明
-    src/ui/BubbleTipWidget.cpp            # 气泡提示控件
-    src/ui/BubbleTipWidget.h              # 气泡提示控件声明
     src/ui/AvatarSettingsWindow.cpp       # 头像设置窗口实现：用户头像资源的配置与预览
     src/ui/AvatarSettingsWindow.h         # 头像设置窗口声明：UI与交互接口
     src/ui/SystemSettingsWindow.cpp       # 系统设置窗口实现：应用参数与行为配置
     src/ui/SystemSettingsWindow.h         # 系统设置窗口声明：设置项与信号槽
-    src/ui/ColorCircleButton.cpp          # 圆形颜色按钮：自绘抗锯齿纯圆显示
-    src/ui/ColorCircleButton.h            # 圆形颜色按钮声明
-    src/ui/RainbowToolButton.cpp          # 彩虹工具按钮
-    src/ui/RainbowToolButton.h            # 彩虹工具按钮声明
     src/ui/FirstLaunchWizard.cpp          # 首次启动引导设置对话框
     src/ui/FirstLaunchWizard.h            # 首次启动引导设置对话框声明
     src/ui/StreamingIslandWidget.cpp      # 推流状态灵动岛悬浮窗
     src/ui/StreamingIslandWidget.h        # 推流状态灵动岛悬浮窗声明
-    src/ui/SnippetOverlay.cpp             # 截图选择遮罩层
-    src/ui/SnippetOverlay.h               # 截图选择遮罩层声明
     src/ui/BroadcastNoticeDialog.cpp      # 公告发布对话框
     src/ui/BroadcastNoticeDialog.h        # 公告发布对话框声明
 )
@@ -121,14 +111,8 @@ set(PLAYER_SOURCES
     src/common/CrashGuard.cpp             # 崩溃守护：未处理异常栈打印
     src/common/CrashGuard.h               # 崩溃守护声明
     src/common/AppConfig.h                # 应用配置：应用信息与服务器地址
-    src/player/VP9Decoder.cpp             # VP9 软件解码器实现
-    src/player/VP9Decoder.h               # VP9 软件解码器声明
-    src/player/DxvaVP9Decoder.cpp         # DXVA 硬件加速 VP9 解码实现
-    src/player/DxvaVP9Decoder.h           # DXVA VP9 解码器声明
     src/player/VideoRenderer.cpp          # 视频渲染器实现：呈现解码后的帧/瓦片
     src/player/VideoRenderer.h            # 视频渲染器声明
-    src/player/WebSocketReceiver.cpp      # WebSocket 接收端实现：接收瓦片与批注事件
-    src/player/WebSocketReceiver.h        # WebSocket 接收端声明
 )
 
 
@@ -152,6 +136,14 @@ set(VIDEO_COMPONENTS_SOURCES
     src/video_components/ViewerInputHandler.h   # 远程控制输入处理器声明
     src/ui/ScreenAnnotationWidget.cpp           # 屏幕批注透明层实现
     src/ui/ScreenAnnotationWidget.h             # 屏幕批注透明层声明
+    src/VideoWindow.cpp                   # 独立视频窗口实现
+    src/VideoWindow.h                     # 独立视频窗口声明
+    src/ui/ColorCircleButton.cpp          # 圆形颜色按钮
+    src/ui/ColorCircleButton.h            # 圆形颜色按钮声明
+    src/ui/RainbowToolButton.cpp          # 彩虹工具按钮
+    src/ui/RainbowToolButton.h            # 彩虹工具按钮声明
+    src/ui/SnippetOverlay.cpp             # 截图选择遮罩层
+    src/ui/SnippetOverlay.h               # 截图选择遮罩层声明
 )
 
 # 创建主程序可执行文件

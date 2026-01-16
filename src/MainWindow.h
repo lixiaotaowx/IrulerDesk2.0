@@ -252,8 +252,8 @@ private:
 
     // 等待同意弹窗
     class QMessageBox *m_waitingDialog = nullptr;
-    // 收到请求时的审批弹窗
-    class QMessageBox *m_approvalDialog = nullptr;
+    // 收到请求时的审批弹窗 (Toast Widget)
+    QWidget *m_approvalDialog = nullptr;
     
     // 标记是否主动取消了请求
     bool m_selfCancelled = false;
@@ -278,6 +278,8 @@ private:
     QWidget *m_activeInviteNotification = nullptr;
     void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
     void showExpiredInviteNotification(const QString &inviterName);
-};
+    void showToastNotification(const QString &message, bool isWarning = false, const QString &userId = QString());
+
+private slots:};
 
 #endif // MAINWINDOW_H

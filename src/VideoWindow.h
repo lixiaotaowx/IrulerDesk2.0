@@ -85,6 +85,7 @@ private:
     QPushButton *m_cameraButton;
     QPushButton *m_snippetButton;
     QPushButton *m_clearButton;
+    QPushButton *m_vmaxButton;
     ColorCircleButton *m_colorButton;
     QPushButton *m_micButton;
     QPushButton *m_speakerButton;

@@ -2629,11 +2629,13 @@ void MainWindow::showInviteNotification(const QString &inviterId, const QString 
         // Show expired notification
         showExpiredInviteNotification(inviterName);
         
-        // Auto-reject: Send rejection to server
+        // Auto-reject: Send CANCELED to server with reason="timeout"
         QJsonObject rejectMsg;
-        rejectMsg["type"] = "watch_request_rejected";
+        rejectMsg["type"] = "watch_request_canceled";
         rejectMsg["viewer_id"] = getDeviceId(); // Me
         rejectMsg["target_id"] = inviterId;
+        rejectMsg["reason"] = "timeout";
+        rejectMsg["viewer_name"] = m_userName.isEmpty() ? getDeviceId() : m_userName;
         
         if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
             m_loginWebSocket->sendTextMessage(QJsonDocument(rejectMsg).toJson(QJsonDocument::Compact));
@@ -2646,9 +2648,11 @@ void MainWindow::showInviteNotification(const QString &inviterId, const QString 
         toast->deleteLater();
         
         QJsonObject rejectMsg;
-        rejectMsg["type"] = "watch_request_rejected";
+        rejectMsg["type"] = "watch_request_canceled";
         rejectMsg["viewer_id"] = getDeviceId();
         rejectMsg["target_id"] = inviterId;
+        rejectMsg["reason"] = "user_action";
+        rejectMsg["viewer_name"] = m_userName.isEmpty() ? getDeviceId() : m_userName;
         
         if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
             m_loginWebSocket->sendTextMessage(QJsonDocument(rejectMsg).toJson(QJsonDocument::Compact));
@@ -2675,6 +2679,73 @@ void MainWindow::showInviteNotification(const QString &inviterId, const QString 
             m_transparentImageList->show();
         }
     });
+
+    repositionOnlineToasts();
+    toast->show();
+    toast->raise();
+}
+
+void MainWindow::showToastNotification(const QString &message, bool isWarning, const QString &userId)
+{
+    QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
+    toast->setAttribute(Qt::WA_TranslucentBackground);
+    toast->setAttribute(Qt::WA_ShowWithoutActivating);
+
+    QWidget *body = new QWidget(toast);
+    // Style: Red for warning (timeout), Blue for info (reject) - Consistent with Offline/Notice style
+    QString bg = isWarning ? "rgba(140, 70, 70, 255)" : "rgba(70, 90, 120, 255)";
+    body->setStyleSheet(QString("background-color: %1; border: none; border-radius: 18px;").arg(bg));
+    body->setMinimumSize(420, 96);
+    
+    QHBoxLayout *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(20, 18, 20, 18);
+    bodyLayout->setSpacing(14);
+
+    const int avatarSize = 56;
+    QLabel *avatar = new QLabel(body);
+    avatar->setFixedSize(avatarSize, avatarSize);
+    // Use userId if provided to load avatar, otherwise default
+    avatar->setPixmap(loadAvatarPixmapForToast(userId, -1, avatarSize));
+    avatar->setAlignment(Qt::AlignCenter);
+    avatar->setStyleSheet("background: transparent;");
+    bodyLayout->addWidget(avatar);
+
+    QLabel *label = new QLabel(message, body);
+    // Use slightly smaller font than "Online" (24px) to accommodate longer messages
+    label->setStyleSheet("color: #ffffff; font-size: 18px; font-weight: 800; background: transparent; border: none;");
+    label->setWordWrap(true);
+    bodyLayout->addWidget(label, 1);
+
+    QPushButton *closeBtn = new QPushButton("×", body);
+    closeBtn->setFixedSize(24, 24);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton { color: #ccc; background: transparent; border: none; font-size: 20px; font-weight: bold; margin-top: -10px; }"
+        "QPushButton:hover { color: #fff; }"
+    );
+    connect(closeBtn, &QPushButton::clicked, toast, &QWidget::deleteLater);
+    
+    QVBoxLayout *rightLayout = new QVBoxLayout();
+    rightLayout->addWidget(closeBtn);
+    rightLayout->addStretch();
+    bodyLayout->addLayout(rightLayout);
+
+    QVBoxLayout *root = new QVBoxLayout(toast);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->addWidget(body);
+
+    toast->adjustSize();
+    body->adjustSize();
+
+    m_onlineToasts.append(toast);
+
+    connect(toast, &QObject::destroyed, this, [this, toast]() {
+        m_onlineToasts.removeAll(toast);
+        repositionOnlineToasts();
+    });
+
+    // Auto-close after 5 seconds
+    QTimer::singleShot(5000, toast, &QWidget::deleteLater);
 
     repositionOnlineToasts();
     toast->show();
@@ -3103,9 +3174,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_approvalDialog->close();
                 m_approvalDialog->deleteLater();
                 m_approvalDialog = nullptr;
-                QMessageBox msgBox(this);
-                msgBox.setIcon(QMessageBox::Information);
-                msgBox.setWindowTitle(QStringLiteral("未接提醒"));
+                
                 QString viewerName = obj.value("viewer_name").toString();
                 if (viewerName.isEmpty() && m_listWidget) {
                     for (int i = 0; i < m_listWidget->count(); ++i) {
@@ -3123,9 +3192,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 if (viewerName.isEmpty()) {
                     viewerName = QStringLiteral("访客");
                 }
-                msgBox.setText(QStringLiteral("用户 %1 已取消观看请求，建议马上微信联系").arg(viewerName));
-                msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
-                msgBox.exec();
+                
+                showToastNotification(QStringLiteral("用户 %1 已取消观看请求").arg(viewerName), true, viewerId);
             } else {
                 qInfo() << "No approval dialog to close for canceled request (via action)";
             }
@@ -3203,27 +3271,97 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             QJsonDocument doc(approval);
             m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
 
-            // 2. 弹出非模态确认对话框
+            // 2. 弹出右下角标准通知 Toast (Standard Bottom-Right)
             if (m_approvalDialog) {
                 m_approvalDialog->close();
-                delete m_approvalDialog;
+                m_approvalDialog->deleteLater();
                 m_approvalDialog = nullptr;
             }
             
-            m_approvalDialog = new QMessageBox(this);
-            m_approvalDialog->setWindowTitle(QStringLiteral("观看请求"));
-            m_approvalDialog->setText(QStringLiteral("用户 %1 请求观看您的屏幕，是否允许？").arg(viewerName));
-            QPushButton *acceptBtn = m_approvalDialog->addButton(QMessageBox::Yes);
-            QPushButton *rejectBtn = m_approvalDialog->addButton(QMessageBox::No);
-            m_approvalDialog->setDefaultButton(acceptBtn);
-            m_approvalDialog->setModal(false); 
-            m_approvalDialog->setWindowFlags(m_approvalDialog->windowFlags() | Qt::WindowStaysOnTopHint);
+            QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
+            toast->setAttribute(Qt::WA_TranslucentBackground);
+            toast->setAttribute(Qt::WA_ShowWithoutActivating);
 
-            // 连接同意按钮
-            // [Fix] Capture viewerName for use in lambda
-            connect(acceptBtn, &QPushButton::clicked, this, [this, viewerId, targetId, viewerName]() {
-                if (!m_approvalDialog) return;
+            QWidget *body = new QWidget(toast);
+            // Blue background for requests
+            body->setStyleSheet("background-color: rgba(70, 90, 120, 255); border: none; border-radius: 18px;");
+            body->setMinimumSize(420, 110);
+            
+            QHBoxLayout *bodyLayout = new QHBoxLayout(body);
+            bodyLayout->setContentsMargins(20, 15, 20, 15);
+            bodyLayout->setSpacing(15);
 
+            // Avatar
+            const int avatarSize = 56;
+            QLabel *avatar = new QLabel(body);
+            avatar->setFixedSize(avatarSize, avatarSize);
+            avatar->setPixmap(loadAvatarPixmapForToast(viewerId, -1, avatarSize));
+            avatar->setStyleSheet("background: transparent;");
+            bodyLayout->addWidget(avatar);
+
+            // Content (Text + Buttons)
+            QVBoxLayout *contentLayout = new QVBoxLayout();
+            contentLayout->setSpacing(8);
+            
+            QLabel *label = new QLabel(QStringLiteral("用户 %1 请求观看您的屏幕").arg(viewerName), body);
+            label->setStyleSheet("color: #ffffff; font-size: 16px; font-weight: bold; background: transparent; border: none;");
+            label->setWordWrap(true);
+            contentLayout->addWidget(label);
+            
+            QHBoxLayout *btnLayout = new QHBoxLayout();
+            btnLayout->setSpacing(10);
+            
+            QPushButton *rejectBtn = new QPushButton(QStringLiteral("拒绝"), body);
+            rejectBtn->setCursor(Qt::PointingHandCursor);
+            rejectBtn->setFixedSize(80, 30);
+            rejectBtn->setStyleSheet(
+                "QPushButton { background-color: rgba(255, 255, 255, 30); color: #ffffff; border-radius: 15px; font-size: 13px; border: none; font-weight: bold; }"
+                "QPushButton:hover { background-color: rgba(255, 255, 255, 50); }"
+            );
+            
+            QPushButton *acceptBtn = new QPushButton(QStringLiteral("允许"), body);
+            acceptBtn->setCursor(Qt::PointingHandCursor);
+            acceptBtn->setFixedSize(80, 30);
+            acceptBtn->setStyleSheet(
+                "QPushButton { background-color: #00C853; color: #ffffff; border-radius: 15px; font-size: 13px; border: none; font-weight: bold; }"
+                "QPushButton:hover { background-color: #00E676; }"
+            );
+            
+            btnLayout->addWidget(rejectBtn);
+            btnLayout->addWidget(acceptBtn);
+            btnLayout->addStretch();
+            
+            contentLayout->addLayout(btnLayout);
+            bodyLayout->addLayout(contentLayout, 1);
+            
+            // Close Button (Top Right)
+            QVBoxLayout *rightLayout = new QVBoxLayout();
+            QPushButton *closeBtn = new QPushButton("×", body);
+            closeBtn->setFixedSize(24, 24);
+            closeBtn->setStyleSheet(
+                "QPushButton { color: #ccc; background: transparent; border: none; font-size: 20px; font-weight: bold; margin-top: -5px; }"
+                "QPushButton:hover { color: #fff; }"
+            );
+            connect(closeBtn, &QPushButton::clicked, toast, &QWidget::close);
+            rightLayout->addWidget(closeBtn);
+            rightLayout->addStretch();
+            bodyLayout->addLayout(rightLayout);
+
+            QVBoxLayout *root = new QVBoxLayout(toast);
+            root->setContentsMargins(0, 0, 0, 0);
+            root->addWidget(body);
+            
+            m_approvalDialog = toast;
+            m_onlineToasts.append(toast);
+            
+            connect(toast, &QObject::destroyed, this, [this, toast]() {
+                if (m_approvalDialog == toast) m_approvalDialog = nullptr;
+                m_onlineToasts.removeAll(toast);
+                repositionOnlineToasts();
+            });
+
+            // Connect Logic
+            connect(acceptBtn, &QPushButton::clicked, this, [this, toast, viewerId, targetId, viewerName]() {
                 // 同意
                 QJsonObject accepted;
                 accepted["type"] = "watch_request_accepted";
@@ -3234,13 +3372,11 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                     m_loginWebSocket->sendTextMessage(accDoc.toJson(QJsonDocument::Compact));
                 }
 
-                // [Fix] Add to "My Room" list
                 if (m_transparentImageList) {
                     m_transparentImageList->addViewer(viewerId, viewerName);
                     scheduleNoViewerSoftStop();
                 }
 
-                // [Local Control] 本地直接通知捕获进程开始推流
                 if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
                     m_currentWatchdogSocket->write("CMD_APPROVE");
                     m_currentWatchdogSocket->flush();
@@ -3248,12 +3384,10 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                     m_pendingApproval = true;
                 }
 
-                // 开始推流
                 if (!m_isStreaming) {
                     startStreaming();
                 }
 
-                // 发送 streaming_ok
                 QJsonObject streamOkResponse;
                 streamOkResponse["type"] = "streaming_ok";
                 streamOkResponse["viewer_id"] = viewerId;
@@ -3264,15 +3398,10 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                     m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
                 }
 
-                if (m_approvalDialog) {
-                    m_approvalDialog->close();
-                    m_approvalDialog->deleteLater();
-                    m_approvalDialog = nullptr;
-                }
+                toast->close();
             });
-
-            // 连接拒绝按钮
-            connect(rejectBtn, &QPushButton::clicked, this, [this, viewerId, targetId]() {
+            
+            connect(rejectBtn, &QPushButton::clicked, this, [this, toast, viewerId, targetId]() {
                 // 拒绝
                 QJsonObject rejected;
                 rejected["type"] = "watch_request_rejected";
@@ -3283,23 +3412,18 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                     m_loginWebSocket->sendTextMessage(rejDoc.toJson(QJsonDocument::Compact));
                 }
 
-                // [Local Control] 本地通知捕获进程拒绝
                 if (m_currentWatchdogSocket && m_currentWatchdogSocket->state() == QLocalSocket::ConnectedState) {
                     m_currentWatchdogSocket->write("CMD_REJECT");
                     m_currentWatchdogSocket->flush();
                     qDebug() << "Sent local rejection command to CaptureProcess";
                 }
-
-                if (m_approvalDialog) {
-                    m_approvalDialog->close();
-                    m_approvalDialog->deleteLater();
-                    m_approvalDialog = nullptr;
-                }
+                
+                toast->close();
             });
 
-            m_approvalDialog->show();
-            m_approvalDialog->raise();
-            m_approvalDialog->activateWindow();
+            repositionOnlineToasts();
+            toast->show();
+            toast->raise();
         } else {
             if (!m_isStreaming) {
                 startStreaming();
@@ -3339,9 +3463,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_approvalDialog = nullptr;
             
             // 显示未接提醒
-            QMessageBox msgBox(this);
-            msgBox.setIcon(QMessageBox::Information);
-            msgBox.setWindowTitle(QStringLiteral("未接提醒"));
             QString viewerName = obj.value("viewer_name").toString();
             if (viewerName.isEmpty() && m_listWidget) {
                 for (int i = 0; i < m_listWidget->count(); ++i) {
@@ -3359,9 +3480,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             if (viewerName.isEmpty()) {
                 viewerName = QStringLiteral("访客");
             }
-            msgBox.setText(QStringLiteral("用户 %1 已取消观看请求，建议马上微信联系").arg(viewerName));
-            msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
-            msgBox.exec();
+            showToastNotification(QStringLiteral("用户 %1 已取消观看请求").arg(viewerName), true, viewerId);
         } else {
             qInfo() << "No approval dialog to close for canceled request";
         }
@@ -3496,6 +3615,21 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             // msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
             // msgBox.exec();
         }
+    } else if (type == "watch_request_canceled") {
+        QString viewerId = obj.value("viewer_id").toString();
+        QString targetId = obj.value("target_id").toString();
+        QString reason = obj.value("reason").toString();
+        QString viewerName = obj.value("viewer_name").toString();
+        if (viewerName.isEmpty()) viewerName = viewerId;
+
+        // If I am the target (Host) and the viewer canceled (rejected my invite)
+        if (targetId == getDeviceId()) {
+                 if (reason == "timeout") {
+                     showToastNotification(QStringLiteral("用户%1邀请过期，自动拒绝").arg(viewerName), true, viewerId);
+                 } else {
+                     showToastNotification(QStringLiteral("用户%1拒绝").arg(viewerName), false, viewerId);
+                 }
+            }
     } else if (type == "viewer_mic_state") {
         QString viewerId = obj.value("viewer_id").toString();
         QString targetId = obj.value("target_id").toString();

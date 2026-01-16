@@ -230,6 +230,7 @@ VideoWindow::VideoWindow(QWidget *parent)
     , m_colorButton(nullptr)
     , m_micButton(nullptr)
     , m_speakerButton(nullptr)
+    , m_vmaxButton(nullptr)
     , m_videoDisplayWidget(nullptr)
     , m_dragging(false)
     , m_isMaximized(false)
@@ -725,6 +726,15 @@ void VideoWindow::setupCustomTitleBar()
     m_toolBarLayout->addSpacing(2);
 
     m_toolBarLayout->addWidget(m_clearButton);
+    m_toolBarLayout->addSpacing(2);
+
+    m_vmaxButton = new QPushButton("", m_titleBar);
+    m_vmaxButton->setIcon(QIcon(iconDir + "/vmax.png"));
+    m_vmaxButton->setIconSize(QSize(16, 16));
+    m_vmaxButton->setStyleSheet(micButtonStyle);
+    m_vmaxButton->setToolTip(QStringLiteral("最大化"));
+    connect(m_vmaxButton, &QPushButton::clicked, this, &VideoWindow::toggleFullscreen);
+    m_toolBarLayout->addWidget(m_vmaxButton);
 
     m_titleCenter = new QWidget(m_titleBar);
     m_titleCenterLayout = new QHBoxLayout(m_titleCenter);
@@ -780,6 +790,7 @@ void VideoWindow::setupCustomTitleBar()
         m_cameraButton->setStyleSheet(micButtonStyle);
         m_snippetButton->setStyleSheet(micButtonStyle);
         m_clearButton->setStyleSheet(micButtonStyle);
+        m_vmaxButton->setStyleSheet(micButtonStyle);
         // m_arrowButton->setStyleSheet(m_arrowButton->isChecked() ? selectedToolStyle : micButtonStyle);
     };
 
@@ -1256,6 +1267,7 @@ void VideoWindow::toggleFullscreen()
         if (m_titleBar) m_titleBar->show();
         detachToolbarToTitleBar();
         if (m_fullscreenBar) m_fullscreenBar->setVisible(false);
+        if (m_vmaxButton) m_vmaxButton->setToolTip(QStringLiteral("最大化"));
     } else {
         // 记录当前几何以便恢复
         m_normalGeometry = geometry();
@@ -1267,6 +1279,7 @@ void VideoWindow::toggleFullscreen()
             m_fullscreenBar->raise();
             m_fullscreenBar->setVisible(true);
         }
+        if (m_vmaxButton) m_vmaxButton->setToolTip(QStringLiteral("还原"));
     }
 }
 

@@ -35,6 +35,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QDebug>
+#include <QRubberBand>
 #include <QRandomGenerator>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -480,7 +481,14 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
     // Unified logic: Win10 (1803+) and Win11 use Acrylic with the provided color
     // This allows testing Win11 visual style on Win10
     if (build >= 17134) {
-        policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+        // Use Standard Blur (Low Sampling) for Win10 if requested or to avoid lag
+        // Win11 (build >= 22000) handles Acrylic well
+        if (build < 22000) {
+            policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
+        } else {
+            policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+        }
+
         policy.AccentFlags = 0;
         policy.GradientColor = abgrGradientColor;
         if (fn(hwnd, &data)) {
@@ -491,7 +499,7 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
     // Fallback (Older Win10 or if Acrylic fails)
     policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
     policy.AccentFlags = 0;
-    policy.GradientColor = 0xE6000000;
+    policy.GradientColor = 0x00FFFFFF; // Transparent tint to avoid black background
 
     return fn(hwnd, &data) != FALSE;
 }
@@ -792,7 +800,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 #endif
 
     setMouseTracking(true);
-    resize(m_totalItemWidth + 20, 800); // Adjust width to fit cards, height arbitrary for now
+    resize(m_totalItemWidth + 20, 770); // Adjust width to fit cards, height arbitrary for now
     
     setupUi();
 
@@ -970,7 +978,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     connect(m_loginClient, &LoginClient::connected, this, &NewUiWindow::onLoginConnected);
     */
 
-    resize(1160, 800);
+    resize(1160, 720);
     if (QScreen *screen = QGuiApplication::screenAt(QCursor::pos())) {
         const QRect avail = screen->availableGeometry();
         const QSize sz = size();
@@ -1131,6 +1139,7 @@ void NewUiWindow::setCaptureScreenIndex(int index)
 
 NewUiWindow::~NewUiWindow()
 {
+
     if (m_timer && m_timer->isActive()) {
         m_timer->stop();
     }
@@ -2102,9 +2111,16 @@ void NewUiWindow::setupUi()
     QString appDir = QCoreApplication::applicationDirPath();
 
     setObjectName("NewUiWindowRoot");
+#ifdef _WIN32
+    // Always enable TranslucentBackground for Windows to support Acrylic/Blur
+    setAttribute(Qt::WA_TranslucentBackground, true);
+    setAttribute(Qt::WA_NoSystemBackground, true);
+    setAutoFillBackground(false);
+#else
     setAttribute(Qt::WA_StyledBackground, false);
     setAutoFillBackground(false);
     setAttribute(Qt::WA_NoSystemBackground, true);
+#endif
 #ifndef _WIN32
     setStyleSheet(
         "QWidget#NewUiWindowRoot {"
@@ -2125,6 +2141,8 @@ void NewUiWindow::setupUi()
             pRtlGetVersion(&osInfo);
             if (osInfo.dwMajorVersion > 10 || (osInfo.dwMajorVersion == 10 && osInfo.dwBuildNumber >= 22000)) {
                 isWin11 = true;
+            } else if (osInfo.dwMajorVersion == 10) {
+                m_isWin10 = true;
             }
         }
     }
@@ -2150,12 +2168,12 @@ void NewUiWindow::setupUi()
     leftPanel->installEventFilter(this);
     // Use QSS for styling
     // Unified values for both Win10 and Win11 to ensure consistent look and shadow visibility
-    const QString leftBgColor = "rgba(45, 45, 48, 150)";
 
+    const QString leftBgColor = isWin11 ? "rgba(45, 45, 48, 150)" : "rgba(45, 45, 48, 150)";
     leftPanel->setStyleSheet(
         "QWidget#LeftPanel {"
         "   background-color: " + leftBgColor + ";"
-        "   border: 1px solid rgba(255, 255, 255, 18);"
+        "   border: 1px solid " + leftBgColor + ";"
         "   border-top-left-radius: 10px;"
         "   border-bottom-left-radius: 10px;"
         "   border-top-right-radius: 0px;"
@@ -2371,8 +2389,9 @@ void NewUiWindow::setupUi()
     QWidget *rightPanel = new QWidget(this);
     rightPanel->setObjectName("RightPanel");
     
-    // Unified values for both Win10 and Win11 to ensure consistent look and shadow visibility
-    const QString rightBgColor = "rgba(22, 22, 24, 120)";
+    // Win10 uses white background, Win11 uses translucent dark background (original style)
+    // isWin11 is already calculated at the beginning of setupUi()
+    const QString rightBgColor = isWin11 ? "rgba(45, 45, 48, 150)" : "rgba(45, 45, 48, 150)";
 
     rightPanel->setStyleSheet(
         "QWidget#RightPanel {"
@@ -2402,14 +2421,14 @@ void NewUiWindow::setupUi()
 
     QFrame *toolsContainer = new QFrame(titleBar);
     toolsContainer->setObjectName("ToolsContainer");
-    toolsContainer->setFixedSize(160, 40);
+    toolsContainer->setFixedSize(160, 30);
     toolsContainer->setFrameShape(QFrame::NoFrame);
     toolsContainer->installEventFilter(this);
     toolsContainer->setStyleSheet(
         "#ToolsContainer {"
         "   background-color: rgba(90, 90, 96, 160);"
         "   border: 1px solid rgba(255, 255, 255, 18);"
-        "   border-radius: 20px;"
+        "   border-radius: 15px;"
         "}"
         "QPushButton {"
         "   background-color: transparent;"
@@ -2418,7 +2437,7 @@ void NewUiWindow::setupUi()
         "}"
         "QPushButton:hover {"
         "   background-color: rgba(255, 255, 255, 28);"
-        "   border-radius: 17px;"
+        "   border-radius: 12px;"
         "}"
         "QPushButton:pressed {"
         "   background-color: rgba(255, 255, 255, 40);"
@@ -2431,16 +2450,16 @@ void NewUiWindow::setupUi()
     toolsLayout->setAlignment(Qt::AlignCenter);
 
     ResponsiveButton *toolBtn1 = new ResponsiveButton();
-    toolBtn1->setFixedSize(40, 40);
+    toolBtn1->setFixedSize(30, 30);
     toolBtn1->setIcon(QIcon(appDir + "/maps/logo/d.png"));
     toolBtn1->setIconSize(QSize(24, 24));
     toolBtn1->setCursor(Qt::PointingHandCursor);
-    toolBtn1->setToolTip("灵动岛");
+    toolBtn1->setToolTip("本地绘制");
     toolBtn1->installEventFilter(this);
     connect(toolBtn1, &QPushButton::clicked, this, &NewUiWindow::toggleStreamingIslandRequested);
 
     ResponsiveButton *toolBtn2 = new ResponsiveButton();
-    toolBtn2->setFixedSize(40, 40);
+    toolBtn2->setFixedSize(30, 30);
     toolBtn2->setIcon(QIcon(appDir + "/maps/logo/log.png"));
     toolBtn2->setIconSize(QSize(24, 24));
     toolBtn2->setCursor(Qt::PointingHandCursor);
@@ -2449,7 +2468,7 @@ void NewUiWindow::setupUi()
     connect(toolBtn2, &QPushButton::clicked, this, &NewUiWindow::onBroadcastBtnClicked);
 
     ResponsiveButton *toolBtn3 = new ResponsiveButton();
-    toolBtn3->setFixedSize(40, 40);
+    toolBtn3->setFixedSize(30, 30);
     toolBtn3->setIcon(QIcon(appDir + "/maps/logo/clearn.png"));
     toolBtn3->setIconSize(QSize(24, 24));
     toolBtn3->setCursor(Qt::PointingHandCursor);
@@ -3145,7 +3164,7 @@ void NewUiWindow::setupUi()
     m_videoTopBar->setFixedHeight(50);
     m_videoTopBar->setStyleSheet("background-color: transparent;");
     QHBoxLayout *videoTopLayout = new QHBoxLayout(m_videoTopBar);
-    videoTopLayout->setContentsMargins(0, 0, 0, 0);
+    videoTopLayout->setContentsMargins(0, 0, 0, 0); // No bottom margin to bring video closer
     videoTopLayout->setSpacing(8);
 
     ResponsiveButton *backBtn = new ResponsiveButton(m_videoTopBar);
@@ -3174,13 +3193,13 @@ void NewUiWindow::setupUi()
 
     m_annotationContainer = new QFrame(m_videoTopBar);
     m_annotationContainer->setObjectName("VideoAnnotationContainer");
-    m_annotationContainer->setFixedHeight(40);
+    m_annotationContainer->setFixedHeight(30);
     m_annotationContainer->setFrameShape(QFrame::NoFrame);
     m_annotationContainer->setStyleSheet(
         "#VideoAnnotationContainer {"
-        "   background-color: rgba(25, 25, 28, 160);"
+        "   background-color: rgba(35, 35, 38, 160);"
         "   border: 1px solid rgba(255, 255, 255, 18);"
-        "   border-radius: 20px;"
+        "   border-radius: 15px;"
         "}"
     );
     QHBoxLayout *annotationLayout = new QHBoxLayout(m_annotationContainer);
@@ -3254,6 +3273,7 @@ void NewUiWindow::setupUi()
         "VideoDisplayWidget {"
         "    background-color: #000000;"
         "    border: none;"
+        "    margin-top: -10px;" /* Negative margin to pull video up closer to the back button row */
         "}"
     );
     connect(m_embeddedVideoWidget, &VideoDisplayWidget::receivingStopped, this, [this](const QString &, const QString &targetId) {
@@ -3436,25 +3456,20 @@ bool NewUiWindow::event(QEvent *event)
             } 
             // Windows 10 or older
             else {
-                // Disable transparency effects
-                setAttribute(Qt::WA_TranslucentBackground, false);
-                setAttribute(Qt::WA_NoSystemBackground, false);
-                setAutoFillBackground(true);
+                // Extended frame logic already handled by initial attributes
                 
                 // Extend the frame into the client area to ensure WM_NCCALCSIZE works correctly
-                // and hides the standard title bar while keeping native behaviors
                 tryExtendGlassFrame(hwnd);
-
-                // Use a gradient stylesheet to simulate glass/sheen
-                // We use a linear gradient from top-left to bottom-right
-                // High saturation Blue -> Purple gradient
-                setStyleSheet("QWidget#NewUiWindow {"
-                              "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-                              "    stop:0 #5575b0ff, stop:1 #8b5895ff);"
-                              "}");
                 
-                // Ensure no DWM effects that might cause issues
-                disableAcrylic(hwnd);
+                // Try to enable blur/acrylic
+                tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr);
+
+                // Use a semi-transparent gradient stylesheet to allow blur to show through
+                // Converting #0859f0 (8, 89, 240) and #d400ff (212, 0, 255) to rgba with alpha ~245
+                setStyleSheet("QWidget#NewUiWindowRoot {"
+                              "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                              "    stop:0 rgba(8, 89, 240, 245), stop:1 rgba(212, 0, 255, 245));"
+                              "}");
                 
                 // Still try to apply rounded corners if possible (software fallback in applyHwndCornerStyle)
                 applyHwndCornerStyle(hwnd, !(windowState() & Qt::WindowMaximized));
@@ -3736,7 +3751,7 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
                 QRect r = m_resizeStartGeometry;
 
                 const int minW = qMax(500, minimumWidth());
-                const int minH = qMax(480, minimumHeight());
+                const int minH = qMax(450, minimumHeight());
 
                 if (m_resizeEdges.testFlag(Qt::LeftEdge)) r.setLeft(r.left() + dx);
                 if (m_resizeEdges.testFlag(Qt::RightEdge)) r.setRight(r.right() + dx);
@@ -3837,6 +3852,32 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
                     return true;
                 }
                 const QPoint globalPos = me->globalPosition().toPoint();
+
+#ifdef _WIN32
+                if ((globalPos - m_titleBarPressGlobal).manhattanLength() > QApplication::startDragDistance()) {
+                    ReleaseCapture();
+                    HWND hwnd = reinterpret_cast<HWND>(winId());
+                    
+                    // Handle "drag from maximized" logic before handing off to OS
+                    if (windowState() & Qt::WindowMaximized) {
+                        const QRect restore = normalGeometry().isValid() ? normalGeometry() : geometry();
+                        const int restoreW = qMax(200, restore.width());
+                        const int restoreH = qMax(200, restore.height());
+                        const qreal xRatio = width() > 0 ? (qreal)m_titleBarPressLocalInWindow.x() / (qreal)width() : 0.5;
+                        const int newX = globalPos.x() - qRound(xRatio * restoreW);
+                        const int newY = globalPos.y() - m_titleBarPressLocalInWindow.y();
+                        showNormal();
+                        setGeometry(QRect(QPoint(newX, newY), QSize(restoreW, restoreH)));
+                    }
+                    
+                    SendMessage(hwnd, WM_SYSCOMMAND, SC_MOVE + HTCAPTION, 0);
+                    
+                    // After SendMessage returns, drag is complete
+                    m_titleBarDragging = false;
+                    m_titleBarPendingRestore = false;
+                    m_titleBarSnapMaximize = false;
+                }
+#else
                 if (m_titleBarPendingRestore) {
                     m_titleBarPendingRestore = false;
                     const QRect restore = normalGeometry().isValid() ? normalGeometry() : geometry();
@@ -3858,6 +3899,7 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
                 } else {
                     m_titleBarSnapMaximize = false;
                 }
+#endif
                 return true;
             }
         }
@@ -4471,6 +4513,34 @@ void NewUiWindow::onTextMessageReceived(const QString &message)
             m_timer->start(100); // Start streaming at 10 FPS
         }
     }
+}
+
+void NewUiWindow::updateAcrylicState(bool enable)
+{
+#ifdef _WIN32
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+    if (enable) {
+        tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr);
+    } else {
+        // Completely disable blur for maximum performance during drag on Win10
+        // Using ACCENT_DISABLED instead of standard blur (ACCENT_ENABLE_BLURBEHIND)
+        HMODULE user32 = GetModuleHandleW(L"user32.dll");
+        if (user32) {
+            auto fn = reinterpret_cast<SetWindowCompositionAttributeFn>(GetProcAddress(user32, "SetWindowCompositionAttribute"));
+            if (fn) {
+                ACCENT_POLICY policy{};
+                policy.AccentState = ACCENT_DISABLED;
+                WINDOWCOMPOSITIONATTRIBDATA data{};
+                data.Attrib = WCA_ACCENT_POLICY;
+                data.pvData = &policy;
+                data.cbData = sizeof(policy);
+                fn(hwnd, &data);
+            }
+        }
+    }
+#else
+    Q_UNUSED(enable);
+#endif
 }
 
 #include "NewUiWindow.moc"

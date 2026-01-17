@@ -75,7 +75,7 @@ private slots:
     void showMainList();
     void onSetAvatarRequested();  // 新增：设置头像槽函数
     void onSystemSettingsRequested(); // 新增：打开系统设置
-    void onToggleStreamingIsland(); // 新增：切换灵动岛显示
+    void onToggleStreamingIsland(); // 新增：
     void onScreenSelected(int index); // 新增：屏幕选择槽
     void onAvatarSelected(int iconId);  // 新增：头像选择完成槽函数
     void onClearMarksRequested(); // 新增：清理标记槽函数
@@ -247,7 +247,7 @@ private:
     bool m_pendingShowVideoWindow = true;
     QString m_audioOnlyTargetId;
     
-    // 推流状态灵动岛
+    
     StreamingIslandWidget *m_islandWidget = nullptr;
 
     // 等待同意弹窗

@@ -11,6 +11,7 @@
 #include <QPixmap>
 #include <QPointer>
 #include <QMessageBox>
+#include <QRubberBand>
 #include "StreamClient.h"
 #include "LoginClient.h"
 
@@ -247,6 +248,12 @@ private:
     QString m_embeddedTargetId;
     VideoDisplayWidget *m_embeddedVideoWidget = nullptr;
     AnnotationToolbar *m_annotationToolbar = nullptr;
+    
+    // Window dragging optimization
+    bool m_isWin10 = false;
+    void updateAcrylicState(bool enable);
+    QRubberBand *m_dragGhost = nullptr;
+
     QFrame *m_annotationContainer = nullptr;
     QWidget *m_videoTopBar = nullptr;
     QWidget *m_videoTopRightPlaceholder = nullptr;

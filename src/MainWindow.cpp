@@ -1213,7 +1213,7 @@ void MainWindow::startStreaming()
     
     m_isStreaming = true;
 
-    // [User Request] 取消灵动岛与推流的自动关联
+
     // if (m_islandWidget) {
     //     int screenIndex = loadScreenIndexFromConfig();
     //     const auto screens = QGuiApplication::screens();
@@ -1250,7 +1250,7 @@ void MainWindow::stopStreaming()
     
     stopProcesses();
 
-    // [User Request] 取消灵动岛与推流的自动关联
+
     // if (m_islandWidget) {
     //     m_islandWidget->hide();
     // }
@@ -4199,7 +4199,7 @@ void MainWindow::onScreenSelected(int index)
             }
         }
         
-        // 实时更新灵动岛位置
+
         if (m_isStreaming && m_islandWidget) {
              const auto screens = QGuiApplication::screens();
              if (index >= 0 && index < screens.size()) {

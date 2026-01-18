@@ -773,7 +773,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 
     // Remove Qt::FramelessWindowHint to allow native Windows behaviors (Snap, Maximize animation)
     // We handle WM_NCCALCSIZE to hide the standard frame visually
-    setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
+    setWindowFlags(Qt::Window | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
 
 #ifdef _WIN32
     DWORD build = getWindowsBuildNumber();
@@ -2337,7 +2337,14 @@ void NewUiWindow::setupUi()
 
             connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
                 playIconBling(btn);
+
+                // [Fix] Reset maintenance state
+                if (m_function1BrowserPage) {
+                    if (QLabel *l = m_function1BrowserPage->findChild<QLabel*>("MaintenanceLabel")) l->setVisible(false);
+                }
+
                 if (m_function1WebView) {
+                    m_function1WebView->setVisible(true);
                     QString v = AppConfig::readConfigValue(QStringLiteral("function3_url")).trimmed();
                     if (v.isEmpty()) {
                         m_function1WebView->setHtml(
@@ -3362,6 +3369,25 @@ void NewUiWindow::showFunction1Browser()
     if (!m_rightContentStack || !m_function1BrowserPage) {
         return;
     }
+
+    // [Maintenance Mode] Hide WebView and show maintenance message
+    if (m_function1WebView) {
+        m_function1WebView->setVisible(false);
+    }
+
+    QLabel *maintenanceLabel = m_function1BrowserPage->findChild<QLabel *>("MaintenanceLabel");
+    if (!maintenanceLabel) {
+        maintenanceLabel = new QLabel(QStringLiteral("李哥故事白板尚在维护中\n敬请期待"), m_function1BrowserPage);
+        maintenanceLabel->setObjectName("MaintenanceLabel");
+        maintenanceLabel->setAlignment(Qt::AlignCenter);
+        maintenanceLabel->setStyleSheet("QLabel { color: rgba(255, 255, 255, 150); font-size: 24px; font-weight: bold; }");
+        if (m_function1BrowserPage->layout()) {
+            m_function1BrowserPage->layout()->addWidget(maintenanceLabel);
+        }
+    }
+    maintenanceLabel->setVisible(true);
+
+    /*
     if (m_function1WebView) {
         QString v = AppConfig::readConfigValue(QStringLiteral("storyboard_url")).trimmed();
         if (v.isEmpty()) {
@@ -3369,6 +3395,7 @@ void NewUiWindow::showFunction1Browser()
         }
         m_function1WebView->load(QUrl::fromUserInput(v));
     }
+    */
     m_rightContentStack->setCurrentWidget(m_function1BrowserPage);
 }
 

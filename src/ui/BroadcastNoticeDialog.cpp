@@ -173,7 +173,7 @@ void BroadcastNoticeDialog::setupUi()
     m_taskListWidget = new QListWidget(container);
     m_taskListWidget->setStyleSheet(
         "QListWidget { background: #1e1e1e; border: 1px solid #3e3e42; border-radius: 6px; outline: none; }"
-        "QListWidget::item { padding: 5px; border-bottom: 1px solid #2d2d2d; }"
+        "QListWidget::item { padding: 10px; border-bottom: 1px solid #2d2d2d; }"
         "QListWidget::item:hover { background-color: #2d2d2d; }"
     );
     contentLayout->addWidget(m_taskListWidget);

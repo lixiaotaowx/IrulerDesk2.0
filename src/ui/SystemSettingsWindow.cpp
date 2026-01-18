@@ -455,9 +455,11 @@ QFrame* SystemSettingsWindow::setupConfigControls()
         m_function3UrlEdit->setText(v);
     }
 
+    /*
     connect(m_storyboardUrlEdit, &QLineEdit::editingFinished, this, [this]() {
         emit storyboardUrlChanged(m_storyboardUrlEdit->text().trimmed());
     });
+    */
     connect(m_storyboardUrlEdit, &QLineEdit::returnPressed, this, [this]() {
         emit storyboardUrlChanged(m_storyboardUrlEdit->text().trimmed());
     });
@@ -465,9 +467,11 @@ QFrame* SystemSettingsWindow::setupConfigControls()
         emit storyboardUrlChanged(m_storyboardUrlEdit->text().trimmed());
     });
 
+    /*
     connect(m_function2UrlEdit, &QLineEdit::editingFinished, this, [this]() {
         emit function2UrlChanged(m_function2UrlEdit->text().trimmed());
     });
+    */
     connect(m_function2UrlEdit, &QLineEdit::returnPressed, this, [this]() {
         emit function2UrlChanged(m_function2UrlEdit->text().trimmed());
     });
@@ -475,9 +479,11 @@ QFrame* SystemSettingsWindow::setupConfigControls()
         emit function2UrlChanged(m_function2UrlEdit->text().trimmed());
     });
 
+    /*
     connect(m_function3UrlEdit, &QLineEdit::editingFinished, this, [this]() {
         emit function3UrlChanged(m_function3UrlEdit->text().trimmed());
     });
+    */
     connect(m_function3UrlEdit, &QLineEdit::returnPressed, this, [this]() {
         emit function3UrlChanged(m_function3UrlEdit->text().trimmed());
     });

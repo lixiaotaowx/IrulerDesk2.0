@@ -71,6 +71,8 @@ set(MAIN_SOURCES
     src/ui/StreamingIslandWidget.h        # 推流状态灵动岛悬浮窗声明
     src/ui/BroadcastNoticeDialog.cpp      # 公告发布对话框
     src/ui/BroadcastNoticeDialog.h        # 公告发布对话框声明
+    src/common/TaskManager.h              # 任务管理器声明
+    src/ui/DateTimePickerDialog.h         # 时间选择器对话框声明
 )
 
 # 屏幕捕获编码进程源文件

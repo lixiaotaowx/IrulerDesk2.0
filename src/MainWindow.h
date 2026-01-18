@@ -85,7 +85,7 @@ private slots:
     void onUserNameChanged(const QString &name);
     void onMicToggleRequested(bool enabled);
     void onSpeakerToggleRequested(bool enabled);
-    void sendBroadcastNotice(const QString& content);
+    void sendBroadcastNotice(const QString& content, const QStringList &targets = QStringList());
 
 private:
     void setupUI();

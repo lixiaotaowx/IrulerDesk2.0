@@ -13,6 +13,8 @@ public:
     explicit InviteUsersDialog(const QMap<QString, QString> &users, const QMap<QString, QPixmap> &avatars, QWidget *parent = nullptr);
     ~InviteUsersDialog();
 
+    void setConfirmButtonText(const QString &text);
+
 signals:
     void inviteRequested(const QStringList &userIds);
 

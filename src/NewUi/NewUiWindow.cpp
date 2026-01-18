@@ -2463,7 +2463,7 @@ void NewUiWindow::setupUi()
     toolBtn2->setIcon(QIcon(appDir + "/maps/logo/log.png"));
     toolBtn2->setIconSize(QSize(24, 24));
     toolBtn2->setCursor(Qt::PointingHandCursor);
-    toolBtn2->setToolTip("日志");
+    toolBtn2->setToolTip("任务");
     toolBtn2->installEventFilter(this);
     connect(toolBtn2, &QPushButton::clicked, this, &NewUiWindow::onBroadcastBtnClicked);
 
@@ -4012,7 +4012,31 @@ void NewUiWindow::setGlobalMicCheckedSilently(bool enabled)
 
 void NewUiWindow::onBroadcastBtnClicked()
 {
-    BroadcastNoticeDialog dlg(this);
+    QMap<QString, QString> users;
+    QMap<QString, QPixmap> avatars;
+
+    // Iterate over m_userItems to get available users
+    for (auto it = m_userItems.begin(); it != m_userItems.end(); ++it) {
+        QString userId = it.key();
+        QListWidgetItem *item = it.value();
+        if (!item) continue;
+        
+        QString userName = item->data(Qt::UserRole + 1).toString();
+        if (userName.isEmpty()) {
+            userName = userId;
+        }
+        users.insert(userId, userName);
+
+        // Get avatar
+        if (m_userAvatarLabels.contains(userId)) {
+            QLabel *label = m_userAvatarLabels.value(userId);
+            if (label && !label->pixmap().isNull()) {
+                avatars.insert(userId, label->pixmap());
+            }
+        }
+    }
+
+    BroadcastNoticeDialog dlg(users, avatars, this);
     connect(&dlg, &BroadcastNoticeDialog::publishRequested, this, &NewUiWindow::broadcastRequested);
     dlg.exec();
 }

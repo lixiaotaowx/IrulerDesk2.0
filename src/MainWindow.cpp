@@ -35,6 +35,8 @@
 #include <ctime>
 #include "common/AppConfig.h"
 #include "common/AutoUpdater.h"
+#include "ui/DateTimePickerDialog.h"
+#include "common/TaskManager.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -144,6 +146,13 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 检查并显示更新日志
     QTimer::singleShot(500, this, &MainWindow::checkAndShowUpdateLog);
+
+    // Task Reminder connection
+    connect(&TaskManager::instance(), &TaskManager::taskReminder, this, [this](const QString &content, const QString &taskId) {
+        Q_UNUSED(taskId);
+        // Show persistent toast
+        showNoticeToast(content, "任务提醒", QDateTime::currentDateTime().toString("HH:mm"));
+    });
 
     // 自动更新初始化
     m_autoUpdater = new AutoUpdater(this);
@@ -4865,7 +4874,7 @@ void MainWindow::saveFunction3UrlToConfig(const QString &url)
     }
 }
 
-void MainWindow::sendBroadcastNotice(const QString& content)
+void MainWindow::sendBroadcastNotice(const QString& content, const QStringList &targets)
 {
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState) {
         QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("未连接到服务器，无法发布公告"));
@@ -4877,6 +4886,14 @@ void MainWindow::sendBroadcastNotice(const QString& content)
     msg["content"] = content;
     msg["sender"] = m_userName.isEmpty() ? m_userId : m_userName;
     msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    
+    if (!targets.isEmpty()) {
+        QJsonArray targetArray;
+        for (const QString &t : targets) {
+            targetArray.append(t);
+        }
+        msg["targets"] = targetArray;
+    }
     
     m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
 }
@@ -4936,6 +4953,23 @@ void MainWindow::showNoticeToast(const QString& content, const QString& sender, 
     
     QVBoxLayout *rightLayout = new QVBoxLayout();
     rightLayout->addWidget(closeBtn);
+
+    QPushButton *addTaskBtn = new QPushButton("加入到任务", body);
+    addTaskBtn->setCursor(Qt::PointingHandCursor);
+    addTaskBtn->setToolTip("加入到任务列表");
+    addTaskBtn->setStyleSheet(
+        "QPushButton { color: #ccc; background: transparent; border: 1px solid #ccc; border-radius: 4px; padding: 2px 6px; font-size: 12px; font-weight: bold; margin-top: 10px; }"
+        "QPushButton:hover { color: #fff; border-color: #fff; background-color: rgba(255,255,255,0.1); }"
+    );
+    connect(addTaskBtn, &QPushButton::clicked, [this, content, toast]() {
+        DateTimePickerDialog dlg(content, toast);
+        dlg.setWindowFlags(dlg.windowFlags() | Qt::WindowStaysOnTopHint);
+        if (dlg.exec() == QDialog::Accepted) {
+            TaskManager::instance().addTask(dlg.taskContent(), dlg.selectedDateTime());
+        }
+    });
+    rightLayout->addWidget(addTaskBtn);
+
     rightLayout->addStretch();
     bodyLayout->addLayout(rightLayout);
 

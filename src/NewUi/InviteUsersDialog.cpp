@@ -189,6 +189,12 @@ void InviteUsersDialog::loadUsers(const QMap<QString, QString> &users, const QMa
     }
 }
 
+void InviteUsersDialog::setConfirmButtonText(const QString &text) {
+    if (m_inviteBtn) {
+        m_inviteBtn->setText(text);
+    }
+}
+
 void InviteUsersDialog::onInviteClicked() {
     QStringList invitedIds;
     for (int i = 0; i < m_userListWidget->count(); ++i) {

@@ -115,7 +115,7 @@ signals:
     void closeRoomRequested();
     void talkToggleRequested(const QString &targetId, bool enabled);
     void avatarPixmapUpdated(const QString &userId, const QPixmap &pixmap);
-    void broadcastRequested(const QString &content);
+    void broadcastRequested(const QString &content, const QStringList &targets);
     void audioCallRestoreAvailableChanged(bool available);
     void stopWatchingRequested(const QString &targetId);
     void videoReceivingStopped(const QString &targetId);

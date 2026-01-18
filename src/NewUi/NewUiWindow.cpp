@@ -1,4 +1,5 @@
 #include "NewUiWindow.h"
+#include "NewUserGuide.h"
 #include "InviteUsersDialog.h"
 #include <QMessageBox>
 #include <QHBoxLayout>
@@ -2505,6 +2506,7 @@ void NewUiWindow::setupUi()
     toolsLayout->setAlignment(Qt::AlignCenter);
 
     ResponsiveButton *toolBtn1 = new ResponsiveButton();
+    toolBtn1->setObjectName("ToolLocalDraw");
     toolBtn1->setFixedSize(30, 30);
     toolBtn1->setIcon(QIcon(appDir + "/maps/logo/d.png"));
     toolBtn1->setIconSize(QSize(24, 24));
@@ -2514,6 +2516,7 @@ void NewUiWindow::setupUi()
     connect(toolBtn1, &QPushButton::clicked, this, &NewUiWindow::toggleStreamingIslandRequested);
 
     ResponsiveButton *toolBtn2 = new ResponsiveButton();
+    toolBtn2->setObjectName("ToolTask");
     toolBtn2->setFixedSize(30, 30);
     toolBtn2->setIcon(QIcon(appDir + "/maps/logo/log.png"));
     toolBtn2->setIconSize(QSize(24, 24));
@@ -2523,6 +2526,7 @@ void NewUiWindow::setupUi()
     connect(toolBtn2, &QPushButton::clicked, this, &NewUiWindow::onBroadcastBtnClicked);
 
     ResponsiveButton *toolBtn3 = new ResponsiveButton();
+    toolBtn3->setObjectName("ToolClear");
     toolBtn3->setFixedSize(30, 30);
     toolBtn3->setIcon(QIcon(appDir + "/maps/logo/clearn.png"));
     toolBtn3->setIconSize(QSize(24, 24));
@@ -3467,6 +3471,10 @@ void NewUiWindow::setupUi()
     // Assemble Main Layout
     mainLayout->addWidget(leftPanel);
     mainLayout->addWidget(rightPanel);
+
+    if (AppConfig::lastTutorialVersion() != AppConfig::applicationVersion()) {
+        QTimer::singleShot(1000, this, &NewUiWindow::showUserGuide);
+    }
 }
 
 void NewUiWindow::showFunction1Browser()
@@ -3605,6 +3613,40 @@ bool NewUiWindow::event(QEvent *event)
         });
     }
 #endif
+    if (event->type() == QEvent::ApplicationStateChange) {
+        if (QApplication::applicationState() == Qt::ApplicationActive) {
+            if (m_timer) m_timer->start(60000);
+            
+            // Resume HiFps if a user is selected
+            if (m_listWidget) {
+                QListWidgetItem *current = m_listWidget->currentItem();
+                if (current) {
+                    QString userId = current->data(Qt::UserRole).toString();
+                    if (userId.isEmpty()) {
+                        if (QWidget *iw = m_listWidget->itemWidget(current)) {
+                            if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                                userId = card->property("userId").toString();
+                            } else {
+                                userId = iw->property("userId").toString();
+                            }
+                        }
+                    }
+                    if (!userId.isEmpty() && userId != m_myStreamId) {
+                         startHiFpsForUser(userId);
+                         resetSelectionAutoPause(userId);
+                    }
+                }
+            }
+        } else {
+            if (m_timer) m_timer->stop();
+            
+            // Stop HiFps
+            stopHiFpsForUser();
+            if (m_selectionAutoPauseTimer) {
+                m_selectionAutoPauseTimer->stop();
+            }
+        }
+    }
     if (event && (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::WindowActivate)) {
         const bool active = (event->type() == QEvent::WindowActivate);
         if (!active) {
@@ -4175,13 +4217,7 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
-    if (event->type() == QEvent::ApplicationStateChange) {
-        if (QApplication::applicationState() == Qt::ApplicationActive) {
-            if (m_timer) m_timer->start(60000);
-        } else {
-            if (m_timer) m_timer->stop();
-        }
-    }
+
 
     if (watched == m_embeddedVideoWidget && m_embeddedFullscreenActive) {
         if (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::WindowStateChange) {
@@ -4272,6 +4308,9 @@ void NewUiWindow::onMeetingBtnClicked()
 void NewUiWindow::onInviteRequested(const QStringList &userIds)
 {
     if (userIds.isEmpty()) return;
+
+    // [Request] Auto open local drawing tool when starting a meeting
+    emit setStreamingIslandVisibleRequested(true);
 
     // [Fix] 预先初始化 Janus 房间，避免多人同时加入时的竞态条件
     janusSwitchToMyRoom();
@@ -4833,6 +4872,16 @@ void NewUiWindow::onUpdateError(const QString &error)
         
         QMessageBox::warning(this, QStringLiteral("更新失败"), QStringLiteral("更新过程中发生错误：\n%1").arg(error));
     }
+}
+
+void NewUiWindow::showUserGuide()
+{
+    if (!m_userGuide) {
+        m_userGuide = new NewUserGuide(this);
+    }
+    m_userGuide->show();
+    // Mark as seen immediately so it doesn't pop up again automatically
+    AppConfig::setLastTutorialVersion(AppConfig::applicationVersion());
 }
 
 #include "NewUiWindow.moc"

@@ -40,6 +40,8 @@ set(MAIN_SOURCES
     src/MainWindow.cpp                    # 主窗口实现：主界面布局、交互逻辑、控制流程
     src/MainWindow.h                      # 主窗口声明：成员与信号槽声明
     src/NewUi/NewUiWindow.cpp             # 新UI窗口实现
+    src/NewUi/NewUserGuide.cpp            # 新手引导窗口实现
+    src/NewUi/NewUserGuide.h              # 新手引导窗口声明
     src/NewUi/NewUiWindow.Streaming.cpp   # 新UI窗口实现：推流/订阅/HiFPS/预览
     src/NewUi/NewUiWindow.Viewers.cpp     # 新UI窗口实现：viewer 状态与房间逻辑
     src/NewUi/NewUiWindow.AudioCall.cpp   # 新UI窗口实现：音频通话/Janus

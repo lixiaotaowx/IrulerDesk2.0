@@ -3954,7 +3954,9 @@ void MainWindow::onSystemSettingsRequested()
         connect(m_systemSettingsWindow, &SystemSettingsWindow::function2UrlChanged,
                 this, &MainWindow::onFunction2UrlChanged);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::function3UrlChanged,
-                this, &MainWindow::onFunction3UrlChanged);
+            this, &MainWindow::onFunction3UrlChanged);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::userGuideRequested,
+                m_transparentImageList, &NewUiWindow::showUserGuide);
     }
     const bool wasVisible = m_systemSettingsWindow->isVisible();
     const Qt::WindowFlags flags = m_systemSettingsWindow->windowFlags();
@@ -4379,6 +4381,28 @@ void MainWindow::onToggleStreamingIsland()
                  m_islandWidget->setTargetScreen(screens[screenIndex]);
              }
              m_islandWidget->showOnScreen();
+        }
+    }
+}
+
+void MainWindow::onSetStreamingIslandVisible(bool visible)
+{
+    if (!m_islandWidget) {
+        return;
+    }
+
+    if (visible) {
+        if (!m_islandWidget->isVisible()) {
+             int screenIndex = loadScreenIndexFromConfig();
+             const auto screens = QGuiApplication::screens();
+             if (screenIndex >= 0 && screenIndex < screens.size()) {
+                 m_islandWidget->setTargetScreen(screens[screenIndex]);
+             }
+             m_islandWidget->showOnScreen();
+        }
+    } else {
+        if (m_islandWidget->isVisible()) {
+            m_islandWidget->hide();
         }
     }
 }
@@ -4926,3 +4950,6 @@ void MainWindow::showNoticeToast(const QString& content, const QString& sender, 
     toast->show();
     toast->raise();
 }
+v o i d   M a i n W i n d o w : : o n C l o s e R o o m R e q u e s t e d ( )   { }  
+ v o i d   M a i n W i n d o w : : o n K i c k V i e w e r R e q u e s t e d ( c o n s t   Q S t r i n g   & v i e w e r I d )   {   Q _ U N U S E D ( v i e w e r I d ) ;   }  
+ 

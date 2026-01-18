@@ -74,6 +74,7 @@ private slots:
     void showMainList();
     void onSystemSettingsRequested(); // 新增：打开系统设置
     void onToggleStreamingIsland(); // 新增：
+    void onSetStreamingIslandVisible(bool visible);
     void onScreenSelected(int index); // 新增：屏幕选择槽
     void onClearMarksRequested(); // 新增：清理标记槽函数
     void onExitRequested();       // 新增：退出槽函数
@@ -81,6 +82,8 @@ private slots:
     void onAnnotationColorChanged(int colorId); // 新增：批注颜色变化持久化
     void onUserNameChanged(const QString &name);
     void onMicToggleRequested(bool enabled);
+    void onKickViewerRequested(const QString &viewerId);
+    void onCloseRoomRequested();
     void onSpeakerToggleRequested(bool enabled);
     void sendBroadcastNotice(const QString& content, const QStringList &targets = QStringList());
 

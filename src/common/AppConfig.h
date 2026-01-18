@@ -113,6 +113,55 @@ inline QString readConfigValue(const QString &key)
     return QString();
 }
 
+inline void writeConfigValue(const QString &key, const QString &value)
+{
+    // Write to the first writable path, usually in app dir
+    QString path = configFilePathInAppDir();
+    QFile f(path);
+    QStringList lines;
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&f);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        in.setEncoding(QStringConverter::Utf8);
+#else
+        in.setCodec("UTF-8");
+#endif
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.trimmed().startsWith(key + "=")) {
+                continue; // Skip existing key
+            }
+            lines.append(line);
+        }
+        f.close();
+    }
+    
+    lines.append(key + "=" + value);
+    
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        QTextStream out(&f);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        out.setEncoding(QStringConverter::Utf8);
+#else
+        out.setCodec("UTF-8");
+#endif
+        for (const QString &line : lines) {
+            out << line << "\n";
+        }
+        f.close();
+    }
+}
+
+inline QString lastTutorialVersion()
+{
+    return readConfigValue(QStringLiteral("last_tutorial_version"));
+}
+
+inline void setLastTutorialVersion(const QString &version)
+{
+    writeConfigValue(QStringLiteral("last_tutorial_version"), version);
+}
+
 inline QString serverAddress()
 {
     const QString v = readConfigValue(QStringLiteral("server_address"));

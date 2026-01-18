@@ -21,6 +21,8 @@ public:
     // Get current color ID
     int currentColorId() const;
 
+    QPushButton* remoteControlButton() const { return m_remoteCtrlButton; }
+
 public slots:
     void setMaximizedState(bool maximized);
 

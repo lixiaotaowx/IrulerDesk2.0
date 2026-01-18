@@ -128,6 +128,10 @@ void NewUiWindow::ensureJanusAudioLoaded()
              }
         }
         applyJanusAudioState();
+
+        if (!m_janusDesiredRoomOwnerId.isEmpty()) {
+            scheduleJanusEnsure(m_janusDesiredRoomOwnerId);
+        }
     });
 
     const QString templatePath = AppConfig::janusAudioHtmlPath();
@@ -357,6 +361,9 @@ void NewUiWindow::janusSetMuted(bool muted)
 
 void NewUiWindow::janusStop()
 {
+    // [Request] Auto close local drawing tool when stopping meeting
+    emit setStreamingIslandVisibleRequested(false);
+
     stopJanusEnsure();
     m_janusDesiredRoomOwnerId.clear();
     m_janusActiveRoomOwnerId.clear();
@@ -696,6 +703,9 @@ void NewUiWindow::hideAudioCallUi()
 
 void NewUiWindow::hangupAudioCallUi()
 {
+    // [Request] Auto close local drawing tool when hanging up
+    emit setStreamingIslandVisibleRequested(false);
+
     const QString peerId = m_audioCallPeerId;
     if (!peerId.isEmpty()) {
         setTalkConnected(peerId, false);

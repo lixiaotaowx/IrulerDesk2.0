@@ -25,6 +25,7 @@ class VideoDisplayWidget;
 class AnnotationToolbar;
 class AutoUpdater;
 class QProgressDialog;
+class NewUserGuide;
 
 class NewUiWindow : public QWidget
 {
@@ -33,6 +34,9 @@ class NewUiWindow : public QWidget
 public:
     explicit NewUiWindow(QWidget *parent = nullptr);
     ~NewUiWindow();
+
+public slots:
+    void showUserGuide();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -119,6 +123,7 @@ signals:
     void micToggleRequested(bool enabled);
     void clearMarksRequested();
     void toggleStreamingIslandRequested();
+    void setStreamingIslandVisibleRequested(bool visible);
     void kickViewerRequested(const QString &viewerId);
     void closeRoomRequested();
     void talkToggleRequested(const QString &targetId, bool enabled);
@@ -366,4 +371,6 @@ private:
     bool m_audioCallMiniHidden = false;
     QPushButton *m_audioCallTitleRestoreBtn = nullptr;
     bool m_audioCallRestoreAvailable = false;
+    
+    NewUserGuide *m_userGuide = nullptr;
 };

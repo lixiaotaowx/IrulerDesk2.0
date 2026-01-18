@@ -31,6 +31,7 @@ signals:
     void storyboardUrlChanged(const QString& url);
     void function2UrlChanged(const QString& url);
     void function3UrlChanged(const QString& url);
+    void userGuideRequested();
 
 public slots:
     void notifySwitchSucceeded();

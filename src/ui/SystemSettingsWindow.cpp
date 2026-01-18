@@ -599,5 +599,29 @@ QFrame* SystemSettingsWindow::setupConfigControls()
         emit function3UrlChanged(m_function3UrlEdit->text().trimmed());
     });
 
+    QWidget* guideRow = new QWidget(card);
+    QHBoxLayout* guideLayout = new QHBoxLayout(guideRow);
+    guideLayout->setContentsMargins(0, 0, 0, 0);
+    guideLayout->setSpacing(10);
+    QLabel* guideLabel = new QLabel(QStringLiteral("新手引导："), guideRow);
+    QPushButton* guideBtn = new QPushButton(QStringLiteral("重新显示"), guideRow);
+    guideBtn->setCursor(Qt::PointingHandCursor);
+    guideBtn->setStyleSheet(
+        "QPushButton {"
+        "   background-color: #0078d4;"
+        "   color: white;"
+        "   border: none;"
+        "   border-radius: 4px;"
+        "   padding: 6px 12px;"
+        "}"
+        "QPushButton:hover { background-color: #1084d9; }"
+        "QPushButton:pressed { background-color: #006abc; }"
+    );
+    connect(guideBtn, &QPushButton::clicked, this, &SystemSettingsWindow::userGuideRequested);
+    guideLayout->addWidget(guideLabel);
+    guideLayout->addWidget(guideBtn);
+    guideLayout->addStretch(1);
+    box->addWidget(guideRow);
+
     return card;
 }

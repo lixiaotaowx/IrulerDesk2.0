@@ -23,6 +23,8 @@ class QScrollArea;
 class QHBoxLayout;
 class VideoDisplayWidget;
 class AnnotationToolbar;
+class AutoUpdater;
+class QProgressDialog;
 
 class NewUiWindow : public QWidget
 {
@@ -54,6 +56,12 @@ private slots:
     void onMeetingBtnClicked();
     void onInviteRequested(const QStringList &userIds);
     void onTextMessageReceived(const QString &message);
+
+    // Auto Update Slots
+    void checkForUpdates();
+    void onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force);
+    void onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+    void onUpdateError(const QString &error);
 
 public:
     void setMyStreamId(const QString &id, const QString &name = QString());
@@ -252,6 +260,10 @@ private:
     QString m_embeddedTargetId;
     VideoDisplayWidget *m_embeddedVideoWidget = nullptr;
     AnnotationToolbar *m_annotationToolbar = nullptr;
+
+    // Auto Update
+    AutoUpdater *m_autoUpdater = nullptr;
+    QProgressDialog *m_updateProgressDialog = nullptr;
     
     // Window dragging optimization
     bool m_isWin10 = false;
@@ -299,6 +311,9 @@ private:
     qint64 m_hiFpsLastFrameAtMs = 0;
     qint64 m_hiFpsLastRecoveryAtMs = 0;
     bool m_keepAwakeRequested = false;
+
+    // channel_id -> { sender_id -> fps }
+    QMap<QString, QMap<QString, int>> m_channelSubscribers;
 
     // Layout constants
     int m_cardBaseWidth;

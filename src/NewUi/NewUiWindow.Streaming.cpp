@@ -129,6 +129,9 @@ void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
 
 void NewUiWindow::onTimerTimeout()
 {
+    if (QApplication::applicationState() != Qt::ApplicationActive) {
+        return;
+    }
     publishLocalScreenFrameTriggered(QStringLiteral("timer"), false, true);
 }
 
@@ -144,6 +147,14 @@ void NewUiWindow::publishLocalScreenFrameTriggered(const QString &reason, bool f
     }
 
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+
+    // Enforce rate limit for timer-based updates (Default Stream)
+    // This ensures that unselected stream is definitely slow (~3s)
+    if (reason == QStringLiteral("timer")) {
+        if (m_lastPreviewCaptureAtMs > 0 && (nowMs - m_lastPreviewCaptureAtMs) < 2000) {
+            return;
+        }
+    }
 
     const bool requestLike = reason.contains(QStringLiteral("request"), Qt::CaseInsensitive);
     if (requestLike) {
@@ -313,9 +324,7 @@ QString NewUiWindow::makeHoverChannelId(const QString &targetUserId) const
     if (targetUserId.isEmpty()) {
         return QString();
     }
-    if (!m_myStreamId.isEmpty()) {
-        return QStringLiteral("hfps_%1_%2").arg(targetUserId, m_myStreamId);
-    }
+    // Shared channel for all viewers watching 'targetUserId'
     return QStringLiteral("hfps_%1").arg(targetUserId);
 }
 
@@ -494,6 +503,7 @@ void NewUiWindow::sendHiFpsControl(const QString &targetUserId, const QString &c
     obj["fps"] = fps;
     obj["enabled"] = enabled;
     obj["target_id"] = targetUserId;
+    obj["sender_id"] = m_myStreamId;
     const QString payload = QJsonDocument(obj).toJson(QJsonDocument::Compact);
 
     StreamClient *subSock = m_remoteStreams.value(targetUserId, nullptr);
@@ -578,6 +588,7 @@ void NewUiWindow::startHiFpsPublishing(const QString &channelId, int fps)
     if (channelId.isEmpty()) {
         return;
     }
+    qInfo().noquote() << "[HiFpsPub] startHiFpsPublishing channel=" << channelId << " requested_fps=" << fps;
     const QString pubUrl = QString("%1/publish/%2").arg(AppConfig::wsBaseUrl(), channelId);
     StreamClient *pub = m_hiFpsPublishers.value(channelId, nullptr);
     if (!pub) {
@@ -719,18 +730,22 @@ void NewUiWindow::resetSelectionAutoPause(const QString &userId)
     }
 }
 
+
 void NewUiWindow::pauseSelectedStreamForUser(const QString &userId)
 {
-    if (userId.isEmpty() || userId == m_myStreamId) {
+    if (userId.isEmpty()) {
         return;
     }
+
+    // Only stop if it's the currently active high-FPS user
+    if (userId == m_hiFpsActiveUserId) {
+        stopHiFpsForUser();
+    }
+
     m_autoPausedUserId = userId;
     if (QLabel *ov = m_reselectOverlays.value(userId, nullptr)) {
         ov->setVisible(true);
         ov->raise();
-    }
-    if (userId == m_hiFpsActiveUserId) {
-        stopHiFpsForUser();
     }
 }
 

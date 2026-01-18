@@ -7,11 +7,15 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QDebug>
+#include <QSslSocket>
 
 AutoUpdater::AutoUpdater(QObject *parent)
     : QObject(parent), m_reply(nullptr), m_file(nullptr)
 {
     m_manager = new QNetworkAccessManager(this);
+    qInfo() << "[AutoUpdater] Initialized. SSL Support:" << QSslSocket::supportsSsl() 
+            << "Build:" << QSslSocket::sslLibraryBuildVersionString() 
+            << "Runtime:" << QSslSocket::sslLibraryVersionString();
 }
 
 AutoUpdater::~AutoUpdater()

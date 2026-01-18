@@ -512,12 +512,14 @@ void StreamClient::onTextMessageReceived(const QString &message)
         const QString channelId = obj.value("channel_id").toString();
         const int fps = obj.value("fps").toInt(10);
         const bool enabled = obj.value("enabled").toBool(true);
+        const QString senderId = obj.value("sender_id").toString();
         if (!channelId.isEmpty()) {
-            emit logMessage(QStringLiteral("[StreamClient] rx hover_stream target_id=%1 channel_id=%2 fps=%3 enabled=%4")
+            emit logMessage(QStringLiteral("[StreamClient] rx hover_stream target_id=%1 channel_id=%2 fps=%3 enabled=%4 sender_id=%5")
                                 .arg(targetId, channelId)
                                 .arg(fps)
-                                .arg(enabled ? QStringLiteral("true") : QStringLiteral("false")));
-            emit hoverStreamRequested(targetId, channelId, fps, enabled);
+                                .arg(enabled ? QStringLiteral("true") : QStringLiteral("false"))
+                                .arg(senderId));
+            emit hoverStreamRequested(targetId, channelId, fps, enabled, senderId);
         }
     } else if (type == QStringLiteral("lan_offer_request")) {
         if (!isPublishUrl(m_lastUrl)) {

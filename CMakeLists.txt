@@ -444,6 +444,8 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/Release/
     PATTERN "*.lib" EXCLUDE
     PATTERN "*.exp" EXCLUDE
     PATTERN "*.ilk" EXCLUDE
+    PATTERN "app_config.txt" EXCLUDE
+    PATTERN "config/app_config.txt" EXCLUDE
 )
 
 # 移除旧的 install(CODE) 尝试
@@ -463,7 +465,7 @@ include(InstallRequiredSystemLibraries)
 set(CPACK_PACKAGE_NAME "IrulerDeskPro")
 set(CPACK_PACKAGE_VENDOR "lunzi")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "屏幕采集、VP9 传输、Qt 前端一体化客户端")
-set(CPACK_PACKAGE_VERSION "1.0.3")
+set(CPACK_PACKAGE_VERSION "1.0.5")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win64")
 set(CPACK_SYSTEM_NAME "Windows")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "IrulerDeskPro")

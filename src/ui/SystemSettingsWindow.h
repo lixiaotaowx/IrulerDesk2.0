@@ -14,10 +14,13 @@
 #include <QList>
 #include <QFrame>
 
+class AutoUpdater;
+
 class SystemSettingsWindow : public QDialog {
     Q_OBJECT
 public:
     explicit SystemSettingsWindow(QWidget* parent = nullptr);
+    ~SystemSettingsWindow(); // Add destructor
 
 signals:
     void screenSelected(int index);
@@ -31,6 +34,12 @@ signals:
 
 public slots:
     void notifySwitchSucceeded();
+
+private slots:
+    void onCheckUpdateClicked();
+    void onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force);
+    void onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+    void onUpdateError(const QString &error);
 
 private:
     void populateScreens();
@@ -62,6 +71,11 @@ private:
     QLabel* m_function3UrlLabel = nullptr;
     QLineEdit* m_function3UrlEdit = nullptr;
     QPushButton* m_function3UrlConfirmBtn = nullptr;
+
+    // Auto Update
+    AutoUpdater* m_autoUpdater = nullptr;
+    QPushButton* m_checkUpdateBtn = nullptr;
+    QProgressDialog* m_updateProgress = nullptr;
 };
 
 #endif // SYSTEMSETTINGSWINDOW_H

@@ -13,7 +13,9 @@
 #include <QPainter>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMessageBox>
 #include "../common/AppConfig.h"
+#include "../common/AutoUpdater.h"
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     : QDialog(parent), m_list(new QListWidget(this))
@@ -143,20 +145,33 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     layout->addWidget(configCard);
 
     // Version Label
-    QString version = "Unknown";
-    QFile versionFile(QApplication::applicationDirPath() + "/version.json");
-    if (versionFile.open(QIODevice::ReadOnly)) {
-        QJsonDocument doc = QJsonDocument::fromJson(versionFile.readAll());
-        if (!doc.isNull() && doc.isObject()) {
-            version = doc.object().value("version").toString();
-        }
-        versionFile.close();
+    QString version = QCoreApplication::applicationVersion();
+    if (version.isEmpty()) {
+        version = "Unknown";
     }
 
     QLabel* versionLabel = new QLabel("当前版本: " + version, content);
     versionLabel->setAlignment(Qt::AlignCenter);
-    versionLabel->setStyleSheet("color: rgba(255, 255, 255, 100); font-size: 12px; margin-top: 10px;");
-    layout->addWidget(versionLabel);
+    versionLabel->setStyleSheet("color: rgba(255, 255, 255, 100); font-size: 12px;");
+
+    m_checkUpdateBtn = new QPushButton("检查更新", content);
+    m_checkUpdateBtn->setCursor(Qt::PointingHandCursor);
+    m_checkUpdateBtn->setStyleSheet(
+        "QPushButton { background: transparent; color: #4da6ff; border: none; font-size: 12px; padding: 0; }"
+        "QPushButton:hover { text-decoration: underline; color: #66b3ff; background: transparent; }"
+        "QPushButton:pressed { color: #3399ff; background: transparent; }"
+        "QPushButton:disabled { color: #666666; }"
+    );
+    connect(m_checkUpdateBtn, &QPushButton::clicked, this, &SystemSettingsWindow::onCheckUpdateClicked);
+
+    QHBoxLayout *versionLayout = new QHBoxLayout();
+    versionLayout->setContentsMargins(0, 10, 0, 0);
+    versionLayout->setSpacing(10);
+    versionLayout->addStretch();
+    versionLayout->addWidget(versionLabel);
+    versionLayout->addWidget(m_checkUpdateBtn);
+    versionLayout->addStretch();
+    layout->addLayout(versionLayout);
 
     populateScreens();
 
@@ -200,6 +215,99 @@ void SystemSettingsWindow::setupUserNameControls()
     connect(m_userNameConfirmBtn, &QPushButton::clicked, this, [this]() {
         emit userNameChanged(m_userNameEdit->text().trimmed());
     });
+}
+
+SystemSettingsWindow::~SystemSettingsWindow()
+{
+    if (m_updateProgress) {
+        m_updateProgress->close();
+        delete m_updateProgress;
+    }
+    if (m_autoUpdater) {
+        m_autoUpdater->cancel();
+    }
+}
+
+void SystemSettingsWindow::onCheckUpdateClicked()
+{
+    m_checkUpdateBtn->setEnabled(false);
+    m_checkUpdateBtn->setText("检查中...");
+
+    if (!m_autoUpdater) {
+        m_autoUpdater = new AutoUpdater(this);
+        connect(m_autoUpdater, &AutoUpdater::updateAvailable, this, &SystemSettingsWindow::onUpdateAvailable);
+        connect(m_autoUpdater, &AutoUpdater::downloadProgress, this, &SystemSettingsWindow::onUpdateDownloadProgress);
+        connect(m_autoUpdater, &AutoUpdater::errorOccurred, this, &SystemSettingsWindow::onUpdateError);
+        connect(m_autoUpdater, &AutoUpdater::noUpdateAvailable, this, [this]() {
+            QMessageBox::information(this, "检查更新", "当前已是最新版本");
+            m_checkUpdateBtn->setEnabled(true);
+            m_checkUpdateBtn->setText("检查更新");
+        });
+    }
+
+    const QString updateUrl = "https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json";
+    m_autoUpdater->checkUpdate(updateUrl);
+}
+
+void SystemSettingsWindow::onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force)
+{
+    m_checkUpdateBtn->setEnabled(true);
+    m_checkUpdateBtn->setText("检查更新");
+
+    QString msg = QStringLiteral("发现新版本: %1\n\n%2\n\n是否立即更新？").arg(version, description);
+    
+    if (force) {
+        QMessageBox::warning(this, QStringLiteral("强制更新"), QStringLiteral("发现重要版本 %1，必须更新后才能继续使用。\n\n%2").arg(version, description));
+        m_autoUpdater->downloadAndInstall();
+        
+        m_updateProgress = new QProgressDialog(QStringLiteral("正在下载更新..."), QStringLiteral("取消"), 0, 100, this);
+        m_updateProgress->setWindowModality(Qt::WindowModal);
+        m_updateProgress->setAutoClose(false);
+        m_updateProgress->setAutoReset(false);
+        m_updateProgress->setMinimumDuration(0);
+        m_updateProgress->setCancelButton(nullptr);
+        m_updateProgress->show();
+    } else {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, QStringLiteral("发现新版本"), msg, QMessageBox::Yes | QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            m_autoUpdater->downloadAndInstall();
+
+            m_updateProgress = new QProgressDialog(QStringLiteral("正在下载更新..."), QStringLiteral("取消"), 0, 100, this);
+            m_updateProgress->setWindowModality(Qt::WindowModal);
+            m_updateProgress->setAutoClose(false);
+            m_updateProgress->setAutoReset(false);
+            m_updateProgress->setMinimumDuration(0);
+            connect(m_updateProgress, &QProgressDialog::canceled, m_autoUpdater, &AutoUpdater::cancel);
+            m_updateProgress->show();
+        }
+    }
+}
+
+void SystemSettingsWindow::onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (m_updateProgress && bytesTotal > 0) {
+        m_updateProgress->setMaximum(100);
+        m_updateProgress->setValue(static_cast<int>(bytesReceived * 100 / bytesTotal));
+        
+        double receivedMB = bytesReceived / 1024.0 / 1024.0;
+        double totalMB = bytesTotal / 1024.0 / 1024.0;
+        m_updateProgress->setLabelText(QStringLiteral("正在下载更新... %1 MB / %2 MB").arg(QString::number(receivedMB, 'f', 2), QString::number(totalMB, 'f', 2)));
+    }
+}
+
+void SystemSettingsWindow::onUpdateError(const QString &error)
+{
+    m_checkUpdateBtn->setEnabled(true);
+    m_checkUpdateBtn->setText("检查更新");
+
+    if (m_updateProgress) {
+        m_updateProgress->close();
+        m_updateProgress->deleteLater();
+        m_updateProgress = nullptr;
+    }
+    
+    QMessageBox::warning(this, QStringLiteral("更新检查失败"), QStringLiteral("错误信息：\n%1").arg(error));
 }
 
 void SystemSettingsWindow::populateScreens()

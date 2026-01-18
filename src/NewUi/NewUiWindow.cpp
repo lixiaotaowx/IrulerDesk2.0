@@ -80,6 +80,8 @@
 #include <wincrypt.h>
 #endif
 #include "../ui/BroadcastNoticeDialog.h"
+#include "../common/AutoUpdater.h"
+#include <QProgressDialog>
 
 namespace {
 
@@ -803,7 +805,8 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Timer for screenshot
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
-    m_timer->start(60 * 1000);
+    // 恢复为 60s 慢速广播，作为基础心跳和极低频更新（状态 A）
+    m_timer->start(60000); 
     QTimer::singleShot(0, this, &NewUiWindow::onTimerTimeout);
 
     m_selfPreviewFastTimer = new QTimer(this);
@@ -851,6 +854,15 @@ NewUiWindow::NewUiWindow(QWidget *parent)
         publishLocalScreenFrameTriggered(QStringLiteral("cloud_start_request"), true, false);
     });
 
+    // Auto Updater
+    m_autoUpdater = new AutoUpdater(this);
+    connect(m_autoUpdater, &AutoUpdater::updateAvailable, this, &NewUiWindow::onUpdateAvailable);
+    connect(m_autoUpdater, &AutoUpdater::downloadProgress, this, &NewUiWindow::onUpdateDownloadProgress);
+    connect(m_autoUpdater, &AutoUpdater::errorOccurred, this, &NewUiWindow::onUpdateError);
+
+    // Check for updates after 3 seconds
+    QTimer::singleShot(3000, this, &NewUiWindow::checkForUpdates);
+
     if (AppConfig::lanWsEnabled()) {
         m_streamClientLan = new StreamClient(this);
         connect(m_streamClientLan, &StreamClient::logMessage, this, &NewUiWindow::onStreamLog);
@@ -863,7 +875,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
         });
     }
 
-    auto onHoverStream = [this](const QString &targetId, const QString &channelId, int fps, bool enabled) {
+    auto onHoverStream = [this](const QString &targetId, const QString &channelId, int fps, bool enabled, const QString &senderId) {
         bool accept = true;
         if (!targetId.isEmpty() && !m_myStreamId.isEmpty() && targetId != m_myStreamId) {
             accept = false;
@@ -880,7 +892,8 @@ NewUiWindow::NewUiWindow(QWidget *parent)
                               << " target_id=" << targetId
                               << " channel_id=" << channelId
                               << " fps=" << fps
-                              << " enabled=" << enabled;
+                              << " enabled=" << enabled
+                              << " sender_id=" << senderId;
             return;
         }
 
@@ -889,12 +902,39 @@ NewUiWindow::NewUiWindow(QWidget *parent)
                           << " target_id=" << targetId
                           << " channel_id=" << channelId
                           << " fps=" << fps
-                          << " enabled=" << enabled;
+                          << " enabled=" << enabled
+                          << " sender_id=" << senderId;
 
+        // Reference Counting for Shared Channels
+        QMap<QString, int> &subs = m_channelSubscribers[channelId];
         if (enabled) {
-            startHiFpsPublishing(channelId, fps);
+            const QString sid = senderId.isEmpty() ? QStringLiteral("unknown") : senderId;
+            subs.insert(sid, fps);
+        } else {
+            const QString sid = senderId.isEmpty() ? QStringLiteral("unknown") : senderId;
+            subs.remove(sid);
+        }
+
+        int maxFps = 0;
+        for (auto it = subs.constBegin(); it != subs.constEnd(); ++it) {
+            if (it.value() > maxFps) {
+                maxFps = it.value();
+            }
+        }
+
+        qInfo().noquote() << "[HiFpsPub] ref_update channel=" << channelId
+                          << " subs_count=" << subs.size()
+                          << " max_fps=" << maxFps;
+
+        if (maxFps > 0) {
+            startHiFpsPublishing(channelId, maxFps);
         } else {
             stopHiFpsPublishing(channelId);
+            // Don't remove from m_channelSubscribers immediately if we want to keep memory? 
+            // Actually it's better to remove empty entries to save memory.
+            if (subs.isEmpty()) {
+                m_channelSubscribers.remove(channelId);
+            }
         }
     };
     connect(m_streamClient, &StreamClient::hoverStreamRequested, this, onHoverStream);
@@ -1145,6 +1185,18 @@ NewUiWindow::~NewUiWindow()
     if (m_avatarPublishTimer && m_avatarPublishTimer->isActive()) {
         m_avatarPublishTimer->stop();
     }
+    
+    // Cleanup Auto Updater
+    if (m_updateProgressDialog) {
+        m_updateProgressDialog->close();
+        delete m_updateProgressDialog;
+    }
+    // m_autoUpdater is a child of this, so it will be deleted automatically,
+    // but good to stop any pending operations
+    if (m_autoUpdater) {
+        m_autoUpdater->cancel();
+    }
+
     stopHiFpsForUser();
     const QStringList chs = m_hiFpsPublishers.keys();
     for (const QString &ch : chs) {
@@ -2905,6 +2957,7 @@ void NewUiWindow::setupUi()
         if (userId == m_autoPausedUserId) {
             resumeSelectedStreamForUser(userId);
         }
+        
         startHiFpsForUser(userId);
         resetSelectionAutoPause(userId);
     });
@@ -4122,6 +4175,14 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (event->type() == QEvent::ApplicationStateChange) {
+        if (QApplication::applicationState() == Qt::ApplicationActive) {
+            if (m_timer) m_timer->start(60000);
+        } else {
+            if (m_timer) m_timer->stop();
+        }
+    }
+
     if (watched == m_embeddedVideoWidget && m_embeddedFullscreenActive) {
         if (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::WindowStateChange) {
             updateEmbeddedFullscreenOverlayGeometry();
@@ -4701,6 +4762,77 @@ void NewUiWindow::updateAcrylicState(bool enable)
 #else
     Q_UNUSED(enable);
 #endif
+}
+
+void NewUiWindow::checkForUpdates()
+{
+    // 使用 GitHub Releases 的 latest/download 链接获取 version.json
+    // 这样可以确保获取到的是最新发布版附带的版本信息
+    const QString updateUrl = "https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/version.json";
+    qInfo() << "[Update] Checking for updates from:" << updateUrl;
+    if (m_autoUpdater) {
+        m_autoUpdater->checkUpdate(updateUrl);
+    }
+}
+
+void NewUiWindow::onUpdateAvailable(const QString &version, const QString &downloadUrl, const QString &description, bool force)
+{
+    QString msg = QStringLiteral("发现新版本: %1\n\n%2\n\n是否立即更新？").arg(version, description);
+    
+    if (force) {
+        QMessageBox::warning(this, QStringLiteral("强制更新"), QStringLiteral("发现重要版本 %1，必须更新后才能继续使用。\n\n%2").arg(version, description));
+        m_autoUpdater->downloadAndInstall();
+        
+        m_updateProgressDialog = new QProgressDialog(QStringLiteral("正在下载更新..."), QStringLiteral("取消"), 0, 100, this);
+        m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+        m_updateProgressDialog->setAutoClose(false); // 下载完不要自动关闭，等待安装
+        m_updateProgressDialog->setAutoReset(false);
+        m_updateProgressDialog->setMinimumDuration(0);
+        // 强制更新不允许取消
+        m_updateProgressDialog->setCancelButton(nullptr); 
+        m_updateProgressDialog->show();
+    } else {
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, QStringLiteral("发现新版本"), msg, QMessageBox::Yes | QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            m_autoUpdater->downloadAndInstall();
+
+            // 创建进度对话框
+            m_updateProgressDialog = new QProgressDialog(QStringLiteral("正在下载更新..."), QStringLiteral("取消"), 0, 100, this);
+            m_updateProgressDialog->setWindowModality(Qt::WindowModal);
+            m_updateProgressDialog->setAutoClose(false);
+            m_updateProgressDialog->setAutoReset(false);
+            m_updateProgressDialog->setMinimumDuration(0);
+            connect(m_updateProgressDialog, &QProgressDialog::canceled, m_autoUpdater, &AutoUpdater::cancel);
+            m_updateProgressDialog->show();
+        }
+    }
+}
+
+void NewUiWindow::onUpdateDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (m_updateProgressDialog && bytesTotal > 0) {
+        m_updateProgressDialog->setMaximum(100);
+        m_updateProgressDialog->setValue(static_cast<int>(bytesReceived * 100 / bytesTotal));
+        
+        double receivedMB = bytesReceived / 1024.0 / 1024.0;
+        double totalMB = bytesTotal / 1024.0 / 1024.0;
+        m_updateProgressDialog->setLabelText(QStringLiteral("正在下载更新... %1 MB / %2 MB").arg(QString::number(receivedMB, 'f', 2), QString::number(totalMB, 'f', 2)));
+    }
+}
+
+void NewUiWindow::onUpdateError(const QString &error)
+{
+    qWarning() << "[Update] Error:" << error;
+    
+    // 只有在显示了进度条（意味着用户同意更新或强制更新中）时才弹窗报错
+    if (m_updateProgressDialog) {
+        m_updateProgressDialog->close();
+        m_updateProgressDialog->deleteLater();
+        m_updateProgressDialog = nullptr;
+        
+        QMessageBox::warning(this, QStringLiteral("更新失败"), QStringLiteral("更新过程中发生错误：\n%1").arg(error));
+    }
 }
 
 #include "NewUiWindow.moc"

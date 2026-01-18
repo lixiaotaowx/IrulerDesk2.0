@@ -28,7 +28,7 @@ inline QString applicationName()
 
 inline QString applicationVersion()
 {
-    return QStringLiteral("1.0.3");
+    return QStringLiteral("1.0.5");
 }
 
 inline QString organizationName()

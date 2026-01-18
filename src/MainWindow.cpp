@@ -3155,6 +3155,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 // 4. 显示语音通话窗口 (For Producer)
                 if (m_transparentImageList) {
                     m_transparentImageList->janusSwitchToMyRoom();
+                    m_transparentImageList->janusSetIgnoreAlone(true);
                     m_transparentImageList->showAudioCallUiForSession(targetId, true);
                 }
             }
@@ -3426,7 +3427,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             toast->show();
             toast->raise();
         } else {
-            if (!m_isStreaming) {
+            bool neededStart = !m_isStreaming;
+            if (neededStart) {
                 startStreaming();
             }
             QJsonObject streamOkResponse;
@@ -3434,9 +3436,17 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             streamOkResponse["viewer_id"] = viewerId;
             streamOkResponse["target_id"] = targetId;
             streamOkResponse["stream_url"] = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetId);
-            if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
-                QJsonDocument responseDoc(streamOkResponse);
-                m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+            
+            auto sendOk = [this, streamOkResponse]() {
+                if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                    m_loginWebSocket->sendTextMessage(QJsonDocument(streamOkResponse).toJson(QJsonDocument::Compact));
+                }
+            };
+
+            if (neededStart) {
+                QTimer::singleShot(1500, this, sendOk);
+            } else {
+                sendOk();
             }
             
             // [Fix] Add to "My Room" list for auto-approve case
@@ -3654,6 +3664,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_transparentImageList->setTalkRemoteActive(viewerId, enabled);
             if (enabled) {
                 m_transparentImageList->janusSwitchToUserRoom(targetId);
+                m_transparentImageList->janusSetIgnoreAlone(true);
+                m_transparentImageList->showAudioCallUiForSession(viewerId, true);
             }
         }
     } else if (type == "viewer_exit" || type == "viewer_exited" || type == "viewer_left" || type == "stop_streaming") {

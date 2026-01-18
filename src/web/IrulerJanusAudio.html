@@ -586,7 +586,13 @@
           if (typeof n === "number" && n <= 1) {
             stopAll("alone_3s");
           }
-        } catch (_) {}
+        } catch (e) {
+          try { logLine("listparticipants failed: " + (e && e.message ? e.message : String(e))); } catch (_) {}
+          // Retry once after short delay if failed
+          if (state.wantRunning && state.room) {
+             setTimeout(scheduleQuickExit, 2000);
+          }
+        }
       }, 30000); // Extended to 30s to allow viewers to join without premature exit
     }
 
@@ -645,7 +651,9 @@
           } else {
             state.aloneSinceMs = 0;
           }
-        } catch (_) {}
+        } catch (e) {
+          try { logLine("startAloneWatch check failed: " + (e && e.message ? e.message : String(e))); } catch (_) {}
+        }
       }, 5000);
     }
 

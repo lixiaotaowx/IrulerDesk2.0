@@ -242,7 +242,7 @@ void NewUiWindow::scheduleJanusEnsure(const QString &desiredOwnerId)
             }
             if (!m_function1WebView || !m_function1WebView->page()) {
                 m_janusEnsureAttempt++;
-                if (m_janusEnsureAttempt <= 25 && m_janusEnsureTimer) {
+                if (m_janusEnsureAttempt <= 60 && m_janusEnsureTimer) {
                     m_janusEnsureTimer->start(400);
                 }
                 return;
@@ -281,11 +281,19 @@ void NewUiWindow::scheduleJanusEnsure(const QString &desiredOwnerId)
                     return;
                 }
 
-                m_janusActiveRoomOwnerId.clear();
-                applyJanusAudioState();
+                // [Fix] Only retry the switch command periodically to avoid interrupting the join process
+                // JS join can take a few seconds. If we reset every 350ms/900ms via applyJanusAudioState(), it never finishes.
+                // m_janusEnsureAttempt 0 is skipped because we just called applyJanusAudioState() before scheduling.
+                const bool shouldRetryCommand = (m_janusActiveRoomOwnerId != desiredOwnerId) || 
+                                              (m_janusEnsureAttempt > 0 && m_janusEnsureAttempt % 10 == 0);
+
+                if (shouldRetryCommand) {
+                    m_janusActiveRoomOwnerId.clear();
+                    applyJanusAudioState();
+                }
 
                 m_janusEnsureAttempt++;
-                if (m_janusEnsureAttempt > 25) {
+                if (m_janusEnsureAttempt > 60) {
                     return;
                 }
                 const int delayMs = (m_janusEnsureAttempt <= 8) ? 350 : 900;

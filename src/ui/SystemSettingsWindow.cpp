@@ -11,6 +11,8 @@
 #include <QCoreApplication>
 #include <QCheckBox>
 #include <QPainter>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include "../common/AppConfig.h"
 
 SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
@@ -139,6 +141,22 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
 
     QFrame* configCard = setupConfigControls();
     layout->addWidget(configCard);
+
+    // Version Label
+    QString version = "Unknown";
+    QFile versionFile(QApplication::applicationDirPath() + "/version.json");
+    if (versionFile.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(versionFile.readAll());
+        if (!doc.isNull() && doc.isObject()) {
+            version = doc.object().value("version").toString();
+        }
+        versionFile.close();
+    }
+
+    QLabel* versionLabel = new QLabel("当前版本: " + version, content);
+    versionLabel->setAlignment(Qt::AlignCenter);
+    versionLabel->setStyleSheet("color: rgba(255, 255, 255, 100); font-size: 12px; margin-top: 10px;");
+    layout->addWidget(versionLabel);
 
     populateScreens();
 

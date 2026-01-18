@@ -773,7 +773,7 @@ NewUiWindow::NewUiWindow(QWidget *parent)
 
     // Remove Qt::FramelessWindowHint to allow native Windows behaviors (Snap, Maximize animation)
     // We handle WM_NCCALCSIZE to hide the standard frame visually
-    setWindowFlags(Qt::Window | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint);
 
 #ifdef _WIN32
     DWORD build = getWindowsBuildNumber();
@@ -3553,18 +3553,26 @@ bool NewUiWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
     if (eventType == "windows_generic_MSG") {
         MSG *msg = static_cast<MSG *>(message);
         if (msg->message == WM_NCHITTEST) {
-            POINT nativePos = { GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam) };
-            QPoint globalPos(nativePos.x, nativePos.y);
+            // Use QCursor::pos() to get logical coordinates correctly handling HighDPI
+            QPoint globalPos = QCursor::pos();
             QPoint localPos = mapFromGlobal(globalPos);
 
-            // Title bar area: Top 80px (approx)
-            // We exclude buttons from dragging
-            if (localPos.y() <= 80) {
+            // Title bar area: Use actual titlebar height or default 80
+            int titleHeight = m_titleBar ? m_titleBar->height() : 80;
+            
+            // Allow a bit more space for resize handles at top if needed, but usually title bar is enough
+            if (localPos.y() <= titleHeight) {
                 QWidget *child = childAt(localPos);
                 bool isInteractive = false;
                 if (child) {
-                    if (qobject_cast<QAbstractButton*>(child)) {
-                        isInteractive = true;
+                    // Check if the widget or its parent (up to title bar) is a button/interactive
+                    QWidget *curr = child;
+                    while (curr && curr != this && curr != m_titleBar) {
+                        if (qobject_cast<QAbstractButton*>(curr)) {
+                            isInteractive = true;
+                            break;
+                        }
+                        curr = curr->parentWidget();
                     }
                 }
                 
@@ -3572,6 +3580,13 @@ bool NewUiWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
                     *result = HTCAPTION;
                     return true;
                 }
+            }
+        } else if (msg->message == WM_NCLBUTTONDBLCLK) {
+            // [Fix] Handle double-click on title bar manually to ensure state sync
+            if (msg->wParam == HTCAPTION) {
+                toggleFunction1Maximize();
+                *result = 0;
+                return true;
             }
         } else if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {
             // Remove standard window frame
@@ -3919,7 +3934,17 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
                     
                     // Handle "drag from maximized" logic before handing off to OS
                     if (windowState() & Qt::WindowMaximized) {
-                        const QRect restore = normalGeometry().isValid() ? normalGeometry() : geometry();
+                        QRect restore = normalGeometry();
+                        // [Fix] If normalGeometry is invalid or erroneously set to maximized size, use default
+                        if (!restore.isValid() || restore.size() == size()) {
+                            if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
+                                QRect avail = screen->availableGeometry();
+                                restore = QRect(0, 0, avail.width() * 0.8, avail.height() * 0.8);
+                                restore.moveCenter(avail.center());
+                            } else {
+                                restore = QRect(100, 100, 1280, 720);
+                            }
+                        }
                         const int restoreW = qMax(200, restore.width());
                         const int restoreH = qMax(200, restore.height());
                         const qreal xRatio = width() > 0 ? (qreal)m_titleBarPressLocalInWindow.x() / (qreal)width() : 0.5;

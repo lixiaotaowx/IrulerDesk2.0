@@ -33,6 +33,7 @@ public:
     void undo();
     void setEnabled(bool enabled); // Controls visibility and input pass-through
     bool isEnabled() const { return m_enabled; }
+    bool hasContent() const { return !m_items.isEmpty(); }
 
 signals:
     void toolCancelled();

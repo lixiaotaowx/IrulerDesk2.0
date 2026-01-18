@@ -57,6 +57,9 @@ void ScreenAnnotationWidget::clear()
 {
     m_items.clear();
     update();
+    if (!m_enabled) {
+        hide();
+    }
 }
 
 void ScreenAnnotationWidget::undo()
@@ -64,6 +67,9 @@ void ScreenAnnotationWidget::undo()
     if (!m_items.isEmpty()) {
         m_items.removeLast();
         update();
+    }
+    if (m_items.isEmpty() && !m_enabled) {
+        hide();
     }
 }
 
@@ -73,7 +79,6 @@ void ScreenAnnotationWidget::setEnabled(bool enabled)
     m_enabled = enabled;
     
     // Changing window flags requires hiding and showing
-    bool wasVisible = isVisible();
     hide();
     
     if (enabled) {
@@ -82,9 +87,11 @@ void ScreenAnnotationWidget::setEnabled(bool enabled)
         setWindowFlag(Qt::WindowTransparentForInput, true);
     }
     
-    show();
-    if (enabled) {
-        raise();
+    if (enabled || !m_items.isEmpty()) {
+        show();
+        if (enabled) {
+            raise();
+        }
     }
 }
 

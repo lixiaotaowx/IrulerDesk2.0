@@ -205,7 +205,9 @@ void StreamingIslandWidget::showOnScreen()
         }
         
         m_annotationWidget->setGeometry(totalRect);
-        m_annotationWidget->show(); 
+        if (m_annotationWidget->hasContent() || m_annotationWidget->isEnabled()) {
+            m_annotationWidget->show();
+        }
     }
     
     show();

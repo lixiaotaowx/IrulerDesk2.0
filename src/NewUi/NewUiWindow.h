@@ -216,8 +216,12 @@ private:
     QStackedWidget *m_rightContentStack = nullptr;
     QWidget *m_homeContentPage = nullptr;
     QWidget *m_function1BrowserPage = nullptr;
+    QWidget *m_function2BrowserPage = nullptr;
+    QWidget *m_function3BrowserPage = nullptr;
     QWidget *m_videoContentPage = nullptr;
     QWebEngineView *m_function1WebView = nullptr;
+    QWebEngineView *m_function2WebView = nullptr;
+    QWebEngineView *m_function3WebView = nullptr;
     QWebEngineView *m_janusWebView = nullptr;
     StreamClient *m_streamClient = nullptr;
     StreamClient *m_streamClientLan = nullptr;

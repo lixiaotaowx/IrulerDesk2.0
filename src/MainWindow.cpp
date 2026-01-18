@@ -5,7 +5,6 @@
 #include "NewUi/NewUiWindow.h"
 #include "video_components/VideoDisplayWidget.h"
 #include "ui/ScreenAnnotationWidget.h"
-#include "ui/AvatarSettingsWindow.h"
 #include "ui/SystemSettingsWindow.h"
 #include "ui/FirstLaunchWizard.h"
 #include <QApplication>
@@ -77,7 +76,6 @@ MainWindow::MainWindow(QWidget *parent)
     , m_watchButton(nullptr)
     , m_videoWindow(nullptr)
     , m_transparentImageList(nullptr)
-    , m_avatarSettingsWindow(nullptr)
     , m_systemSettingsWindow(nullptr)
     , m_statusLabel(nullptr)
     , m_isStreaming(false)
@@ -3937,80 +3935,6 @@ void MainWindow::showMainList()
     }
 }
 
-void MainWindow::onSetAvatarRequested()
-{
-    
-    // 如果头像设置窗口不存在，创建它
-    if (!m_avatarSettingsWindow) {
-        m_avatarSettingsWindow = new AvatarSettingsWindow(this);
-        
-        // 连接头像选择信号
-        connect(m_avatarSettingsWindow, &AvatarSettingsWindow::avatarSelected,
-                this, &MainWindow::onAvatarSelected);
-    }
-    // 发送观看请求
-    // 显示头像设置窗口
-    m_avatarSettingsWindow->show();
-    // 启动视频接收（使用当前选中的用户ID）
-    // QString currentUserId = m_transparentImageList ? m_transparentImageList->getCurrentUserId() : QString();
-    // if (!currentUserId.isEmpty()) {
-    //     startVideoReceiving(currentUserId);
-    // }
-    m_avatarSettingsWindow->activateWindow();
-}
-
-void MainWindow::onAvatarSelected(int iconId)
-{
-    
-    // 1. 更新配置文件中的icon ID
-    saveIconIdToConfig(iconId);
-    
-    // 2. 立即更新用户头像显示
-    if (m_transparentImageList) {
-        // 重新加载当前用户的头像
-        QString currentUserId = m_transparentImageList->getCurrentUserId();
-        if (!currentUserId.isEmpty()) {
-            m_transparentImageList->updateUserAvatar(currentUserId, iconId);
-        }
-    }
-    
-    // 3. 向服务器发送头像更新消息
-    if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
-        QJsonObject message;
-        message["type"] = "avatar_update";
-        message["device_id"] = getDeviceId();
-        message["icon_id"] = iconId;
-        
-        QJsonDocument doc(message);
-        QString jsonString = doc.toJson(QJsonDocument::Compact);
-        
-        m_loginWebSocket->sendTextMessage(jsonString);
-    }
-
-    {
-        QString serverUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), getDeviceId());
-        QWebSocket *ws = new QWebSocket();
-        connect(ws, &QWebSocket::connected, this, [this, ws, iconId]() {
-            QJsonObject msg;
-            msg["type"] = "avatar_update";
-            msg["device_id"] = getDeviceId();
-            msg["icon_id"] = iconId;
-            ws->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
-            QTimer::singleShot(200, ws, [ws]() { ws->close(); });
-            QTimer::singleShot(400, ws, [ws]() { ws->deleteLater(); });
-        });
-        connect(ws, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, [ws](QAbstractSocket::SocketError) {
-            ws->deleteLater();
-        });
-        ws->open(QUrl(serverUrl));
-    }
-    
-    // 注释：保持头像设置窗口打开，方便用户多次选择
-    // if (m_avatarSettingsWindow) {
-    //     m_avatarSettingsWindow->hide();
-    // }
-}
-
 void MainWindow::onSystemSettingsRequested()
 {
     if (!m_systemSettingsWindow) {
@@ -4103,7 +4027,6 @@ void MainWindow::onHideRequested()
 {
     if (m_videoWindow) m_videoWindow->hide();
     if (m_transparentImageList) m_transparentImageList->hide();
-    if (m_avatarSettingsWindow) m_avatarSettingsWindow->hide();
     if (m_systemSettingsWindow) m_systemSettingsWindow->hide();
 }
 

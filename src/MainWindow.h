@@ -30,7 +30,6 @@
 // 前向声明
 class VideoWindow;
 class NewUiWindow;
-class AvatarSettingsWindow;
 class QSoundEffect;
 class QCloseEvent;
 class AutoUpdater;
@@ -73,11 +72,9 @@ private slots:
     // 透明图片列表相关槽函数
     void onUserImageClicked(const QString &userId, const QString &userName);
     void showMainList();
-    void onSetAvatarRequested();  // 新增：设置头像槽函数
     void onSystemSettingsRequested(); // 新增：打开系统设置
     void onToggleStreamingIsland(); // 新增：
     void onScreenSelected(int index); // 新增：屏幕选择槽
-    void onAvatarSelected(int iconId);  // 新增：头像选择完成槽函数
     void onClearMarksRequested(); // 新增：清理标记槽函数
     void onExitRequested();       // 新增：退出槽函数
     void onHideRequested();
@@ -185,7 +182,6 @@ private:
     NewUiWindow *m_transparentImageList;
     
     // 头像设置窗口
-    AvatarSettingsWindow *m_avatarSettingsWindow;
     class SystemSettingsWindow* m_systemSettingsWindow; // 前向声明：系统设置窗口
     
     // 状态管理

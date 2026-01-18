@@ -61,8 +61,6 @@ set(MAIN_SOURCES
     src/ui/ScreenAnnotationWidget.h       # 屏幕批注透明层声明
     src/ui/AnnotationToolbar.cpp          # 批注工具条实现
     src/ui/AnnotationToolbar.h            # 批注工具条声明
-    src/ui/AvatarSettingsWindow.cpp       # 头像设置窗口实现：用户头像资源的配置与预览
-    src/ui/AvatarSettingsWindow.h         # 头像设置窗口声明：UI与交互接口
     src/ui/SystemSettingsWindow.cpp       # 系统设置窗口实现：应用参数与行为配置
     src/ui/SystemSettingsWindow.h         # 系统设置窗口声明：设置项与信号槽
     src/ui/FirstLaunchWizard.cpp          # 首次启动引导设置对话框
@@ -465,7 +463,7 @@ include(InstallRequiredSystemLibraries)
 set(CPACK_PACKAGE_NAME "IrulerDeskPro")
 set(CPACK_PACKAGE_VENDOR "lunzi")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "屏幕采集、VP9 传输、Qt 前端一体化客户端")
-set(CPACK_PACKAGE_VERSION "1.0.4")
+set(CPACK_PACKAGE_VERSION "1.0.3")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-win64")
 set(CPACK_SYSTEM_NAME "Windows")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "IrulerDeskPro")

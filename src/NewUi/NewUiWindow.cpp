@@ -2304,20 +2304,20 @@ void NewUiWindow::setupUi()
 
             connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
                 playIconBling(btn);
-                if (m_function1WebView) {
+                if (m_function2WebView) {
                     QString v = AppConfig::readConfigValue(QStringLiteral("function2_url")).trimmed();
                     if (v.isEmpty()) {
-                        m_function1WebView->setHtml(
+                        m_function2WebView->setHtml(
                             QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head>"
                                            "<body style=\"background:#404040;color:#e0e0e0;font-family:sans-serif;padding:18px;\">"
                                            "请在系统设置-配置中填写“功能2网址”"
                                            "</body></html>"));
                     } else {
-                        m_function1WebView->load(QUrl::fromUserInput(v));
+                        m_function2WebView->load(QUrl::fromUserInput(v));
                     }
                 }
-                if (m_rightContentStack && m_function1BrowserPage) {
-                    m_rightContentStack->setCurrentWidget(m_function1BrowserPage);
+                if (m_rightContentStack && m_function2BrowserPage) {
+                    m_rightContentStack->setCurrentWidget(m_function2BrowserPage);
                 }
             });
         }
@@ -2339,25 +2339,25 @@ void NewUiWindow::setupUi()
                 playIconBling(btn);
 
                 // [Fix] Reset maintenance state
-                if (m_function1BrowserPage) {
-                    if (QLabel *l = m_function1BrowserPage->findChild<QLabel*>("MaintenanceLabel")) l->setVisible(false);
+                if (m_function3BrowserPage) {
+                    if (QLabel *l = m_function3BrowserPage->findChild<QLabel*>("MaintenanceLabel")) l->setVisible(false);
                 }
 
-                if (m_function1WebView) {
-                    m_function1WebView->setVisible(true);
+                if (m_function3WebView) {
+                    m_function3WebView->setVisible(true);
                     QString v = AppConfig::readConfigValue(QStringLiteral("function3_url")).trimmed();
                     if (v.isEmpty()) {
-                        m_function1WebView->setHtml(
+                        m_function3WebView->setHtml(
                             QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head>"
                                            "<body style=\"background:#404040;color:#e0e0e0;font-family:sans-serif;padding:18px;\">"
                                            "请在系统设置-配置中填写“功能3网址”"
                                            "</body></html>"));
                     } else {
-                        m_function1WebView->load(QUrl::fromUserInput(v));
+                        m_function3WebView->load(QUrl::fromUserInput(v));
                     }
                 }
-                if (m_rightContentStack && m_function1BrowserPage) {
-                    m_rightContentStack->setCurrentWidget(m_function1BrowserPage);
+                if (m_rightContentStack && m_function3BrowserPage) {
+                    m_rightContentStack->setCurrentWidget(m_function3BrowserPage);
                 }
             });
         }
@@ -3149,6 +3149,58 @@ void NewUiWindow::setupUi()
 
     m_function1BrowserPage = browserContainer;
     m_rightContentStack->addWidget(m_function1BrowserPage);
+
+    // --- Function 2 Browser ---
+    QFrame *browserContainer2 = new QFrame(rightPanel);
+    browserContainer2->setObjectName("Function2BrowserContainer");
+    browserContainer2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    browserContainer2->setStyleSheet(
+        "#Function2BrowserContainer {"
+        "   background-color: rgba(26, 26, 30, 110);"
+        "   border: 1px solid rgba(255, 255, 255, 14);"
+        "   border-radius: 20px;"
+        "}"
+    );
+    QVBoxLayout *browserLayout2 = new QVBoxLayout(browserContainer2);
+    browserLayout2->setContentsMargins(0, 0, 0, 0);
+    browserLayout2->setSpacing(0);
+
+    m_function2WebView = new QWebEngineView(browserContainer2);
+    auto *page2 = new StoryboardWebPage(profile, this, m_function2WebView);
+    m_function2WebView->setPage(page2);
+    connect(m_function2WebView, &QWebEngineView::loadFinished, this, [this](bool ok) {
+        if (!ok) return;
+        injectWebCredentialAndAutofill(m_function2WebView);
+    });
+    browserLayout2->addWidget(m_function2WebView);
+    m_function2BrowserPage = browserContainer2;
+    m_rightContentStack->addWidget(m_function2BrowserPage);
+
+    // --- Function 3 Browser ---
+    QFrame *browserContainer3 = new QFrame(rightPanel);
+    browserContainer3->setObjectName("Function3BrowserContainer");
+    browserContainer3->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    browserContainer3->setStyleSheet(
+        "#Function3BrowserContainer {"
+        "   background-color: rgba(26, 26, 30, 110);"
+        "   border: 1px solid rgba(255, 255, 255, 14);"
+        "   border-radius: 20px;"
+        "}"
+    );
+    QVBoxLayout *browserLayout3 = new QVBoxLayout(browserContainer3);
+    browserLayout3->setContentsMargins(0, 0, 0, 0);
+    browserLayout3->setSpacing(0);
+
+    m_function3WebView = new QWebEngineView(browserContainer3);
+    auto *page3 = new StoryboardWebPage(profile, this, m_function3WebView);
+    m_function3WebView->setPage(page3);
+    connect(m_function3WebView, &QWebEngineView::loadFinished, this, [this](bool ok) {
+        if (!ok) return;
+        injectWebCredentialAndAutofill(m_function3WebView);
+    });
+    browserLayout3->addWidget(m_function3WebView);
+    m_function3BrowserPage = browserContainer3;
+    m_rightContentStack->addWidget(m_function3BrowserPage);
 
     QFrame *videoContainer = new QFrame(rightPanel);
     videoContainer->setObjectName("VideoContainer");

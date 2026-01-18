@@ -251,6 +251,7 @@ private:
     
     // Window dragging optimization
     bool m_isWin10 = false;
+    bool m_isWin11 = false;
     void updateAcrylicState(bool enable);
     QRubberBand *m_dragGhost = nullptr;
 

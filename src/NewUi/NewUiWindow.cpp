@@ -481,13 +481,9 @@ static bool tryEnableAcrylicBlur(HWND hwnd, int abgrGradientColor)
     // Unified logic: Win10 (1803+) and Win11 use Acrylic with the provided color
     // This allows testing Win11 visual style on Win10
     if (build >= 17134) {
-        // Use Standard Blur (Low Sampling) for Win10 if requested or to avoid lag
-        // Win11 (build >= 22000) handles Acrylic well
-        if (build < 22000) {
-            policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
-        } else {
-            policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
-        }
+        // [User Request] Force Acrylic (4) on Win10 to achieve "more blurry" effect
+        // Standard Blur (3) has a fixed small radius. Acrylic provides a stronger blur.
+        policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
 
         policy.AccentFlags = 0;
         policy.GradientColor = abgrGradientColor;
@@ -3554,6 +3550,42 @@ bool NewUiWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
             // Remove standard window frame
             *result = 0;
             return true;
+        } else if (msg->message == WM_ENTERSIZEMOVE) {
+            // [Fix] Disable Acrylic during drag/resize to prevent lag on Win10, and for visual effect on Win11
+            if (m_isWin10 || m_isWin11) {
+                disableAcrylic(reinterpret_cast<HWND>(winId()));
+            }
+        } else if (msg->message == WM_EXITSIZEMOVE) {
+            // [Fix] Restore Acrylic after drag/resize
+            if (m_isWin10 || m_isWin11) {
+                // Use a timer to allow the drag loop to finish before resetting composition
+                QTimer::singleShot(50, this, [this]() {
+                    HWND hwnd = reinterpret_cast<HWND>(winId());
+                    // 1. Reset to disabled first to ensure state transition
+                    ACCENT_POLICY policy{};
+                    policy.AccentState = ACCENT_DISABLED;
+                    WINDOWCOMPOSITIONATTRIBDATA data{};
+                    data.Attrib = WCA_ACCENT_POLICY;
+                    data.pvData = &policy;
+                    data.cbData = sizeof(policy);
+
+                    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+                    if (user32) {
+                        auto fn = reinterpret_cast<SetWindowCompositionAttributeFn>(GetProcAddress(user32, "SetWindowCompositionAttribute"));
+                        if (fn) {
+                            fn(hwnd, &data);
+                        }
+                    }
+
+                    // 2. Re-apply Acrylic (with fallback for Win11)
+                    if (!tryEnableAcrylicBlur(hwnd, kAcrylicTintAbgr)) {
+                        if (m_isWin11) {
+                            tryEnableDwmBackdropSimple(hwnd, 3, true);
+                        }
+                    }
+                    update();
+                });
+            }
         }
     }
 #endif

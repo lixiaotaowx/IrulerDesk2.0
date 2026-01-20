@@ -6,6 +6,7 @@ FirstLaunchWizard::FirstLaunchWizard(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(QStringLiteral("首次启动设置"));
+    setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint); // [Fix] Prevent page loss
     setModal(true);
     resize(680, 520);
     setupStyle();

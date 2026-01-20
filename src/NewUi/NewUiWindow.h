@@ -198,9 +198,11 @@ private:
     bool m_dragging = false;
     bool m_isWaitingForAttendees = false;
     QPointer<QMessageBox> m_inviteWaitDialog;
+    QStringList m_pendingInvitees;
     QWidget *m_expiredInviteNotification = nullptr;
     QWidget *m_activeInviteNotification = nullptr;
     void showExpiredInviteNotification(const QString &inviterName);
+    void showCancelledInviteNotification(const QString &inviterName, const QString &timeStr);
     void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
     void updateNotificationPositions();
 

@@ -99,9 +99,10 @@ MainWindow::MainWindow(QWidget *parent)
         QString cfg = getConfigFilePath();
         QFile f(cfg);
         if (!f.exists()) {
-            FirstLaunchWizard w(this);
-            if (w.exec() == QDialog::Accepted) {
-                QString n = w.userName().trimmed();
+                    // [Fix] Use nullptr parent to ensure it's a top-level window with taskbar icon
+                    FirstLaunchWizard w(nullptr);
+                    if (w.exec() == QDialog::Accepted) {
+                        QString n = w.userName().trimmed();
                 if (!n.isEmpty()) { saveUserNameToConfig(n); m_userName = n; }
                 int si = w.screenIndex(); if (si >= 0) saveScreenIndexToConfig(si);
             }
@@ -1221,14 +1222,14 @@ void MainWindow::startStreaming()
     m_isStreaming = true;
 
 
-    // if (m_islandWidget) {
-    //     int screenIndex = loadScreenIndexFromConfig();
-    //     const auto screens = QGuiApplication::screens();
-    //     if (screenIndex >= 0 && screenIndex < screens.size()) {
-    //         m_islandWidget->setTargetScreen(screens[screenIndex]);
-    //     }
-    //     m_islandWidget->showOnScreen();
-    // }
+    if (m_islandWidget) {
+        int screenIndex = loadScreenIndexFromConfig();
+        const auto screens = QGuiApplication::screens();
+        if (screenIndex >= 0 && screenIndex < screens.size()) {
+            m_islandWidget->setTargetScreen(screens[screenIndex]);
+        }
+        m_islandWidget->showOnScreen();
+    }
 }
 
 void MainWindow::stopStreaming()
@@ -1258,9 +1259,9 @@ void MainWindow::stopStreaming()
     stopProcesses();
 
 
-    // if (m_islandWidget) {
-    //     m_islandWidget->hide();
-    // }
+    if (m_islandWidget) {
+        m_islandWidget->hide();
+    }
     
     m_statusLabel->setText("已停止");
     m_statusLabel->setStyleSheet(
@@ -4950,6 +4951,8 @@ void MainWindow::showNoticeToast(const QString& content, const QString& sender, 
     toast->show();
     toast->raise();
 }
-v o i d   M a i n W i n d o w : : o n C l o s e R o o m R e q u e s t e d ( )   { }  
- v o i d   M a i n W i n d o w : : o n K i c k V i e w e r R e q u e s t e d ( c o n s t   Q S t r i n g   & v i e w e r I d )   {   Q _ U N U S E D ( v i e w e r I d ) ;   }  
+v o i d   M a i n W i n d o w : : o n C l o s e R o o m R e q u e s t e d ( )   { } 
+ 
+ v o i d   M a i n W i n d o w : : o n K i c k V i e w e r R e q u e s t e d ( c o n s t   Q S t r i n g   & v i e w e r I d )   {   Q _ U N U S E D ( v i e w e r I d ) ;   } 
+ 
  

@@ -4309,6 +4309,13 @@ void NewUiWindow::onInviteRequested(const QStringList &userIds)
 {
     if (userIds.isEmpty()) return;
 
+    // [Fix] Add to pending list for cancellation tracking
+    for (const QString &uid : userIds) {
+        if (!uid.isEmpty() && !m_pendingInvitees.contains(uid)) {
+            m_pendingInvitees.append(uid);
+        }
+    }
+
     // [Request] Auto open local drawing tool when starting a meeting
     emit setStreamingIslandVisibleRequested(true);
 
@@ -4346,14 +4353,37 @@ void NewUiWindow::onInviteRequested(const QStringList &userIds)
         waitTimer->start();
 
         connect(m_inviteWaitDialog, &QMessageBox::finished, this, [this](int result) {
-            if (result == QMessageBox::Cancel) {
+            if (result != QDialog::Accepted) {
+                // [Fix] Send cancellation to all invitees
+                for (const QString &targetId : m_pendingInvitees) {
+                     QJsonObject cancelMsg;
+                     cancelMsg["type"] = "invite_cancelled";
+                     cancelMsg["target_id"] = m_myStreamId; 
+                     cancelMsg["viewer_id"] = targetId; 
+                     cancelMsg["inviter_name"] = m_myUserName;
+                     
+                     QJsonDocument doc(cancelMsg);
+                     QByteArray data = doc.toJson(QJsonDocument::Compact);
+                     if (m_streamClient && m_streamClient->isConnected()) {
+                         m_streamClient->sendTextMessage(QString::fromUtf8(data));
+                     }
+                     if (m_streamClientLan && m_streamClientLan->isConnected()) {
+                         m_streamClientLan->sendTextMessage(QString::fromUtf8(data));
+                     }
+                }
+
                 // 用户取消，恢复自动关闭逻辑，并可能挂断
                 m_isWaitingForAttendees = false;
                 janusSetIgnoreAlone(false);
                 // 如果此时房间里还是没人，janusStop? 或者仅仅恢复检查
                 // 用户说"挂断弹窗"，意味着取消就是不再等待，可能也就是不玩了
+                
+                // [Request] Cancel invite press should also close local drawing
+                emit setStreamingIslandVisibleRequested(false);
+                
                 janusStop();
             }
+            m_pendingInvitees.clear();
             // Dialog closes itself
         });
         m_inviteWaitDialog->show();
@@ -4663,6 +4693,64 @@ void NewUiWindow::showExpiredInviteNotification(const QString &inviterName)
     m_expiredInviteNotification->raise();
 }
 
+void NewUiWindow::showCancelledInviteNotification(const QString &inviterName, const QString &timeStr)
+{
+    if (m_expiredInviteNotification) {
+        m_expiredInviteNotification->deleteLater();
+        m_expiredInviteNotification = nullptr;
+    }
+
+    m_expiredInviteNotification = new QWidget(this);
+    m_expiredInviteNotification->setObjectName("ExpiredInviteNotification");
+    m_expiredInviteNotification->setStyleSheet(
+        "QWidget#ExpiredInviteNotification {"
+        "   background-color: rgba(40, 40, 45, 230);"
+        "   border: 1px solid rgba(255, 80, 80, 100);"
+        "   border-radius: 8px;"
+        "}"
+        "QLabel {"
+        "   color: #e0e0e0;"
+        "   font-size: 13px;"
+        "}"
+        "QPushButton {"
+        "   background-color: transparent;"
+        "   border: none;"
+        "   color: #aaa;"
+        "   font-weight: bold;"
+        "}"
+        "QPushButton:hover {"
+        "   color: #fff;"
+        "}"
+    );
+
+    QHBoxLayout *layout = new QHBoxLayout(m_expiredInviteNotification);
+    layout->setContentsMargins(12, 8, 8, 8);
+    layout->setSpacing(10);
+
+    QLabel *textLabel = new QLabel(m_expiredInviteNotification);
+    textLabel->setText(QStringLiteral("%1在%2发送会议邀请，请及时联系")
+                       .arg(inviterName).arg(timeStr));
+    textLabel->setWordWrap(true);
+    
+    QPushButton *closeBtn = new QPushButton("X", m_expiredInviteNotification);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setFixedSize(20, 20);
+    connect(closeBtn, &QPushButton::clicked, this, [this]() {
+        if (m_expiredInviteNotification) {
+            m_expiredInviteNotification->deleteLater();
+            m_expiredInviteNotification = nullptr;
+        }
+    });
+
+    layout->addWidget(textLabel);
+    layout->addWidget(closeBtn);
+
+    m_expiredInviteNotification->adjustSize();
+    updateNotificationPositions();
+    m_expiredInviteNotification->show();
+    m_expiredInviteNotification->raise();
+}
+
 void NewUiWindow::onTextMessageReceived(const QString &message)
 {
     QJsonParseError error;
@@ -4688,6 +4776,22 @@ void NewUiWindow::onTextMessageReceived(const QString &message)
         const QString displayName = fromUserName.isEmpty() ? fromUserId : fromUserName;
         
         showInviteNotification(fromUserId, displayName, type);
+    } else if (type == QStringLiteral("invite_cancelled")) {
+        const QString viewerId = obj.value("viewer_id").toString();
+        if (viewerId == m_myStreamId) {
+            const QString targetId = obj.value("target_id").toString(); // Inviter
+            const QString inviterName = obj.value("inviter_name").toString();
+            const QString displayName = inviterName.isEmpty() ? targetId : inviterName;
+            
+            // Close active invite popup
+            if (m_activeInviteNotification) {
+                m_activeInviteNotification->deleteLater();
+                m_activeInviteNotification = nullptr;
+            }
+
+            // Show cancelled notification
+            showCancelledInviteNotification(displayName, QDateTime::currentDateTime().toString("HH:mm"));
+        }
     } else if (type == QStringLiteral("watch_request_accepted")) {
         if (obj.value("is_invite").toBool()) {
             const QString viewerId = obj.value("viewer_id").toString();
@@ -4714,7 +4818,7 @@ void NewUiWindow::onTextMessageReceived(const QString &message)
                 // until the connection is fully established. It will be disabled if the user manually cancels
                 // or we can leave it enabled until the session ends.
                 // However, to keep UI clean, we close the dialog.
-                m_inviteWaitDialog->close(); 
+                m_inviteWaitDialog->accept(); 
                 m_inviteWaitDialog = nullptr;
                 // We keep m_janusIgnoreAlone = true for a bit? 
                 // Actually, if we close the dialog, the 'finished' signal fires.

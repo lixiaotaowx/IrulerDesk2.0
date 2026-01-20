@@ -99,6 +99,11 @@ void NewUiWindow::ensureJanusAudioLoaded()
         return;
     }
 
+    // [Fix] Prevent multiple reloads if already loading
+    if (m_function1WebView->property("JanusLoading").toBool()) {
+        return;
+    }
+
     auto *page = m_function1WebView->page();
     if (!dynamic_cast<JanusLogPage*>(page)) {
         auto *p = new JanusLogPage(m_function1WebView);
@@ -117,10 +122,14 @@ void NewUiWindow::ensureJanusAudioLoaded()
                 }
             });
 
+    m_function1WebView->setProperty("JanusLoading", true);
     connect(m_function1WebView, &QWebEngineView::loadFinished, this, [this](bool ok) {
+        m_function1WebView->setProperty("JanusLoading", false);
         if (!ok) {
             return;
         }
+        m_janusAudioLoaded = true; // [Fix] Only set loaded when actually finished
+
         if (m_janusIgnoreAlone) {
              const QString ignoreJs = QStringLiteral("window.IrulerJanusAudio && IrulerJanusAudio.setIgnoreAlone(true);");
              if (m_function1WebView && m_function1WebView->page()) {
@@ -154,7 +163,7 @@ void NewUiWindow::ensureJanusAudioLoaded()
         //                 expectedFi.exists() && expectedFi.isFile() ? QStringLiteral("true") : QStringLiteral("false"));
     }
     m_function1WebView->setHtml(buildJanusAudioHtml(), QUrl(QStringLiteral("http://localhost/")));
-    m_janusAudioLoaded = true;
+    // m_janusAudioLoaded = true; // [Fix] Removed premature assignment
 }
 
 void NewUiWindow::applyJanusAudioState()
@@ -162,6 +171,11 @@ void NewUiWindow::applyJanusAudioState()
     if (!m_function1WebView || !m_function1WebView->page()) {
         return;
     }
+    // [Fix] If page is not loaded yet, do nothing. loadFinished will call this.
+    if (!m_janusAudioLoaded) {
+        return;
+    }
+
     if (m_janusDesiredRoomOwnerId.isEmpty()) {
         return;
     }
@@ -253,6 +267,14 @@ void NewUiWindow::scheduleJanusEnsure(const QString &desiredOwnerId)
             }
 
             ensureJanusAudioLoaded();
+
+            // [Fix] If page is not loaded yet, just wait and retry. Don't run JS.
+            if (!m_janusAudioLoaded) {
+                 if (m_janusEnsureAttempt <= 60 && m_janusEnsureTimer) {
+                     m_janusEnsureTimer->start(200);
+                 }
+                 return;
+            }
 
             const qint64 expectedRoom = AppConfig::janusAudioRoomForUserId(desiredOwnerId);
             const QString getStateJs = QStringLiteral(
@@ -689,6 +711,9 @@ void NewUiWindow::showAudioCallUiInternal(const QString &peerId, bool forceEnabl
 
 void NewUiWindow::hideAudioCallUi()
 {
+    // [Request] Auto close local drawing tool when audio call ends
+    emit setStreamingIslandVisibleRequested(false);
+
     if (m_audioCallPollTimer) {
         m_audioCallPollTimer->stop();
     }
@@ -712,6 +737,19 @@ void NewUiWindow::hangupAudioCallUi()
         setTalkRemoteActive(peerId, false);
         emit talkToggleRequested(peerId, false);
     } else {
+        // [Fix] If we are the host, send stop_streaming to notify all participants to leave
+        if (!m_myStreamId.isEmpty() && m_janusDesiredRoomOwnerId == m_myStreamId) {
+            QJsonObject stopMsg;
+            stopMsg["type"] = "stop_streaming";
+            stopMsg["sender_id"] = m_myStreamId;
+            const QByteArray data = QJsonDocument(stopMsg).toJson(QJsonDocument::Compact);
+            if (m_streamClient && m_streamClient->isConnected()) {
+                m_streamClient->sendTextMessage(QString::fromUtf8(data));
+            }
+            if (m_streamClientLan && m_streamClientLan->isConnected()) {
+                m_streamClientLan->sendTextMessage(QString::fromUtf8(data));
+            }
+        }
         janusStop();
     }
     hideAudioCallUi();

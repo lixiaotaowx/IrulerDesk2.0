@@ -3198,6 +3198,43 @@ void NewUiWindow::setupUi()
         cardLayout->addWidget(imageContainer);
         cardLayout->addLayout(bottomLayout);
 
+        // [Camera Switch Button]
+        QPushButton *switchBtn = new QPushButton(card);
+        switchBtn->setText(QStringLiteral("切换到摄像头"));
+        switchBtn->setCursor(Qt::PointingHandCursor);
+        switchBtn->setFixedHeight(20);
+        switchBtn->setStyleSheet(
+            "QPushButton {"
+            "   background-color: transparent;"
+            "   color: rgba(255, 255, 255, 120);"
+            "   font-size: 10px;"
+            "   border: none;"
+            "   margin-bottom: 2px;"
+            "}"
+            "QPushButton:hover {"
+            "   color: #0099ff;"
+            "}"
+        );
+        connect(switchBtn, &QPushButton::clicked, this, [this, switchBtn](){
+            m_isCameraMode = !m_isCameraMode;
+            if (m_isCameraMode) {
+                ensureCameraStarted();
+                switchBtn->setText(QStringLiteral("切换到屏幕"));
+            } else {
+                stopCamera();
+                switchBtn->setText(QStringLiteral("切换到摄像头"));
+            }
+            publishLocalScreenFrameTriggered("timer", true, true);
+        });
+        
+        QHBoxLayout *switchLayout = new QHBoxLayout();
+        switchLayout->setContentsMargins(0, 0, 0, 4);
+        switchLayout->setSpacing(0);
+        switchLayout->addStretch();
+        switchLayout->addWidget(switchBtn);
+        switchLayout->addStretch();
+        cardLayout->addLayout(switchLayout);
+
         itemLayout->addWidget(card);
         
         m_listWidget->setItemWidget(item, itemWidget);
@@ -5015,6 +5052,38 @@ void NewUiWindow::showUserGuide()
     m_userGuide->show();
     // Mark as seen immediately so it doesn't pop up again automatically
     AppConfig::setLastTutorialVersion(AppConfig::applicationVersion());
+}
+
+void NewUiWindow::ensureCameraStarted()
+{
+    if (m_camera) {
+        if (m_camera->isActive()) return;
+        m_camera->start();
+        return;
+    }
+
+    const QList<QCameraDevice> cameras = QMediaDevices::videoInputs();
+    if (cameras.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("无法启动摄像头"), QStringLiteral("未检测到摄像头设备"));
+        m_isCameraMode = false;
+        return;
+    }
+
+    m_camera.reset(new QCamera(cameras.first()));
+    m_captureSession.reset(new QMediaCaptureSession());
+    m_videoSink.reset(new QVideoSink());
+
+    m_captureSession->setCamera(m_camera.data());
+    m_captureSession->setVideoSink(m_videoSink.data());
+
+    m_camera->start();
+}
+
+void NewUiWindow::stopCamera()
+{
+    if (m_camera) {
+        m_camera->stop();
+    }
 }
 
 #include "NewUiWindow.moc"

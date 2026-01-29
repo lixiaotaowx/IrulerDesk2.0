@@ -12,6 +12,12 @@
 #include <QPointer>
 #include <QMessageBox>
 #include <QRubberBand>
+#include <QCamera>
+#include <QMediaCaptureSession>
+#include <QVideoSink>
+#include <QMediaDevices>
+#include <QCameraDevice>
+#include <QVideoFrame>
 #include "StreamClient.h"
 #include "LoginClient.h"
 
@@ -276,6 +282,14 @@ private:
     bool m_isWin10 = false;
     bool m_isWin11 = false;
     bool m_isPrivacyMode = false; // [Privacy Mode] 隐私模式状态
+    bool m_isCameraMode = false; // [Camera Mode] 摄像头模式状态
+    
+    QScopedPointer<QCamera> m_camera;
+    QScopedPointer<QMediaCaptureSession> m_captureSession;
+    QScopedPointer<QVideoSink> m_videoSink;
+    void ensureCameraStarted();
+    void stopCamera();
+
     void togglePrivacyMode(bool enable);
     void updateAcrylicState(bool enable);
     QRubberBand *m_dragGhost = nullptr;

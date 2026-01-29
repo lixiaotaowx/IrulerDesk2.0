@@ -309,6 +309,59 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
         return;
     }
 
+    // [Camera Mode] 摄像头模式处理
+    if (m_isCameraMode) {
+        QImage camImg;
+        if (m_videoSink) {
+            QVideoFrame frame = m_videoSink->videoFrame();
+            if (frame.isValid()) {
+                camImg = frame.toImage();
+            }
+        }
+        
+        if (!camImg.isNull()) {
+            QPixmap srcPix = QPixmap::fromImage(camImg);
+            // Process image (Round corners, scale)
+            QPixmap pixmap(m_imgWidth, m_imgHeight);
+            pixmap.setDevicePixelRatio(1.0);
+            pixmap.fill(Qt::transparent);
+
+            QPainter p(&pixmap);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+            QPixmap scaledPix = srcPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            int x = (m_imgWidth - scaledPix.width()) / 2;
+            int y = (m_imgHeight - scaledPix.height()) / 2;
+
+            QPainterPath path;
+            path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
+            p.setClipPath(path);
+            p.drawPixmap(x, y, scaledPix);
+            p.end();
+
+            previewPix = pixmap;
+            sendPix = pixmap;
+            
+            // Compression logic for sendPix
+            if (sendPix.width() > 200) {
+                sendPix = sendPix.scaledToWidth(200, Qt::SmoothTransformation);
+            }
+            // Keep previewPix high quality
+            return;
+        }
+        
+        QPixmap loadingPix(m_imgWidth, m_imgHeight);
+        loadingPix.fill(Qt::black);
+        QPainter p(&loadingPix);
+        p.setPen(Qt::white);
+        p.drawText(loadingPix.rect(), Qt::AlignCenter, QStringLiteral("摄像头启动中..."));
+        p.end();
+        previewPix = loadingPix;
+        sendPix = loadingPix;
+        return;
+    }
+
     QPixmap srcPix = originalPixmap.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
 
     QPixmap pixmap(m_imgWidth, m_imgHeight);

@@ -145,9 +145,10 @@ void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
 
 void NewUiWindow::onTimerTimeout()
 {
-    if (QApplication::applicationState() != Qt::ApplicationActive) {
-        return;
-    }
+    // [Fix] Remove ApplicationActive check to allow background streaming
+    // if (QApplication::applicationState() != Qt::ApplicationActive) {
+    //     return;
+    // }
     publishLocalScreenFrameTriggered(QStringLiteral("timer"), false, true);
 }
 
@@ -165,9 +166,9 @@ void NewUiWindow::publishLocalScreenFrameTriggered(const QString &reason, bool f
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
 
     // Enforce rate limit for timer-based updates (Default Stream)
-    // This ensures that unselected stream is definitely slow (~3s)
+    // This ensures that unselected stream is definitely slow (~10s)
     if (reason == QStringLiteral("timer")) {
-        if (m_lastPreviewCaptureAtMs > 0 && (nowMs - m_lastPreviewCaptureAtMs) < 2000) {
+        if (m_lastPreviewCaptureAtMs > 0 && (nowMs - m_lastPreviewCaptureAtMs) < 9000) {
             return;
         }
     }
@@ -524,6 +525,12 @@ void NewUiWindow::startHiFpsForUser(const QString &userId)
     client->setProperty("firstFrameReceived", false);
     connect(client, &StreamClient::frameReceived, this, [this, userId, client](const QPixmap &frame) {
         client->setProperty("firstFrameReceived", true);
+
+        // [Fix] Receiving/Displaying should be handled by focus
+        if (QApplication::applicationState() != Qt::ApplicationActive) {
+            return;
+        }
+
         if (m_hiFpsSubscriber == client && m_hiFpsActiveUserId == userId) {
             m_hiFpsLastFrameAtMs = QDateTime::currentMSecsSinceEpoch();
             m_hiFpsLastRecoveryAtMs = 0;
@@ -1079,6 +1086,12 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     client->setProperty("firstFrameReceived", false);
     connect(client, &StreamClient::frameReceived, this, [this, userId, client](const QPixmap &frame) {
         client->setProperty("firstFrameReceived", true);
+
+        // [Fix] Receiving/Displaying should be handled by focus
+        if (QApplication::applicationState() != Qt::ApplicationActive) {
+            return;
+        }
+
         if (m_userLabels.contains(userId)) {
              QLabel *label = m_userLabels[userId];
 

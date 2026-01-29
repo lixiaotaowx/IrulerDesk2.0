@@ -806,8 +806,8 @@ NewUiWindow::NewUiWindow(QWidget *parent)
     // Timer for screenshot
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &NewUiWindow::onTimerTimeout);
-    // 恢复为 60s 慢速广播，作为基础心跳和极低频更新（状态 A）
-    m_timer->start(60000); 
+    // 恢复为 10s 慢速广播，作为基础心跳和极低频更新（状态 A）
+    m_timer->start(10000); 
     QTimer::singleShot(0, this, &NewUiWindow::onTimerTimeout);
 
     m_selfPreviewFastTimer = new QTimer(this);
@@ -4292,6 +4292,8 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
     }
     return QWidget::eventFilter(watched, event);
 }
+
+
 
 void NewUiWindow::setGlobalMicCheckedSilently(bool enabled)
 {

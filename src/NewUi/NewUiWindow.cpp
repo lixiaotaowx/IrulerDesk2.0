@@ -2925,6 +2925,35 @@ void NewUiWindow::setupUi()
         }
     });
 
+    connect(m_listWidget, &QListWidget::itemPressed, this, [this](QListWidgetItem *item) {
+        if (!item || QGuiApplication::mouseButtons() != Qt::RightButton) return;
+        
+        QString userId = item->data(Qt::UserRole).toString();
+        if (userId.isEmpty()) {
+            if (QWidget *iw = m_listWidget->itemWidget(item)) {
+                if (QFrame *card = iw->findChild<QFrame*>("CardFrame")) {
+                    userId = card->property("userId").toString();
+                } else {
+                    userId = iw->property("userId").toString();
+                }
+            }
+        }
+        
+        if (userId == m_myStreamId) {
+            QMenu menu(this);
+            menu.setStyleSheet(
+                "QMenu { background-color: rgb(45, 45, 48); border: 1px solid rgb(60, 60, 60); color: white; padding: 5px; }"
+                "QMenu::item { padding: 5px 20px; border-radius: 4px; }"
+                "QMenu::item:selected { background-color: rgba(255, 255, 255, 30); }"
+            );
+            QAction *privacyAction = menu.addAction(m_isPrivacyMode ? "关闭隐私时间" : "开启隐私时间");
+            connect(privacyAction, &QAction::triggered, this, [this]() {
+                togglePrivacyMode(!m_isPrivacyMode);
+            });
+            menu.exec(QCursor::pos());
+        }
+    });
+
     connect(m_listWidget, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current, QListWidgetItem *previous) {
         Q_UNUSED(previous);
         QString userId;

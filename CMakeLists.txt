@@ -40,6 +40,7 @@ set(MAIN_SOURCES
     src/MainWindow.cpp                    # 主窗口实现：主界面布局、交互逻辑、控制流程
     src/MainWindow.h                      # 主窗口声明：成员与信号槽声明
     src/NewUi/NewUiWindow.cpp             # 新UI窗口实现
+    src/NewUi/NewUiWindow.Privacy.cpp     # 新UI窗口实现：隐私模式逻辑
     src/NewUi/NewUserGuide.cpp            # 新手引导窗口实现
     src/NewUi/NewUserGuide.h              # 新手引导窗口声明
     src/NewUi/NewUiWindow.Streaming.cpp   # 新UI窗口实现：推流/订阅/HiFPS/预览
@@ -446,6 +447,8 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/Release/
     PATTERN "*.lib" EXCLUDE
     PATTERN "*.exp" EXCLUDE
     PATTERN "*.ilk" EXCLUDE
+    # [Config Protection] 显式排除配置文件，确保其不被安装记录追踪
+    # 这样卸载程序在删除已安装文件时会忽略它，且因目录非空而保留 config 文件夹
     PATTERN "app_config.txt" EXCLUDE
     PATTERN "config/app_config.txt" EXCLUDE
 )

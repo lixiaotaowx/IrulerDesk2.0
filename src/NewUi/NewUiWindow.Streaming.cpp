@@ -280,6 +280,35 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
         return;
     }
 
+    // [Privacy Mode] 隐私模式处理
+    if (m_isPrivacyMode) {
+        // 创建一个全黑的图片，并绘制“隐私中”文字
+        QPixmap privacyPix(m_imgWidth, m_imgHeight);
+        privacyPix.fill(Qt::black);
+        
+        QPainter p(&privacyPix);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::white);
+        QFont font = p.font();
+        font.setPixelSize(30);
+        font.setBold(true);
+        p.setFont(font);
+        
+        // 绘制文字居中
+        p.drawText(privacyPix.rect(), Qt::AlignCenter, QStringLiteral("隐私中"));
+        p.end();
+        
+        // 替换原始图片为隐私图片，用于本地显示和网络发送
+        // 注意：这里我们直接替换 previewPix 和 sendPix，
+        // 这样本地看到的和发送出去的都是这个带文字的黑屏。
+        // 这符合“传输图片时添加一个记号”的变通实现——直接把记号画在图上。
+        // 这样接收端无需任何代码修改即可看到效果。
+        
+        previewPix = privacyPix;
+        sendPix = privacyPix;
+        return;
+    }
+
     QPixmap srcPix = originalPixmap.scaledToWidth(m_cardBaseWidth, Qt::SmoothTransformation);
 
     QPixmap pixmap(m_imgWidth, m_imgHeight);

@@ -275,6 +275,8 @@ private:
     // Window dragging optimization
     bool m_isWin10 = false;
     bool m_isWin11 = false;
+    bool m_isPrivacyMode = false; // [Privacy Mode] 隐私模式状态
+    void togglePrivacyMode(bool enable);
     void updateAcrylicState(bool enable);
     QRubberBand *m_dragGhost = nullptr;
 

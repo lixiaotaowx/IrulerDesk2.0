@@ -74,6 +74,25 @@ int getScreenIndexFromConfig();
 static InputSimulator *staticInputSim = nullptr;
 static KeyboardSimulator *staticKeyboardSim = nullptr;
 
+#ifdef _WIN32
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
+#endif
+static void enablePerMonitorDpiAwareness()
+{
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) {
+        return;
+    }
+    using SetProcessDpiAwarenessContextFn = BOOL(WINAPI *)(DPI_AWARENESS_CONTEXT);
+    auto fn = reinterpret_cast<SetProcessDpiAwarenessContextFn>(GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+    if (!fn) {
+        return;
+    }
+    fn(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+}
+#endif
+
 namespace {
 class LanRelayServer final : public QObject
 {
@@ -696,6 +715,10 @@ int main(int argc, char *argv[])
 
     qInfo() << "[CaptureProcess] VERSION: LAN_FIX_20251230_02_FORCE_UPDATE";
 
+#ifdef _WIN32
+    enablePerMonitorDpiAwareness();
+#endif
+
     QApplication app(argc, argv);
     AppConfig::applyApplicationInfo(app);
 
@@ -795,16 +818,8 @@ int main(int argc, char *argv[])
     QSize actualScreenSize = capture->getScreenSize();
     QSize initEncodeSize = actualScreenSize;
 
-    // 限制最大宽度为 1920，超过则等比缩放
-    if (initEncodeSize.width() > 1920) {
-        double ratio = 1920.0 / initEncodeSize.width();
-        initEncodeSize.setWidth(1920);
-        initEncodeSize.setHeight(qRound(initEncodeSize.height() * ratio));
-        // 确保宽高是偶数（某些编码器要求）
-        if (initEncodeSize.width() % 2 != 0) initEncodeSize.setWidth(initEncodeSize.width() - 1);
-        if (initEncodeSize.height() % 2 != 0) initEncodeSize.setHeight(initEncodeSize.height() - 1);
-        qDebug() << "[CaptureProcess] Screen > 1920, scaling down to:" << initEncodeSize;
-    }
+    if (initEncodeSize.width() % 2 != 0) initEncodeSize.setWidth(initEncodeSize.width() - 1);
+    if (initEncodeSize.height() % 2 != 0) initEncodeSize.setHeight(initEncodeSize.height() - 1);
     
     VP9Encoder *encoder = new VP9Encoder(&app);
     // 保持现有帧率设置以降低编码负载（避免强制60fps）
@@ -978,19 +993,8 @@ int main(int argc, char *argv[])
         QSize newSize = staticCapture->getScreenSize();
         QSize encodeSize = newSize;
 
-        // 限制最大长边为 1920，超过则等比缩放 (适用于超宽屏或竖屏)
-        if (encodeSize.width() > 1920 || encodeSize.height() > 1920) {
-            double ratioW = 1920.0 / encodeSize.width();
-            double ratioH = 1920.0 / encodeSize.height();
-            double ratio = std::min(ratioW, ratioH);
-            
-            encodeSize.setWidth(qRound(encodeSize.width() * ratio));
-            encodeSize.setHeight(qRound(encodeSize.height() * ratio));
-            
-            // 确保偶数宽高
-            if (encodeSize.width() % 2 != 0) encodeSize.setWidth(encodeSize.width() - 1);
-            if (encodeSize.height() % 2 != 0) encodeSize.setHeight(encodeSize.height() - 1);
-        }
+        if (encodeSize.width() % 2 != 0) encodeSize.setWidth(encodeSize.width() - 1);
+        if (encodeSize.height() % 2 != 0) encodeSize.setHeight(encodeSize.height() - 1);
 
         // 重新初始化编码器以匹配新分辨率
         staticEncoder->cleanup();
@@ -1442,16 +1446,6 @@ int main(int argc, char *argv[])
             desired = orig;
         }
 
-        // 全局限制：无论什么画质，最大长边不超过 1920
-        if (desired.width() > 1920 || desired.height() > 1920) {
-            double ratioW = 1920.0 / desired.width();
-            double ratioH = 1920.0 / desired.height();
-            double ratio = std::min(ratioW, ratioH);
-            
-            desired.setWidth(qRound(desired.width() * ratio));
-            desired.setHeight(qRound(desired.height() * ratio));
-        }
-        
         // 确保偶数宽高
         if (desired.width() % 2 != 0) desired.setWidth(desired.width() - 1);
         if (desired.height() % 2 != 0) desired.setHeight(desired.height() - 1);

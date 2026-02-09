@@ -2946,9 +2946,41 @@ void NewUiWindow::setupUi()
                 "QMenu::item { padding: 5px 20px; border-radius: 4px; }"
                 "QMenu::item:selected { background-color: rgba(255, 255, 255, 30); }"
             );
-            QAction *privacyAction = menu.addAction(m_isPrivacyMode ? "关闭隐私时间" : "开启隐私时间");
+            QAction *privacyAction = menu.addAction(m_isPrivacyMode ? QStringLiteral("关闭隐私时间") : QStringLiteral("开启隐私时间"));
             connect(privacyAction, &QAction::triggered, this, [this]() {
                 togglePrivacyMode(!m_isPrivacyMode);
+            });
+
+            QAction *cameraAction = menu.addAction(m_isCameraMode ? QStringLiteral("切换到屏幕") : QStringLiteral("切换到摄像头"));
+            connect(cameraAction, &QAction::triggered, this, [this]() {
+                if (m_isCameraMode) {
+                    m_isCameraMode = false;
+                    stopCamera();
+                } else {
+                    // 尝试切换到摄像头模式
+                    m_isCameraMode = true;
+                    ensureCameraStarted();
+                    
+                    // 如果 ensureCameraStarted 检测不到设备，会弹窗并将 m_isCameraMode 设为 false
+                    if (!m_isCameraMode) {
+                        return;
+                    }
+
+                    // 检测摄像头占用或其他启动错误
+                    if (m_camera) {
+                        connect(m_camera.data(), &QCamera::errorOccurred, this, [this](QCamera::Error error, const QString &errorString) {
+                            if (m_isCameraMode) {
+                                qWarning() << "Camera start error:" << error << errorString;
+                                m_isCameraMode = false; // 回退到屏幕模式
+                                stopCamera();
+                                QMessageBox::warning(this, QStringLiteral("摄像头启动失败"), 
+                                    QStringLiteral("摄像头可能被占用或无法启动。\n错误信息: %1").arg(errorString));
+                                publishLocalScreenFrameTriggered("timer", true, true);
+                            }
+                        }, Qt::SingleShotConnection);
+                    }
+                }
+                publishLocalScreenFrameTriggered("timer", true, true);
             });
             menu.exec(QCursor::pos());
         }

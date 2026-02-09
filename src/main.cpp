@@ -51,6 +51,25 @@ void registerIrulerWebScheme()
     QWebEngineUrlScheme::registerScheme(scheme);
 }
 
+#ifdef _WIN32
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
+#endif
+void enablePerMonitorDpiAwareness()
+{
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) {
+        return;
+    }
+    using SetProcessDpiAwarenessContextFn = BOOL(WINAPI *)(DPI_AWARENESS_CONTEXT);
+    auto fn = reinterpret_cast<SetProcessDpiAwarenessContextFn>(GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+    if (!fn) {
+        return;
+    }
+    fn(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+}
+#endif
+
 class LanRelayServer final : public QObject
 {
 public:
@@ -240,6 +259,11 @@ int main(int argc, char *argv[])
     ConsoleLogger::installQtMessageHandler();
 
     registerIrulerWebScheme();
+
+#ifdef _WIN32
+    enablePerMonitorDpiAwareness();
+#endif
+
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
     QNetworkProxyFactory::setUseSystemConfiguration(false);

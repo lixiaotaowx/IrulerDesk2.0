@@ -774,7 +774,7 @@ void VideoDisplayWidget::updateWaitingSplashFrame()
     f.setPixelSize(textPx);
     painter.setFont(f);
     painter.setPen(QColor(255,255,255,220));
-    QString text = QStringLiteral("画面等待中");
+    QString text = QStringLiteral("对方开启了隐私模式，请稍后");
     QFontMetrics fm(f);
     int tw = fm.horizontalAdvance(text);
     int th = fm.height();

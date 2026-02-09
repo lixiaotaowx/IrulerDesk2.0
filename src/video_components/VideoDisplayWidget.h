@@ -169,9 +169,10 @@ private:
     void showContinuePrompt();
     void onContinueClicked();
     void onPromptCountdownTick();
-    void showWaitingSplash();
+    void showWaitingSplash(bool force = false);
     void stopWaitingSplash();
     void updateWaitingSplashFrame();
+    void onDelayedSplashTimeout();
     void animateWaitingSplashFlyOut();
     void showOfflineReminder(const QString &reason = QString());
     void resizeEvent(QResizeEvent *event) override;
@@ -207,6 +208,7 @@ private:
     // 端到端延迟统计
     QList<double> m_latencyHistory;
     qint64 m_currentCaptureTimestamp = 0; // 当前帧的捕获时间戳
+    qint64 m_lastFrameTime = 0;           // 上一帧显示的时间戳
     static const int MAX_LATENCY_SAMPLES = 30; // 保持最近30帧的延迟数据
     
     // 鼠标位置相关
@@ -251,6 +253,7 @@ private:
     // 等待遮罩动画
     bool m_waitSplashActive = false;
     QTimer *m_waitingDotsTimer = nullptr;
+    QTimer *m_delayedSplashTimer = nullptr;
     QPixmap m_waitBaseCached;
     QPixmap m_waitWmCached;
     QPixmap m_lastWaitCanvas;

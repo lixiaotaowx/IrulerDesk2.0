@@ -50,6 +50,10 @@ VideoDisplayWidget::VideoDisplayWidget(QWidget *parent)
     m_mouseButtonsSwapped = false;
 #endif
     
+    m_delayedSplashTimer = new QTimer(this);
+    m_delayedSplashTimer->setSingleShot(true);
+    connect(m_delayedSplashTimer, &QTimer::timeout, this, &VideoDisplayWidget::onDelayedSplashTimeout);
+
     setupUI();
     
     // 创建解码器和接收器
@@ -274,6 +278,7 @@ void VideoDisplayWidget::startReceiving(const QString &serverUrl)
     
     // 重置统计
     m_stats = VideoStats();
+    m_lastFrameTime = 0;
     m_stats.connectionStatus = "Connecting...";
     
     emit connectionStatusChanged(m_stats.connectionStatus);
@@ -361,7 +366,7 @@ void VideoDisplayWidget::stopReceiving(bool recreate)
     
     // 清理显示缓存
     m_videoLabel->clear();
-    showWaitingSplash();
+    showWaitingSplash(true);
     
     m_isReceiving = false;
     updateButtonText();
@@ -618,6 +623,10 @@ void VideoDisplayWidget::flushPendingFrame()
     const QPixmap scaledPixmap = src.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     m_videoLabel->setPixmap(scaledPixmap);
     m_videoLabel->setAlignment(Qt::AlignCenter);
+    if (m_delayedSplashTimer && m_delayedSplashTimer->isActive()) {
+        m_delayedSplashTimer->stop();
+    }
+    m_lastFrameTime = QDateTime::currentMSecsSinceEpoch();
     stopWaitingSplash();
 
     if (m_pendingFrameCounts) {
@@ -686,9 +695,21 @@ void VideoDisplayWidget::updateButtonText()
     m_startStopButton->setText(m_isReceiving ? "停止接收" : "开始接收");
 }
 
-void VideoDisplayWidget::showWaitingSplash()
+void VideoDisplayWidget::showWaitingSplash(bool force)
 {
     if (!m_videoLabel) return;
+
+    // Anti-flicker: if we received frames recently, delay the splash
+    if (!force && m_lastFrameTime > 0) {
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - m_lastFrameTime < 2000) {
+            if (!m_delayedSplashTimer->isActive()) {
+                m_delayedSplashTimer->start(1000);
+            }
+            return;
+        }
+    }
+
     m_waitSplashActive = true;
     if (!m_waitingDotsTimer) {
         m_waitingDotsTimer = new QTimer(this);
@@ -700,6 +721,11 @@ void VideoDisplayWidget::showWaitingSplash()
     m_waitingDotsPhase = 0;
     updateWaitingSplashFrame();
     m_waitingDotsTimer->start();
+}
+
+void VideoDisplayWidget::onDelayedSplashTimeout()
+{
+    showWaitingSplash(true);
 }
 
 void VideoDisplayWidget::stopWaitingSplash()
@@ -837,7 +863,7 @@ void VideoDisplayWidget::showSwitchingIndicator(const QString &message)
 {
     // 更新状态栏文案并显示等待图片
     m_statusLabel->setText(QString("状态: %1").arg(message));
-    showWaitingSplash();
+    showWaitingSplash(true);
 }
 
 void VideoDisplayWidget::sendSwitchScreenIndex(int index)

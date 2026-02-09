@@ -99,7 +99,12 @@ void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
         // [Fix] QScreen::grabWindow(0) 自动处理该屏幕的几何区域
         // 之前传递 s->geometry().x() 导致在副屏上坐标双重偏移（越界），从而导致黑屏
         // 使用无参数版本以自动匹配该屏幕区域
-        originalPixmap = s->grabWindow(0);
+        // [Fix 2025-02-09] 针对4K/高分屏显示为1/4的问题：
+        // 在高DPI下，默认grabWindow可能只抓取逻辑尺寸区域（但在物理像素上呈现为左上角1/4）。
+        // 尝试传入物理尺寸进行抓取。
+        qreal dpr = s->devicePixelRatio();
+        QRect geo = s->geometry();
+        originalPixmap = s->grabWindow(0, 0, 0, qRound(geo.width() * dpr), qRound(geo.height() * dpr));
         
         if (!originalPixmap.isNull()) {
             // 简单的黑屏检测：如果图片全是黑色，可能是抓取失败（例如受版权保护的内容或系统限制）
@@ -256,7 +261,12 @@ void NewUiWindow::buildLocalScreenFrame(QPixmap &previewPix, QPixmap &sendPix)
         // [Fix] QScreen::grabWindow(0) 自动处理该屏幕的几何区域
         // 之前传递 s->geometry().x() 导致在副屏上坐标双重偏移（越界），从而导致黑屏
         // 使用无参数版本以自动匹配该屏幕区域
-        originalPixmap = s->grabWindow(0);
+        // [Fix 2025-02-09] 针对4K/高分屏显示为1/4的问题：
+        // 在高DPI下，默认grabWindow可能只抓取逻辑尺寸区域（但在物理像素上呈现为左上角1/4）。
+        // 尝试传入物理尺寸进行抓取。
+        qreal dpr = s->devicePixelRatio();
+        QRect geo = s->geometry();
+        originalPixmap = s->grabWindow(0, 0, 0, qRound(geo.width() * dpr), qRound(geo.height() * dpr));
         
         if (!originalPixmap.isNull()) {
             // 简单的黑屏检测：如果图片全是黑色，可能是抓取失败（例如受版权保护的内容或系统限制）

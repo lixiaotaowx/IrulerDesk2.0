@@ -93,6 +93,49 @@ void NewUiWindow::buildLocalPreviewFrameFast(QPixmap &previewPix)
 {
     previewPix = QPixmap();
 
+    if (m_isCameraMode) {
+        QImage camImg;
+        if (m_videoSink) {
+            QVideoFrame frame = m_videoSink->videoFrame();
+            if (frame.isValid()) {
+                camImg = frame.toImage();
+            }
+        }
+
+        if (!camImg.isNull()) {
+            QPixmap srcPix = QPixmap::fromImage(camImg);
+            QPixmap pixmap(m_imgWidth, m_imgHeight);
+            pixmap.setDevicePixelRatio(1.0);
+            pixmap.fill(Qt::transparent);
+
+            QPainter p(&pixmap);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+            QPixmap scaledPix = srcPix.scaled(m_imgWidth, m_imgHeight, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            int x = (m_imgWidth - scaledPix.width()) / 2;
+            int y = (m_imgHeight - scaledPix.height()) / 2;
+
+            QPainterPath path;
+            path.addRoundedRect(0, 0, m_imgWidth, m_imgHeight, 8, 8);
+            p.setClipPath(path);
+            p.drawPixmap(x, y, scaledPix);
+            p.end();
+
+            previewPix = pixmap;
+            return;
+        }
+
+        QPixmap loadingPix(m_imgWidth, m_imgHeight);
+        loadingPix.fill(Qt::black);
+        QPainter p(&loadingPix);
+        p.setPen(Qt::white);
+        p.drawText(loadingPix.rect(), Qt::AlignCenter, QStringLiteral("摄像头启动中..."));
+        p.end();
+        previewPix = loadingPix;
+        return;
+    }
+
     const auto screens = QGuiApplication::screens();
     QScreen *preferred = nullptr;
     if (m_captureScreenIndex >= 0 && m_captureScreenIndex < screens.size()) {

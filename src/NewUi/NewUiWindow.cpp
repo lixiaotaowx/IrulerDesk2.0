@@ -2963,24 +2963,12 @@ void NewUiWindow::setupUi()
                     
                     // 如果 ensureCameraStarted 检测不到设备，会弹窗并将 m_isCameraMode 设为 false
                     if (!m_isCameraMode) {
-                        return;
-                    }
-
-                    // 检测摄像头占用或其他启动错误
-                    if (m_camera) {
-                        connect(m_camera.data(), &QCamera::errorOccurred, this, [this](QCamera::Error error, const QString &errorString) {
-                            if (m_isCameraMode) {
-                                qWarning() << "Camera start error:" << error << errorString;
-                                m_isCameraMode = false; // 回退到屏幕模式
-                                stopCamera();
-                                QMessageBox::warning(this, QStringLiteral("摄像头启动失败"), 
-                                    QStringLiteral("摄像头可能被占用或无法启动。\n错误信息: %1").arg(errorString));
-                                publishLocalScreenFrameTriggered("timer", true, true);
-                            }
-                        }, Qt::SingleShotConnection);
                     }
                 }
-                publishLocalScreenFrameTriggered("timer", true, true);
+                m_lastPreviewFramePixmap = QPixmap();
+                m_lastPreviewSendPixmap = QPixmap();
+                m_lastPreviewCaptureAtMs = 0;
+                publishLocalScreenFrameTriggered("camera_switch", true, true);
             });
             menu.exec(QCursor::pos());
         }
@@ -3229,43 +3217,6 @@ void NewUiWindow::setupUi()
 
         cardLayout->addWidget(imageContainer);
         cardLayout->addLayout(bottomLayout);
-
-        // [Camera Switch Button]
-        QPushButton *switchBtn = new QPushButton(card);
-        switchBtn->setText(QStringLiteral("切换到摄像头"));
-        switchBtn->setCursor(Qt::PointingHandCursor);
-        switchBtn->setFixedHeight(20);
-        switchBtn->setStyleSheet(
-            "QPushButton {"
-            "   background-color: transparent;"
-            "   color: rgba(255, 255, 255, 120);"
-            "   font-size: 10px;"
-            "   border: none;"
-            "   margin-bottom: 2px;"
-            "}"
-            "QPushButton:hover {"
-            "   color: #0099ff;"
-            "}"
-        );
-        connect(switchBtn, &QPushButton::clicked, this, [this, switchBtn](){
-            m_isCameraMode = !m_isCameraMode;
-            if (m_isCameraMode) {
-                ensureCameraStarted();
-                switchBtn->setText(QStringLiteral("切换到屏幕"));
-            } else {
-                stopCamera();
-                switchBtn->setText(QStringLiteral("切换到摄像头"));
-            }
-            publishLocalScreenFrameTriggered("timer", true, true);
-        });
-        
-        QHBoxLayout *switchLayout = new QHBoxLayout();
-        switchLayout->setContentsMargins(0, 0, 0, 4);
-        switchLayout->setSpacing(0);
-        switchLayout->addStretch();
-        switchLayout->addWidget(switchBtn);
-        switchLayout->addStretch();
-        cardLayout->addLayout(switchLayout);
 
         itemLayout->addWidget(card);
         
@@ -5090,9 +5041,51 @@ void NewUiWindow::showUserGuide()
 
 void NewUiWindow::ensureCameraStarted()
 {
+    auto scheduleStartCheck = [this]() {
+        QTimer::singleShot(1500, this, [this]() {
+            if (!m_isCameraMode) {
+                return;
+            }
+            if (!m_camera) {
+                return;
+            }
+            bool hasFrame = false;
+            if (m_videoSink) {
+                QVideoFrame frame = m_videoSink->videoFrame();
+                hasFrame = frame.isValid();
+            }
+            if (m_camera->isActive() || hasFrame) {
+                return;
+            }
+            m_isCameraMode = false;
+            stopCamera();
+            QMessageBox::warning(this, QStringLiteral("摄像头启动失败"),
+                QStringLiteral("摄像头可能被占用或无法启动。"));
+            m_lastPreviewFramePixmap = QPixmap();
+            m_lastPreviewSendPixmap = QPixmap();
+            m_lastPreviewCaptureAtMs = 0;
+            publishLocalScreenFrameTriggered("camera_error", true, true);
+        });
+    };
+
     if (m_camera) {
         if (m_camera->isActive()) return;
+        connect(m_camera.data(), &QCamera::errorOccurred, this, [this](QCamera::Error error, const QString &errorString) {
+            Q_UNUSED(error);
+            if (!m_isCameraMode) {
+                return;
+            }
+            m_isCameraMode = false;
+            stopCamera();
+            QMessageBox::warning(this, QStringLiteral("摄像头启动失败"),
+                QStringLiteral("摄像头可能被占用或无法启动。\n错误信息: %1").arg(errorString));
+            m_lastPreviewFramePixmap = QPixmap();
+            m_lastPreviewSendPixmap = QPixmap();
+            m_lastPreviewCaptureAtMs = 0;
+            publishLocalScreenFrameTriggered("camera_error", true, true);
+        }, Qt::UniqueConnection);
         m_camera->start();
+        scheduleStartCheck();
         return;
     }
 
@@ -5100,6 +5093,10 @@ void NewUiWindow::ensureCameraStarted()
     if (cameras.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("无法启动摄像头"), QStringLiteral("未检测到摄像头设备"));
         m_isCameraMode = false;
+        m_lastPreviewFramePixmap = QPixmap();
+        m_lastPreviewSendPixmap = QPixmap();
+        m_lastPreviewCaptureAtMs = 0;
+        publishLocalScreenFrameTriggered("camera_error", true, true);
         return;
     }
 
@@ -5110,7 +5107,23 @@ void NewUiWindow::ensureCameraStarted()
     m_captureSession->setCamera(m_camera.data());
     m_captureSession->setVideoSink(m_videoSink.data());
 
+    connect(m_camera.data(), &QCamera::errorOccurred, this, [this](QCamera::Error error, const QString &errorString) {
+        Q_UNUSED(error);
+        if (!m_isCameraMode) {
+            return;
+        }
+        m_isCameraMode = false;
+        stopCamera();
+        QMessageBox::warning(this, QStringLiteral("摄像头启动失败"),
+            QStringLiteral("摄像头可能被占用或无法启动。\n错误信息: %1").arg(errorString));
+        m_lastPreviewFramePixmap = QPixmap();
+        m_lastPreviewSendPixmap = QPixmap();
+        m_lastPreviewCaptureAtMs = 0;
+        publishLocalScreenFrameTriggered("camera_error", true, true);
+    }, Qt::UniqueConnection);
+
     m_camera->start();
+    scheduleStartCheck();
 }
 
 void NewUiWindow::stopCamera()

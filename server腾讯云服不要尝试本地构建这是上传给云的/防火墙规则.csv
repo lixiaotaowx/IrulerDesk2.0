@@ -1,0 +1,26 @@
+﻿CidrBlock,Protocol,Port,Action,FirewallRuleDescription
+0.0.0.0/0,TCP,10998,允许,sono
+0.0.0.0/0,UDP,10998,允许,sono
+0.0.0.0/0,TCP,8000,允许,janus
+0.0.0.0/0,TCP,8088,允许,janus
+::/0,TCP,8088,允许,janus
+0.0.0.0/0,TCP,8188,允许,janus
+::/0,TCP,8188,允许,janus
+0.0.0.0/0,UDP,20000-40000,允许,janus
+::/0,UDP,20000-40000,允许,janus
+0.0.0.0/0,TCP,3478,允许,turn
+::/0,TCP,3478,允许,turn
+::/0,UDP,50000-60000,允许,turn
+0.0.0.0/0,UDP,50000-60000,允许,turn
+::/0,TCP,5349,允许,turn
+0.0.0.0/0,UDP,3478,允许,turn
+::/0,UDP,3478,允许,turn
+0.0.0.0/0,TCP,5349,允许,turn
+0.0.0.0/0,TCP,8765,允许,iruler
+::/0,TCP,8765,允许,iruler
+0.0.0.0/0,TCP,80,允许,Web服务HTTP (80)，如 Apache、Nginx
+0.0.0.0/0,TCP,443,允许,Web服务HTTPS (443)，如 Apache、Nginx
+0.0.0.0/0,TCP,22,允许,Linux SSH登录
+0.0.0.0/0,TCP,3389,允许,Windows远程桌面登录
+0.0.0.0/0,UDP,3389,允许,Windows远程桌面登录优化
+0.0.0.0/0,ICMP,ALL,允许,通过Ping测试网络连通性 (放通ALL ICMP)

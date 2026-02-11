@@ -32,6 +32,7 @@ class AnnotationToolbar;
 class AutoUpdater;
 class QProgressDialog;
 class NewUserGuide;
+class LocalActivityMonitor;
 
 class NewUiWindow : public QWidget
 {
@@ -76,6 +77,8 @@ private slots:
 public:
     void setMyStreamId(const QString &id, const QString &name = QString());
     void setCaptureScreenIndex(int index);
+    void setRemoteActivityState(const QString &userId, bool active);
+    bool localActivityActive() const;
     void setTalkPending(const QString &userId, bool pending);
     void setTalkConnected(const QString &userId, bool connected);
     void setTalkRemoteActive(const QString &userId, bool active);
@@ -139,6 +142,7 @@ signals:
     void stopWatchingRequested(const QString &targetId);
     void videoReceivingStopped(const QString &targetId);
     void videoFullscreenToggled(bool maximized);
+    void localActivityStateChanged(bool active);
 
 private:
     void setupUi();
@@ -211,12 +215,15 @@ private:
     void showCancelledInviteNotification(const QString &inviterName, const QString &timeStr);
     void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
     void updateNotificationPositions();
+    void updateLocalCardActivityStyle(bool active);
+    void updateRemoteCardActivityStyle(const QString &userId);
 
     QPoint m_dragPosition;
 
     QListWidget *m_listWidget = nullptr;
     QTimer *m_timer = nullptr;
     QTimer *m_selfPreviewFastTimer = nullptr;
+    LocalActivityMonitor *m_localActivityMonitor = nullptr;
     QLabel *m_videoLabel = nullptr; // Local preview label (Index 0)
     QLabel *m_logoLabel = nullptr;
     QWidget *m_farRightPanel = nullptr; // Far right panel (My Room)
@@ -261,6 +268,7 @@ private:
     QMap<QString, QListWidgetItem*> m_userItems;  // userId -> ListWidgetItem
     QMap<QString, QLabel*> m_userLabels;          // userId -> Image Label (for updating frame)
     QMap<QString, QLabel*> m_userAvatarLabels;    // userId -> Avatar Label (top-left overlay)
+    QMap<QString, bool> m_remoteActivityStates;
     QMap<QString, QPushButton*> m_talkButtons;    // userId -> Talk Button (end/get)
     QMap<QString, QLabel*> m_talkOverlays;        // userId -> "通话中" overlay label
     QTimer *m_talkSpinnerTimer = nullptr;
@@ -358,6 +366,7 @@ private:
     qint64 m_lastPreviewCaptureAtMs = 0;
     qint64 m_lastPreviewResendAtMs = 0;
     qint64 m_lastPreviewLogAtMs = 0;
+    bool m_localActivityActive = true;
 
     bool m_globalMicEnabled = true;
     bool m_janusAudioLoaded = false;

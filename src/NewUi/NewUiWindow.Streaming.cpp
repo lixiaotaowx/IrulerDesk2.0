@@ -1145,6 +1145,10 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     m_userItems.insert(userId, item);
     m_userLabels.insert(userId, imgLabel);
     m_userAvatarLabels.insert(userId, avatarLabel);
+    if (!m_remoteActivityStates.contains(userId)) {
+        m_remoteActivityStates.insert(userId, true);
+    }
+    updateRemoteCardActivityStyle(userId);
     updateTalkOverlay(userId);
 
     StreamClient *client = new StreamClient(this);
@@ -1237,6 +1241,7 @@ void NewUiWindow::removeUser(const QString &userId)
 
     m_userLabels.remove(userId);
     m_userAvatarLabels.remove(userId);
+    m_remoteActivityStates.remove(userId);
 
     if (m_avatarSubscribers.contains(userId)) {
         StreamClient *client = m_avatarSubscribers.take(userId);

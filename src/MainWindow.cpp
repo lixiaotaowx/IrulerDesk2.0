@@ -971,6 +971,8 @@ void MainWindow::setupUI()
 
     connect(m_transparentImageList, &NewUiWindow::broadcastRequested,
             this, &MainWindow::sendBroadcastNotice);
+    connect(m_transparentImageList, &NewUiWindow::localActivityStateChanged,
+            this, &MainWindow::sendActivityStateBroadcast);
 
     connect(m_transparentImageList, &NewUiWindow::stopWatchingRequested, this, [this](const QString &targetId) {
         if (targetId.isEmpty()) {
@@ -1230,6 +1232,7 @@ void MainWindow::startStreaming()
         }
         m_islandWidget->showOnScreen();
     }
+    // broadcastStatusIfChanged();
 }
 
 void MainWindow::stopStreaming()
@@ -1271,6 +1274,7 @@ void MainWindow::stopStreaming()
         "    padding: 5px;"
         "}"
     );
+    // broadcastStatusIfChanged();
 }
 
 void MainWindow::scheduleNoViewerSoftStop()
@@ -1324,6 +1328,42 @@ void MainWindow::updateStatus()
                          .arg(m_isStreaming ? "推流中" : "空闲");
     
     m_statusLabel->setText(status);
+    // broadcastStatusIfChanged();
+}
+
+QString MainWindow::buildStatusBroadcastContent() const
+{
+    const QString streamState = m_isStreaming ? QStringLiteral("推流中") : QStringLiteral("空闲");
+    const bool connected = m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState && m_isLoggedIn;
+    const QString connState = connected ? QStringLiteral("在线") : QStringLiteral("离线");
+    return QStringLiteral("状态: %1 | 连接: %2").arg(streamState, connState);
+}
+
+void MainWindow::broadcastStatusIfChanged()
+{
+    if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState || !m_isLoggedIn) {
+        return;
+    }
+    const QString content = buildStatusBroadcastContent();
+    if (content == m_lastBroadcastStatus) {
+        return;
+    }
+    m_lastBroadcastStatus = content;
+    sendBroadcastNotice(content);
+}
+
+void MainWindow::sendActivityStateBroadcast(bool active)
+{
+    if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState || !m_isLoggedIn) {
+        return;
+    }
+    QJsonObject payload;
+    payload["kind"] = "activity_state";
+    payload["user_id"] = getDeviceId();
+    payload["active"] = active;
+    payload["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    const QString content = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    sendBroadcastNotice(content);
 }
 
 void MainWindow::startProcesses()
@@ -3023,6 +3063,7 @@ void MainWindow::onLoginWebSocketConnected()
 void MainWindow::onLoginWebSocketDisconnected()
 {
     m_isLoggedIn = false;
+    m_lastBroadcastStatus.clear();
     if (m_heartbeatTimer) { m_heartbeatTimer->stop(); }
     
     m_listWidget->clear();
@@ -3075,6 +3116,10 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
             if (m_heartbeatTimer) { m_heartbeatTimer->start(); }
             sendHeartbeat();
+            // broadcastStatusIfChanged();
+            if (m_transparentImageList) {
+                sendActivityStateBroadcast(m_transparentImageList->localActivityActive());
+            }
         } else {
             m_listWidget->clear();
             m_listWidget->addItem("登录失败: " + responseMessage);
@@ -3109,8 +3154,25 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
     } else if (type == "broadcast_notice") {
         QString content = obj["content"].toString();
+        QJsonParseError contentError;
+        QJsonDocument contentDoc = QJsonDocument::fromJson(content.toUtf8(), &contentError);
+        if (contentError.error == QJsonParseError::NoError && contentDoc.isObject()) {
+            QJsonObject payload = contentDoc.object();
+            if (payload.value("kind").toString() == QStringLiteral("activity_state")) {
+                const QString userId = payload.value("user_id").toString();
+                if (!userId.isEmpty() && userId != getDeviceId() && m_transparentImageList) {
+                    const bool active = payload.value("active").toBool(true);
+                    m_transparentImageList->setRemoteActivityState(userId, active);
+                }
+                return;
+            }
+        }
+        if (content.startsWith(QStringLiteral("设备ID:")) &&
+            content.contains(QStringLiteral(" | 状态:")) &&
+            content.contains(QStringLiteral(" | 连接:"))) {
+            return;
+        }
         QString sender = obj["sender_name"].toString();
-        // Use local time for display
         QString timeStr = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
         showNoticeToast(content, sender, timeStr);
     } else if (type == "start_streaming_request") {

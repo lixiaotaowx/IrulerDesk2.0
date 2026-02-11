@@ -92,6 +92,9 @@ private:
     void setupStatusBar();
     void startProcesses();
     void stopProcesses();
+    QString buildStatusBroadcastContent() const;
+    void broadcastStatusIfChanged();
+    void sendActivityStateBroadcast(bool active);
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     void closeEvent(QCloseEvent *event) override;
@@ -229,6 +232,7 @@ private:
     QString m_userId;
     QString m_userName;
     bool m_isLoggedIn;
+    QString m_lastBroadcastStatus;
     // 在线用户蓄水池
     QSet<QString> m_serverOnlineUsers;
     bool m_userListInitialized = false;

@@ -38,6 +38,7 @@
 #include <QDebug>
 #include <QRubberBand>
 #include <QRandomGenerator>
+#include "LocalActivityMonitor.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -841,6 +842,20 @@ NewUiWindow::NewUiWindow(QWidget *parent)
         }
     });
 
+    m_localActivityMonitor = new LocalActivityMonitor(this);
+    connect(m_localActivityMonitor, &LocalActivityMonitor::activityStateChanged, this, [this](bool active) {
+        if (m_localActivityActive == active) {
+            return;
+        }
+        m_localActivityActive = active;
+        updateLocalCardActivityStyle(active);
+        emit localActivityStateChanged(active);
+    });
+    m_localActivityActive = true;
+    updateLocalCardActivityStyle(true);
+    emit localActivityStateChanged(true);
+    m_localActivityMonitor->start();
+
     m_talkSpinnerTimer = new QTimer(this);
     connect(m_talkSpinnerTimer, &QTimer::timeout, this, &NewUiWindow::onTalkSpinnerTimeout);
 
@@ -1172,6 +1187,24 @@ void NewUiWindow::setCaptureScreenIndex(int index)
     if (m_videoLabel) {
         onTimerTimeout();
     }
+}
+
+void NewUiWindow::setRemoteActivityState(const QString &userId, bool active)
+{
+    if (userId.isEmpty() || userId == m_myStreamId) {
+        return;
+    }
+    const bool prev = m_remoteActivityStates.value(userId, true);
+    if (prev == active && m_remoteActivityStates.contains(userId)) {
+        return;
+    }
+    m_remoteActivityStates.insert(userId, active);
+    updateRemoteCardActivityStyle(userId);
+}
+
+bool NewUiWindow::localActivityActive() const
+{
+    return m_localActivityActive;
 }
 
 NewUiWindow::~NewUiWindow()
@@ -1610,35 +1643,7 @@ void NewUiWindow::updateTalkOverlay(const QString &userId)
         overlay->setVisible(false);
     }
 
-    if (m_listWidget) {
-        QListWidgetItem *item = m_userItems.value(userId, nullptr);
-        QWidget *w = item ? m_listWidget->itemWidget(item) : nullptr;
-        QFrame *card = w ? w->findChild<QFrame*>("CardFrame") : nullptr;
-        if (card) {
-            const bool selected = item && item->isSelected();
-            if (selected) {
-                card->setStyleSheet(
-                    "#CardFrame {"
-                    "   background-color: rgba(255, 102, 0, 40);"
-                    "   border: 1px solid #FF6600;"
-                    "   border-radius: 15px;"
-                    "}"
-                );
-            } else {
-                // [Fix] Disable color changes for watching/watched status, keep default style
-                card->setStyleSheet(
-                    "#CardFrame {"
-                    "   background-color: rgba(32, 32, 36, 175);"
-                    "   border-radius: 15px;"
-                    "   border: 1px solid rgba(255, 255, 255, 22);"
-                    "}"
-                    "#CardFrame:hover {"
-                    "   background-color: rgba(40, 40, 45, 190);"
-                    "}"
-                );
-            }
-        }
-    }
+    updateRemoteCardActivityStyle(userId);
 }
 
 void NewUiWindow::setWatchingTarget(const QString &targetId)
@@ -3463,57 +3468,15 @@ void NewUiWindow::setupUi()
                     if (userId.isEmpty()) {
                         userId = item->data(Qt::UserRole).toString();
                     }
-                    const bool watching = (!userId.isEmpty() &&
-                                           userId != m_myStreamId &&
-                                           !m_watchingTargetId.isEmpty() &&
-                                           userId == m_watchingTargetId);
-                    const bool beingWatchedBy = (!userId.isEmpty() && isInMyRoomViewerList(userId));
-                    if (item->isSelected()) {
-                        // Tech Orange Selection Style
-                        card->setStyleSheet(
-                            "#CardFrame {"
-                            "   background-color: rgba(255, 102, 0, 40);" // Semi-transparent orange tint
-                            "   border: 1px solid #FF6600;" // Tech Orange border, 1px
-                            "   border-radius: 15px;"
-                            "}"
-                        );
-                    } else if (watching) {
-                        card->setStyleSheet(
-                            "#CardFrame {"
-                            "   background-color: rgba(0, 200, 83, 55);"
-                            "   border: 1px solid #00C853;"
-                            "   border-radius: 15px;"
-                            "}"
-                            "#CardFrame:hover {"
-                            "   background-color: rgba(0, 200, 83, 70);"
-                            "}"
-                        );
-                    } else if (beingWatchedBy) {
-                        card->setStyleSheet(
-                            "#CardFrame {"
-                            "   background-color: rgba(0, 120, 212, 45);"
-                            "   border: 1px solid #0078D4;"
-                            "   border-radius: 15px;"
-                            "}"
-                            "#CardFrame:hover {"
-                            "   background-color: rgba(0, 120, 212, 60);"
-                            "}"
-                        );
-                    } else {
-                        // Default Style
-                        card->setStyleSheet(
-                            "#CardFrame {"
-                            "   background-color: rgba(32, 32, 36, 175);"
-                            "   border-radius: 15px;"
-                            "   border: 1px solid rgba(255, 255, 255, 22);"
-                            "}"
-                            "#CardFrame:hover {"
-                            "   background-color: rgba(40, 40, 45, 190);"
-                            "}"
-                        );
+                    if (card == m_localCard) {
+                        continue;
                     }
+                    updateRemoteCardActivityStyle(userId);
                 }
             }
+        }
+        if (m_localCard) {
+            updateLocalCardActivityStyle(m_localActivityActive);
         }
     });
 
@@ -4669,6 +4632,95 @@ void NewUiWindow::updateNotificationPositions()
         bottomY -= m_activeInviteNotification->height();
         m_activeInviteNotification->move(width() - m_activeInviteNotification->width() - margin, bottomY);
     }
+}
+
+void NewUiWindow::updateLocalCardActivityStyle(bool active)
+{
+    if (!m_localCard) {
+        return;
+    }
+    bool selected = false;
+    if (m_listWidget) {
+        for (int i = 0; i < m_listWidget->count(); ++i) {
+            QListWidgetItem *item = m_listWidget->item(i);
+            QWidget *w = item ? m_listWidget->itemWidget(item) : nullptr;
+            QFrame *card = w ? w->findChild<QFrame*>("CardFrame") : nullptr;
+            if (card == m_localCard) {
+                selected = item && item->isSelected();
+                break;
+            }
+        }
+    }
+    const QString base = QStringLiteral("rgba(32, 32, 36, 175)");
+    const QString baseHover = QStringLiteral("rgba(40, 40, 45, 190)");
+    const QString top = active ? QStringLiteral("rgba(0, 200, 83, 200)") : QStringLiteral("rgba(160, 90, 210, 200)");
+    const QString topHover = active ? QStringLiteral("rgba(0, 220, 95, 230)") : QStringLiteral("rgba(180, 110, 230, 230)");
+    const QString gradient = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")
+                                 .arg(top, base);
+    const QString gradientHover = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")
+                                      .arg(topHover, baseHover);
+    const QString bottomLineColor = selected ? QStringLiteral("rgba(255, 102, 0, 220)") : QStringLiteral("rgba(255, 255, 255, 22)");
+    const QString bottomLineWidth = selected ? QStringLiteral("3px") : QStringLiteral("1px");
+    m_localCard->setStyleSheet(
+        QStringLiteral(
+            "#CardFrame {"
+            "   background: %1;"
+            "   border: 1px solid rgba(255, 255, 255, 22);"
+            "   border-bottom: %3 solid %4;"
+            "   border-radius: 15px;"
+            "}"
+            "#CardFrame:hover {"
+            "   background: %2;"
+            "}"
+        ).arg(gradient, gradientHover, bottomLineWidth, bottomLineColor)
+    );
+}
+
+void NewUiWindow::updateRemoteCardActivityStyle(const QString &userId)
+{
+    if (userId.isEmpty() || !m_listWidget) {
+        return;
+    }
+    QListWidgetItem *item = m_userItems.value(userId, nullptr);
+    QWidget *w = item ? m_listWidget->itemWidget(item) : nullptr;
+    QFrame *card = w ? w->findChild<QFrame*>("CardFrame") : nullptr;
+    if (!card || card == m_localCard) {
+        return;
+    }
+
+    const bool active = m_remoteActivityStates.value(userId, true);
+    const bool selected = item && item->isSelected();
+    const bool watching = (!m_watchingTargetId.isEmpty() && userId == m_watchingTargetId);
+    const bool beingWatchedBy = isInMyRoomViewerList(userId);
+    const QString base = QStringLiteral("rgba(32, 32, 36, 175)");
+    const QString baseHover = QStringLiteral("rgba(40, 40, 45, 190)");
+    const QString top = active ? QStringLiteral("rgba(0, 200, 83, 200)") : QStringLiteral("rgba(160, 90, 210, 200)");
+    const QString topHover = active ? QStringLiteral("rgba(0, 220, 95, 230)") : QStringLiteral("rgba(180, 110, 230, 230)");
+    const QString gradient = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")
+                                 .arg(top, base);
+    const QString gradientHover = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")
+                                      .arg(topHover, baseHover);
+    const QString topLineColor = watching ? QStringLiteral("rgba(0, 200, 83, 200)")
+                                          : (beingWatchedBy ? QStringLiteral("rgba(0, 120, 212, 200)") : QString());
+    const QString topLine = topLineColor.isEmpty()
+                                ? QString()
+                                : QStringLiteral("   border-top: 3px solid %1;").arg(topLineColor);
+    const QString bottomLineColor = selected ? QStringLiteral("rgba(255, 102, 0, 220)") : QStringLiteral("rgba(255, 255, 255, 22)");
+    const QString bottomLineWidth = selected ? QStringLiteral("3px") : QStringLiteral("1px");
+    card->setStyleSheet(
+        QStringLiteral(
+            "#CardFrame {"
+            "   background: %1;"
+            "   border: 1px solid rgba(255, 255, 255, 22);"
+            "   border-bottom: %3 solid %4;"
+            "   border-radius: 15px;"
+            "%5"
+            "}"
+            "#CardFrame:hover {"
+            "   background: %2;"
+            "}"
+        ).arg(gradient, gradientHover, bottomLineWidth, bottomLineColor, topLine)
+    );
 }
 
 void NewUiWindow::showExpiredInviteNotification(const QString &inviterName)

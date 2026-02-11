@@ -46,6 +46,8 @@ set(MAIN_SOURCES
     src/NewUi/NewUiWindow.Streaming.cpp   # 新UI窗口实现：推流/订阅/HiFPS/预览
     src/NewUi/NewUiWindow.Viewers.cpp     # 新UI窗口实现：viewer 状态与房间逻辑
     src/NewUi/NewUiWindow.AudioCall.cpp   # 新UI窗口实现：音频通话/Janus
+    src/NewUi/LocalActivityMonitor.cpp   # 本地空闲检测
+    src/NewUi/LocalActivityMonitor.h     # 本地空闲检测声明
     src/NewUi/InviteUsersDialog.cpp       # 邀请用户对话框实现
     src/NewUi/InviteUsersDialog.h         # 邀请用户对话框声明
     src/NewUi/NewUiWindow.h               # 新UI窗口声明

@@ -17,6 +17,8 @@ add_executable(NewUiTest
     NewUiWindow.Streaming.cpp
     NewUiWindow.Viewers.cpp
     NewUiWindow.AudioCall.cpp
+    LocalActivityMonitor.cpp
+    LocalActivityMonitor.h
     NewUiWindow.h
     StreamClient.cpp
     StreamClient.h

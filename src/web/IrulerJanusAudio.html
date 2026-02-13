@@ -63,7 +63,13 @@
 
     function logLine(line) {
       setStatus(now() + " " + line + "\n" + statusEl.textContent.split("\n").slice(0, 8).join("\n"));
-      console.log("janus", line);
+      // console.log("janus", line); 
+      // Force direct console output for interception
+      if (line.startsWith("JANUS_")) {
+          console.log(line);
+      } else {
+          console.log("janus", line);
+      }
     }
 
     function normalizeParticipants(arr) {
@@ -157,6 +163,32 @@
           src.connect(an);
           state.diagLocalSrc = src;
           state.localAnalyser = an;
+
+          // [New] Monitor local volume
+          if (!state.localVolumeTimer) {
+              state.localVolumeTimer = setInterval(() => {
+                  if (state.localAnalyser) {
+                      const array = new Uint8Array(state.localAnalyser.frequencyBinCount);
+                      state.localAnalyser.getByteFrequencyData(array);
+                      let max = 0;
+                      // Only check low-mid frequencies (up to ~4kHz)
+                      const limit = Math.min(array.length, 200);
+                      for(let i=0; i<limit; i++) if(array[i] > max) max = array[i];
+                      
+                      let vol = max / 255.0;
+                      
+                      if (vol < 0.02) vol = 0.0;
+                      
+                      if (vol > 0.0 || (state.lastSentLocalVol && state.lastSentLocalVol > 0.0)) {
+                          logLine("JANUS_AUDIO_LEVEL_LOCAL:" + vol.toFixed(3));
+                          state.lastSentLocalVol = vol;
+                      }
+                  } else {
+                      updateLocal();
+                  }
+              }, 100);
+          }
+
         } catch (e) {
           logLine("local analyser failed: " + (e && e.message ? e.message : String(e)));
         }
@@ -179,6 +211,40 @@
           src.connect(an);
           state.diagRemoteSrc = src;
           state.remoteAnalyser = an;
+
+          // [New] Monitor mixed volume
+          if (!state.mixedVolumeTimer) {
+              state.mixedVolumeTimer = setInterval(() => {
+                  if (state.remoteAnalyser) {
+                      const array = new Uint8Array(state.remoteAnalyser.frequencyBinCount);
+                      state.remoteAnalyser.getByteFrequencyData(array);
+                      let max = 0;
+                      // Only check low-mid frequencies (up to ~4kHz)
+                      // 48kHz / 2048 = ~23Hz bin width.
+                      // Index 200 ~= 4600Hz.
+                      const limit = Math.min(array.length, 200);
+                      for(let i=0; i<limit; i++) if(array[i] > max) max = array[i];
+                      
+                      // Normalize 0-255 to 0.0-1.0
+                      let vol = max / 255.0;
+                      
+                      // Lower Gate to ensure low volumes are sent
+                      if (vol < 0.02) vol = 0.0;
+                      
+                      // Send if there is any volume or if we need to clear previous volume
+                      if (vol > 0.0 || (state.lastSentVol && state.lastSentVol > 0.0)) {
+                          // console.log("JANUS_AUDIO_LEVEL_MIXED:" + vol.toFixed(3));
+                          // Use logLine or just ensure it goes to console
+                          logLine("JANUS_AUDIO_LEVEL_MIXED:" + vol.toFixed(3));
+                          state.lastSentVol = vol;
+                      }
+                  } else {
+                      // Try to re-attach if lost
+                      updateRemote();
+                  }
+              }, 100);
+          }
+
         } catch (e) {
           logLine("remote analyser failed: " + (e && e.message ? e.message : String(e)));
         }
@@ -294,6 +360,13 @@
         if (Array.isArray(d.participants)) extra += " participants=" + d.participants.length;
         if (typeof d.muted === "boolean") extra += " muted=" + d.muted;
         if (typeof d.room === "number") extra += " room=" + d.room;
+
+        if (evName === "talking") {
+            console.log("JANUS_TALKING:" + d.id);
+        } else if (evName === "stopped-talking") {
+            console.log("JANUS_STOPPED_TALKING:" + d.id);
+        }
+
         if (evName) {
           logLine("ab " + evName + extra);
           if ((evName === "joined" || evName === "roomchanged") && state.joinWaiter) {
@@ -438,6 +511,7 @@
           try {
             applySpeakerToElement();
             logLine("remote track received muted=" + remoteAudio.muted + " vol=" + remoteAudio.volume);
+            ensureAudioDiag(); // Ensure analyser attaches to the new stream
           } catch (_) {}
           try {
             const p = remoteAudio.play();
@@ -502,7 +576,7 @@
             const timer = setTimeout(() => reject(new Error("join timeout")), 12000);
             state.joinWaiter = (d) => { clearTimeout(timer); resolve(d); };
           });
-          const joinReply = await janusMessage({request:"join", room: room, display: display, muted: state.muted});
+          const joinReply = await janusMessage({request:"join", room: room, display: display, muted: state.muted, audio_level_average: 25});
           try {
             let extra = " janus=" + (joinReply && joinReply.janus ? joinReply.janus : "-");
             if (joinReply && joinReply.error) {

@@ -1063,13 +1063,31 @@ void MainWindow::setupUI()
         if (enabled) {
             m_pendingTalkTargetId = targetId;
             m_pendingTalkEnabled = true;
+            m_pendingShowVideoWindow = false;
+            m_audioOnlyTargetId = targetId;
             if (m_transparentImageList) {
                 m_transparentImageList->setTalkPending(targetId, true);
-                m_transparentImageList->janusSwitchToUserRoom(targetId);
-                m_transparentImageList->setTalkPending(targetId, false);
-                m_transparentImageList->setTalkConnected(targetId, true);
+                // m_transparentImageList->janusSwitchToUserRoom(targetId); // Removed: Wait for acceptance
+                // m_transparentImageList->setTalkPending(targetId, false); // Removed
+                // m_transparentImageList->setTalkConnected(targetId, true); // Removed
             }
-            sendViewerMicState(targetId, true);
+            // sendViewerMicState(targetId, true); // Removed: Wait for acceptance
+            
+            // Send Audio Call Request
+            if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                QJsonObject req;
+                req["type"] = "watch_request";
+                req["viewer_id"] = getDeviceId();
+                req["target_id"] = targetId;
+                req["audio_only"] = true;
+                req["action"] = "audio_only";
+                req["viewer_name"] = m_userName.isEmpty() ? getDeviceId() : m_userName;
+                
+                m_loginWebSocket->sendTextMessage(QJsonDocument(req).toJson(QJsonDocument::Compact));
+                
+                // Optional: Show waiting dialog? 
+                // The spinner on the button (setTalkPending) might be enough.
+            }
         } else {
             const bool keepWatchingVideo = m_transparentImageList && m_transparentImageList->isEmbeddedWatchingTarget(targetId);
             auto sendKickViewer = [this](const QString &viewerId) {
@@ -1097,6 +1115,9 @@ void MainWindow::setupUI()
             if (m_pendingTalkTargetId == targetId) {
                 m_pendingTalkTargetId.clear();
                 m_pendingTalkEnabled = false;
+            }
+            if (m_audioOnlyTargetId == targetId) {
+                m_audioOnlyTargetId.clear();
             }
             sendViewerMicState(targetId, false);
 
@@ -2702,7 +2723,45 @@ void MainWindow::showInviteNotification(const QString &inviterId, const QString 
     connect(acceptBtn, &QPushButton::clicked, this, [this, inviterId, type, toast]() {
         toast->deleteLater();
 
-        // Standard Accept Logic (copied from original QMessageBox::Yes handler)
+        // [Fix] Handle Audio Call Accept (Viewer-Initiated)
+        if (type == QStringLiteral("audio_call")) {
+            // 1. Send watch_request_accepted
+            QJsonObject accepted;
+            accepted["type"] = "watch_request_accepted";
+            accepted["viewer_id"] = inviterId; // Alice
+            accepted["target_id"] = getDeviceId(); // Me (Bob)
+            
+            if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                m_loginWebSocket->sendTextMessage(QJsonDocument(accepted).toJson(QJsonDocument::Compact));
+            }
+
+            // 2. Send streaming_ok
+            QJsonObject okMsg;
+            okMsg["type"] = "streaming_ok";
+            okMsg["viewer_id"] = inviterId;
+            okMsg["target_id"] = getDeviceId();
+            okMsg["stream_url"] = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), getDeviceId());
+            
+            if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                m_loginWebSocket->sendTextMessage(QJsonDocument(okMsg).toJson(QJsonDocument::Compact));
+            }
+
+            // 3. Join Janus Room (My Room) and Show UI
+            if (m_transparentImageList) {
+                m_transparentImageList->show();
+                m_transparentImageList->janusSwitchToMyRoom();
+                m_transparentImageList->janusSetIgnoreAlone(true);
+                m_transparentImageList->showAudioCallUiForSession(inviterId, true);
+            }
+            
+            // 4. Ensure Streaming (CaptureProcess) is started if needed (for heartbeat/status)
+            if (!m_isStreaming) {
+                startStreaming();
+            }
+            return;
+        }
+
+        // Standard Accept Logic (for Screen Share / Invite Response)
         // 1. Send watch_request with action="invite_response"
         QJsonObject req;
         req["type"] = "watch_request";
@@ -3293,9 +3352,10 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         
         // const QString action = obj.value("action").toString(); // Already defined above
         const bool audioOnly = obj.value("audio_only").toBool(false) || action == "audio_only";
-        bool manualApproval = loadManualApprovalEnabledFromConfig();
+        bool manualApproval = loadManualApprovalEnabledFromConfig() || audioOnly;
         bool isConnected = m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState;
 
+        /* [Removed] Auto-accept for audio calls is disabled to allow manual approval
         if (audioOnly && isConnected) {
             QJsonObject accepted;
             accepted["type"] = "watch_request_accepted";
@@ -3324,6 +3384,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_loginWebSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
             return;
         }
+        */
 
         if (manualApproval && isConnected) {
             // 1. 发送需要审批的消息给观看端
@@ -3366,7 +3427,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             QVBoxLayout *contentLayout = new QVBoxLayout();
             contentLayout->setSpacing(8);
             
-            QLabel *label = new QLabel(QStringLiteral("用户 %1 请求观看您的屏幕").arg(viewerName), body);
+            QLabel *label = new QLabel((audioOnly ? QStringLiteral("用户 %1 请求语音通话") : QStringLiteral("用户 %1 请求观看您的屏幕")).arg(viewerName), body);
             label->setStyleSheet("color: #ffffff; font-size: 16px; font-weight: bold; background: transparent; border: none;");
             label->setWordWrap(true);
             contentLayout->addWidget(label);
@@ -3424,7 +3485,32 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             });
 
             // Connect Logic
-            connect(acceptBtn, &QPushButton::clicked, this, [this, toast, viewerId, targetId, viewerName]() {
+            connect(acceptBtn, &QPushButton::clicked, this, [this, toast, viewerId, targetId, viewerName, audioOnly]() {
+                // [Fix] Handle Audio Call Accept (Viewer-Initiated)
+                if (audioOnly) {
+                    // 1. Send watch_request_accepted
+                    QJsonObject accepted;
+                    accepted["type"] = "watch_request_accepted";
+                    accepted["viewer_id"] = viewerId;
+                    accepted["target_id"] = targetId;
+                    accepted["audio_only"] = true;
+                    
+                    if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                        m_loginWebSocket->sendTextMessage(QJsonDocument(accepted).toJson(QJsonDocument::Compact));
+                    }
+
+                    // 2. Join Janus Room (My Room) and Show UI
+                    if (m_transparentImageList) {
+                        m_transparentImageList->janusSwitchToMyRoom();
+                        m_transparentImageList->janusSetIgnoreAlone(true);
+                        m_transparentImageList->showAudioCallUiForSession(viewerId, true);
+                    }
+                    
+                    toast->close();
+                    return;
+                }
+
+                // Standard Accept Logic (for Screen Share / Invite Response)
                 // 同意
                 QJsonObject accepted;
                 accepted["type"] = "watch_request_accepted";
@@ -3614,6 +3700,35 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             return;
         }
 
+        // [Fix] Handle Audio Call Acceptance
+        if (obj.value("audio_only").toBool()) {
+            if (viewerId == getDeviceId()) {
+                if (m_waitingDialog) {
+                    m_waitingDialog->close();
+                    m_waitingDialog->deleteLater();
+                    m_waitingDialog = nullptr;
+                }
+                
+                if (!targetId.isEmpty() && m_transparentImageList) {
+                    m_transparentImageList->janusSwitchToUserRoom(targetId);
+                    m_transparentImageList->setTalkPending(targetId, false);
+                    m_transparentImageList->setTalkConnected(targetId, true);
+                    
+                    // Send mic state enabled
+                    QJsonObject msg;
+                    msg["type"] = "viewer_mic_state";
+                    msg["viewer_id"] = getDeviceId();
+                    msg["target_id"] = targetId;
+                    msg["enabled"] = true;
+                    msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                    if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                        m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+                    }
+                }
+            }
+            return;
+        }
+
         if (viewerId == getDeviceId()) {
             // Close the waiting dialog if any
             if (m_waitingDialog) {
@@ -3722,11 +3837,16 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
         if (m_transparentImageList) {
             m_transparentImageList->setViewerMicState(viewerId, enabled);
-            m_transparentImageList->setTalkRemoteActive(viewerId, enabled);
+            
             if (enabled) {
-                m_transparentImageList->janusSwitchToUserRoom(targetId);
-                m_transparentImageList->janusSetIgnoreAlone(true);
-                m_transparentImageList->showAudioCallUiForSession(viewerId, true);
+                if (m_transparentImageList->activeAudioCallPeerId() == viewerId) {
+                     m_transparentImageList->setTalkRemoteActive(viewerId, true);
+                     m_transparentImageList->showAudioCallUiForSession(viewerId, true);
+                } else {
+                     m_transparentImageList->setTalkRemoteActive(viewerId, true);
+                }
+            } else {
+                m_transparentImageList->setTalkRemoteActive(viewerId, false);
             }
         }
     } else if (type == "viewer_exit" || type == "viewer_exited" || type == "viewer_left" || type == "stop_streaming") {
@@ -3820,8 +3940,25 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_waitingDialog = nullptr;
             }
             
-            const bool showVideoWindow = m_pendingShowVideoWindow;
+            const bool audioOnlySession = (m_audioOnlyTargetId == targetId);
+            const bool showVideoWindow = m_pendingShowVideoWindow && !audioOnlySession;
             const bool talkWasPending = (m_pendingTalkEnabled && m_pendingTalkTargetId == targetId);
+            if (audioOnlySession) {
+                if (m_transparentImageList) {
+                    if (talkWasPending) {
+                        m_transparentImageList->setTalkPending(targetId, false);
+                    }
+                    if (m_transparentImageList->activeAudioCallPeerId() != targetId) {
+                        m_transparentImageList->janusSwitchToUserRoom(targetId);
+                        m_transparentImageList->setTalkConnected(targetId, true);
+                    }
+                }
+                if (talkWasPending) {
+                    m_pendingTalkTargetId.clear();
+                    m_pendingTalkEnabled = false;
+                }
+                return;
+            }
             m_pendingShowVideoWindow = true;
             if (showVideoWindow) {
                 m_audioOnlyTargetId.clear();

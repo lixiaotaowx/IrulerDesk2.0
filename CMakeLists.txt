@@ -76,6 +76,10 @@ set(MAIN_SOURCES
     src/ui/BroadcastNoticeDialog.h        # 公告发布对话框声明
     src/common/TaskManager.h              # 任务管理器声明
     src/ui/DateTimePickerDialog.h         # 时间选择器对话框声明
+    src/ui/VolumeLevelBar.cpp             # 音量条控件实现
+    src/ui/VolumeLevelBar.h               # 音量条控件声明
+    src/NewUi/MicLevelMonitor.cpp         # 麦克风电平监测实现
+    src/NewUi/MicLevelMonitor.h           # 麦克风电平监测声明
 )
 
 # 屏幕捕获编码进程源文件

@@ -1543,8 +1543,7 @@ void NewUiWindow::setTalkPending(const QString &userId, bool pending)
 
     const QString appDir = QCoreApplication::applicationDirPath();
     const bool isOn = btn->property("isOn").toBool();
-    const QString iconName = "get.png";
-    btn->setIcon(QIcon(appDir + "/maps/logo/" + iconName));
+    btn->setIcon(QIcon(appDir + "/maps/logo/get.png"));
     updateTalkOverlay(userId);
 }
 
@@ -1878,7 +1877,7 @@ void NewUiWindow::updateListWidget(const QJsonArray &users)
             micBtn->setProperty("remoteActive", false);
             micBtn->setFlat(true);
             micBtn->setStyleSheet("QPushButton { border: none; background: transparent; }");
-            micBtn->setIcon(QIcon(appDir + "/maps/logo/get.png"));
+            micBtn->setIcon(QIcon(appDir + "/maps/logo/Mic_off.png"));
             micBtn->setIconSize(QSize(14, 14));
 
             m_talkButtons.insert(id, micBtn);
@@ -4444,12 +4443,30 @@ void NewUiWindow::onInviteRequested(const QStringList &userIds)
 
 void NewUiWindow::showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type)
 {
+    qInfo() << "[InviteDiag] showInviteNotification called" 
+            << " inviterId=" << inviterId 
+            << " inviterName=" << inviterName 
+            << " type=" << type;
+
+    QString displayName = inviterName;
+    if (m_userItems.contains(inviterId)) {
+        QListWidgetItem *item = m_userItems.value(inviterId);
+        if (item) {
+            QString name = item->data(Qt::UserRole + 1).toString();
+            if (!name.isEmpty()) {
+                displayName = name;
+            }
+        }
+    }
+
     if (m_activeInviteNotification) {
         m_activeInviteNotification->deleteLater();
         m_activeInviteNotification = nullptr;
     }
 
-    m_activeInviteNotification = new QWidget(this);
+    m_activeInviteNotification = new QWidget(nullptr);
+    m_activeInviteNotification->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+    m_activeInviteNotification->setAttribute(Qt::WA_TranslucentBackground);
     m_activeInviteNotification->setObjectName("InviteNotification");
     m_activeInviteNotification->setStyleSheet(
         "QWidget#InviteNotification {"
@@ -4495,7 +4512,12 @@ void NewUiWindow::showInviteNotification(const QString &inviterId, const QString
     QLabel *titleLabel = new QLabel(QStringLiteral("会议邀请"), m_activeInviteNotification);
     titleLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;");
     
-    QLabel *textLabel = new QLabel(QStringLiteral("%1 邀请您加入视频通话").arg(inviterName), m_activeInviteNotification);
+    QLabel *textLabel = new QLabel(m_activeInviteNotification);
+    if (type == QStringLiteral("audio_call")) {
+        textLabel->setText(QStringLiteral("%1 邀请您加入语音通话").arg(displayName));
+    } else {
+        textLabel->setText(QStringLiteral("%1 邀请您加入视频通话").arg(displayName));
+    }
     textLabel->setWordWrap(true);
 
     QHBoxLayout *btnLayout = new QHBoxLayout();
@@ -4522,11 +4544,11 @@ void NewUiWindow::showInviteNotification(const QString &inviterId, const QString
     timer->setSingleShot(true);
     timer->setInterval(30000);
     
-    connect(timer, &QTimer::timeout, this, [this, inviterName, inviterId]() {
+    connect(timer, &QTimer::timeout, this, [this, displayName, inviterId]() {
         if (m_activeInviteNotification) {
             m_activeInviteNotification->deleteLater();
             m_activeInviteNotification = nullptr;
-            showExpiredInviteNotification(inviterName);
+            showExpiredInviteNotification(displayName);
             
             // Auto-reject: Send rejection to server
             QJsonObject rejectMsg;
@@ -4606,6 +4628,10 @@ void NewUiWindow::showInviteNotification(const QString &inviterId, const QString
                      m_listWidget->setCurrentItem(item);
                  }
             }
+        } else if (type == QStringLiteral("audio_call")) {
+            janusSwitchToUserRoom(m_myStreamId);
+            janusSetIgnoreAlone(true);
+            showAudioCallUiForSession(inviterId, true);
         }
     });
 
@@ -4617,20 +4643,41 @@ void NewUiWindow::showInviteNotification(const QString &inviterId, const QString
 
 void NewUiWindow::updateNotificationPositions()
 {
+    // Ensure we are working with the primary screen or the screen where the app is located
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (!screen) {
+        qWarning() << "[InviteDiag] No primary screen found for notification positioning";
+        return;
+    }
+
+    QRect screenGeom = screen->availableGeometry();
     const int margin = 20;
-    int bottomY = height() - margin;
+    int bottomY = screenGeom.bottom() - margin;
+    int rightX = screenGeom.right() - margin;
     
     if (m_expiredInviteNotification) {
         m_expiredInviteNotification->adjustSize();
-        bottomY -= m_expiredInviteNotification->height();
-        m_expiredInviteNotification->move(width() - m_expiredInviteNotification->width() - margin, bottomY);
-        bottomY -= 10; // Spacing
+        int x = rightX - m_expiredInviteNotification->width();
+        int y = bottomY - m_expiredInviteNotification->height();
+        m_expiredInviteNotification->move(x, y);
+        bottomY -= (m_expiredInviteNotification->height() + 10); // Spacing
     }
     
     if (m_activeInviteNotification) {
         m_activeInviteNotification->adjustSize();
-        bottomY -= m_activeInviteNotification->height();
-        m_activeInviteNotification->move(width() - m_activeInviteNotification->width() - margin, bottomY);
+        int x = rightX - m_activeInviteNotification->width();
+        int y = bottomY - m_activeInviteNotification->height();
+        m_activeInviteNotification->move(x, y);
+        qInfo() << "[InviteDiag] Moved notification to:" << x << y << " Size:" << m_activeInviteNotification->size();
+    }
+}
+
+void NewUiWindow::closeInviteNotification()
+{
+    if (m_activeInviteNotification) {
+        m_activeInviteNotification->deleteLater();
+        m_activeInviteNotification = nullptr;
+        qInfo() << "[InviteDiag] Closed active invite notification";
     }
 }
 
@@ -4877,8 +4924,9 @@ void NewUiWindow::onTextMessageReceived(const QString &message)
         const QString fromUserId = obj.value("from_user_id").toString();
         const QString fromUserName = obj.value("from_user_name").toString();
         const QString displayName = fromUserName.isEmpty() ? fromUserId : fromUserName;
-        
-        showInviteNotification(fromUserId, displayName, type);
+        const bool audioOnly = obj.value("audio_only").toBool(false) || obj.value("action").toString() == QStringLiteral("audio_only");
+
+        showInviteNotification(fromUserId, displayName, audioOnly ? QStringLiteral("audio_call") : type);
     } else if (type == QStringLiteral("invite_cancelled")) {
         const QString viewerId = obj.value("viewer_id").toString();
         if (viewerId == m_myStreamId) {

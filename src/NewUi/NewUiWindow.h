@@ -19,6 +19,8 @@
 #include <QCameraDevice>
 #include <QVideoFrame>
 #include "StreamClient.h"
+#include "../ui/VolumeLevelBar.h"
+#include "MicLevelMonitor.h"
 #include "LoginClient.h"
 
 class QStackedWidget;
@@ -126,6 +128,10 @@ public:
     bool isEmbeddedWatching() const;
     bool isEmbeddedWatchingTarget(const QString &targetId) const;
 
+    void updateNotificationPositions();
+    void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
+    void closeInviteNotification();
+
 signals:
     void startWatchingRequested(const QString &targetId, const QString &targetName = QString());
     void systemSettingsRequested();
@@ -213,8 +219,8 @@ private:
     QWidget *m_activeInviteNotification = nullptr;
     void showExpiredInviteNotification(const QString &inviterName);
     void showCancelledInviteNotification(const QString &inviterName, const QString &timeStr);
-    void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
-    void updateNotificationPositions();
+    // Moved to public: void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
+    // Moved to public: void updateNotificationPositions();
     void updateLocalCardActivityStyle(bool active);
     void updateRemoteCardActivityStyle(const QString &userId);
 
@@ -268,7 +274,11 @@ private:
     QMap<QString, QListWidgetItem*> m_userItems;  // userId -> ListWidgetItem
     QMap<QString, QLabel*> m_userLabels;          // userId -> Image Label (for updating frame)
     QMap<QString, QLabel*> m_userAvatarLabels;    // userId -> Avatar Label (top-left overlay)
-    QMap<QString, bool> m_remoteActivityStates;
+    QMap<QString, bool> m_remoteActivityStates; // uid -> isActive
+    QSet<QString> m_talkingUsers; // uid of talking users
+    
+    // Helper to update remote volume
+    void updateRemoteVolume(float vol);
     QMap<QString, QPushButton*> m_talkButtons;    // userId -> Talk Button (end/get)
     QMap<QString, QLabel*> m_talkOverlays;        // userId -> "通话中" overlay label
     QTimer *m_talkSpinnerTimer = nullptr;
@@ -386,9 +396,13 @@ private:
     QPushButton *m_audioCallSpeakerBtn = nullptr;
     QTimer *m_audioCallPollTimer = nullptr;
     QString m_audioCallPeerId;
+    QString m_pendingAudioCallPeerId;
+    bool m_pendingAudioCallForceMic = false;
     QScrollArea *m_audioCallParticipantsArea = nullptr;
     QWidget *m_audioCallParticipantsWidget = nullptr;
     QHBoxLayout *m_audioCallParticipantsLayout = nullptr;
+    VolumeLevelBar *m_localVolumeBar = nullptr;
+    MicLevelMonitor *m_micMonitor = nullptr;
     bool m_audioCallSpeakerEnabled = true;
 
     QDialog *m_audioCallMiniBar = nullptr;

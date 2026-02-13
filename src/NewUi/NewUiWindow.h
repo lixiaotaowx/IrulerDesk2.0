@@ -92,6 +92,9 @@ public:
     void janusSetMuted(bool muted);
     void janusStop();
     void showAudioCallUiForSession(const QString &peerId, bool forceEnableMic);
+    void showAudioCallMiniBar();
+    void hideAudioCallMiniBar();
+    void setAudioCallMiniHidden(bool hidden);
     void restoreAudioCallUi();
     QString activeAudioCallPeerId() const;
 
@@ -203,9 +206,6 @@ private:
     void refreshAudioCallParticipants();
     void rebuildAudioCallParticipantsUi(const QStringList &names);
     void hangupAudioCallUi();
-    void showAudioCallMiniBar();
-    void hideAudioCallMiniBar();
-    void setAudioCallMiniHidden(bool hidden);
     void updateTalkButtonsAvailability();
     void updateLocalWatchedOverlay();
     bool isInMyRoomViewerList(const QString &userId) const;

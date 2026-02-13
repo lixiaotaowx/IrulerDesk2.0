@@ -476,24 +476,9 @@ void MainWindow::sendWatchRequestWithVideo(const QString& targetDeviceId)
 {
     m_pendingShowVideoWindow = true;
     m_audioOnlyTargetId.clear();
-    if (!targetDeviceId.isEmpty() && targetDeviceId != getDeviceId()) {
-        QString activePeer;
-        if (m_transparentImageList) {
-            activePeer = m_transparentImageList->activeAudioCallPeerId();
-        }
-        if (activePeer.isEmpty()) {
-            m_pendingTalkTargetId = targetDeviceId;
-            m_pendingTalkEnabled = true;
-        } else if (activePeer == targetDeviceId) {
-            if (m_pendingTalkTargetId == targetDeviceId) {
-                m_pendingTalkEnabled = false;
-            }
-        } else {
-            if (m_pendingTalkTargetId == targetDeviceId) {
-                m_pendingTalkTargetId.clear();
-                m_pendingTalkEnabled = false;
-            }
-        }
+    if (m_pendingTalkTargetId == targetDeviceId) {
+        m_pendingTalkTargetId.clear();
+        m_pendingTalkEnabled = false;
     }
     if (m_transparentImageList && !targetDeviceId.isEmpty() && targetDeviceId != getDeviceId()) {
         m_transparentImageList->setWatchingTarget(targetDeviceId);
@@ -3523,6 +3508,10 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
 
                 if (m_transparentImageList) {
                     m_transparentImageList->addViewer(viewerId, viewerName);
+                    m_transparentImageList->janusSwitchToMyRoom();
+                    m_transparentImageList->janusSetIgnoreAlone(true);
+                    m_transparentImageList->showAudioCallUiForSession(viewerId, true);
+                    m_transparentImageList->showAudioCallMiniBar();
                     scheduleNoViewerSoftStop();
                 }
 
@@ -3599,6 +3588,10 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             // [Fix] Add to "My Room" list for auto-approve case
             if (m_transparentImageList) {
                 m_transparentImageList->addViewer(viewerId, viewerName);
+                m_transparentImageList->janusSwitchToMyRoom();
+                m_transparentImageList->janusSetIgnoreAlone(true);
+                m_transparentImageList->showAudioCallUiForSession(viewerId, true);
+                m_transparentImageList->showAudioCallMiniBar();
                 scheduleNoViewerSoftStop();
             }
         }
@@ -3970,13 +3963,26 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             if (showVideoWindow && m_transparentImageList) {
                 m_transparentImageList->setWatchingTarget(targetId);
             }
-            if (talkWasPending && m_transparentImageList) {
-                m_transparentImageList->talkToggleRequested(targetId, true);
-                m_transparentImageList->setTalkConnected(targetId, true);
+            if (m_transparentImageList) {
+                const QString activePeer = m_transparentImageList->activeAudioCallPeerId();
+                if (activePeer.isEmpty() || activePeer == targetId) {
+                    m_transparentImageList->janusSwitchToUserRoom(targetId);
+                    m_transparentImageList->showAudioCallUiForSession(targetId, true);
+                    m_transparentImageList->showAudioCallMiniBar();
+                }
             }
             if (talkWasPending) {
                 m_pendingTalkTargetId.clear();
                 m_pendingTalkEnabled = false;
+            }
+            if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                QJsonObject msg;
+                msg["type"] = "viewer_mic_state";
+                msg["viewer_id"] = getDeviceId();
+                msg["target_id"] = targetId;
+                msg["enabled"] = true;
+                msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
             }
         } else {
             // 非当前用户的观看请求，忽略

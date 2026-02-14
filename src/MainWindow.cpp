@@ -344,90 +344,84 @@ void MainWindow::startLanDiscoveryListener()
 
 void MainWindow::checkAndShowUpdateLog()
 {
-    // 获取应用程序版本号（从main.cpp中设置的）
     const QString CURRENT_VERSION = QCoreApplication::applicationVersion();
     
     QSettings settings("ScreenStream", "ScreenStreamApp");
     QString lastVersion = settings.value("app_version", "").toString();
     
-    // 如果是首次安装（lastVersion为空）或版本更新
-    // 注意：如果是首次安装，也应该弹出日志，让用户知道这个版本的特性
-    // 逻辑：lastVersion为空 -> 不等于CURRENT_VERSION -> 进入分支 -> 弹出 -> 写入当前版本
     if (lastVersion != CURRENT_VERSION) {
-        // 更新存储的版本号
         settings.setValue("app_version", CURRENT_VERSION);
-        
-        // 创建大字体的更新日志窗口
-        QDialog *logDialog = new QDialog(this);
-        logDialog->setWindowTitle(QStringLiteral("更新日志 / Update Log"));
-        logDialog->setMinimumSize(600, 400);
-        logDialog->setWindowFlags(logDialog->windowFlags() & ~Qt::WindowContextHelpButtonHint); // 移除问号按钮
-        
-        QVBoxLayout *layout = new QVBoxLayout(logDialog);
-        
-        QLabel *title = new QLabel(QStringLiteral("✨ 新版本更新说明 ✨"), logDialog);
-        QFont titleFont = title->font();
-        titleFont.setPointSize(20);
-        titleFont.setBold(true);
-        title->setFont(titleFont);
-        title->setAlignment(Qt::AlignCenter);
-        title->setStyleSheet("color: #4CAF50; margin-bottom: 10px;");
-        layout->addWidget(title);
-        
-        QTextEdit *content = new QTextEdit(logDialog);
-        content->setReadOnly(true);
-        QFont contentFont = content->font();
-        contentFont.setPointSize(14); // 大字体
-        content->setFont(contentFont);
-        
-        // 读取外部日志文件内容
-        QString html;
-        QString logPath = QCoreApplication::applicationDirPath() + "/UpdateLog.html";
-        // 开发环境路径兼容（如果需要）
-        if (!QFile::exists(logPath)) {
-             logPath = QCoreApplication::applicationDirPath() + "/../../src/UpdateLog.html";
-        }
-
-        QFile logFile(logPath);
-        if (logFile.exists() && logFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            html = QString::fromUtf8(logFile.readAll());
-            logFile.close();
-        } else {
-            // 文件读取失败时的默认显示
-            html = R"(
-                <body style="background-color:#2b2b2b; color:#ffffff;">
-                <p>暂无更新说明。</p>
-                </body>
-            )";
-        }
-        
-        content->setHtml(html);
-        content->setStyleSheet("QTextEdit { border: none; background-color: #2b2b2b; }");
-        layout->addWidget(content);
-        
-        QPushButton *btn = new QPushButton(QStringLiteral("我知道了 / Got it"), logDialog);
-        btn->setMinimumHeight(50);
-        QFont btnFont = btn->font();
-        btnFont.setPointSize(12);
-        btnFont.setBold(true);
-        btn->setFont(btnFont);
-        btn->setStyleSheet(
-            "QPushButton { "
-            "   background-color: #2196F3; "
-            "   color: white; "
-            "   border-radius: 5px; "
-            "   border: none; "
-            "}"
-            "QPushButton:hover { background-color: #1976D2; }"
-            "QPushButton:pressed { background-color: #0D47A1; }"
-        );
-        connect(btn, &QPushButton::clicked, logDialog, &QDialog::accept);
-        layout->addWidget(btn);
-        
-        // 模态显示
-        logDialog->exec();
-        delete logDialog;
+        showUpdateLogDialog();
     }
+}
+
+void MainWindow::showUpdateLogDialog()
+{
+    QDialog *logDialog = new QDialog(this);
+    logDialog->setWindowTitle(QStringLiteral("更新日志 / Update Log"));
+    logDialog->setMinimumSize(600, 400);
+    logDialog->setWindowFlags(logDialog->windowFlags() & ~Qt::WindowContextHelpButtonHint);
+    
+    QVBoxLayout *layout = new QVBoxLayout(logDialog);
+    
+    QLabel *title = new QLabel(QStringLiteral("✨ 新版本更新说明 ✨"), logDialog);
+    QFont titleFont = title->font();
+    titleFont.setPointSize(20);
+    titleFont.setBold(true);
+    title->setFont(titleFont);
+    title->setAlignment(Qt::AlignCenter);
+    title->setStyleSheet("color: #4CAF50; margin-bottom: 10px;");
+    layout->addWidget(title);
+    
+    QTextEdit *content = new QTextEdit(logDialog);
+    content->setReadOnly(true);
+    QFont contentFont = content->font();
+    contentFont.setPointSize(14);
+    content->setFont(contentFont);
+    
+    QString html;
+    QString logPath = QCoreApplication::applicationDirPath() + "/UpdateLog.html";
+    if (!QFile::exists(logPath)) {
+         logPath = QCoreApplication::applicationDirPath() + "/../../src/UpdateLog.html";
+    }
+
+    QFile logFile(logPath);
+    if (logFile.exists() && logFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        html = QString::fromUtf8(logFile.readAll());
+        logFile.close();
+    } else {
+        html = R"(
+            <body style="background-color:#2b2b2b; color:#ffffff;">
+            <p>暂无更新说明。</p>
+            </body>
+        )";
+    }
+    
+    content->setHtml(html);
+    content->setStyleSheet("QTextEdit { border: none; background-color: #2b2b2b; }");
+    layout->addWidget(content);
+    
+    QPushButton *btn = new QPushButton(QStringLiteral("我知道了 / Got it"), logDialog);
+    btn->setMinimumHeight(50);
+    QFont btnFont = btn->font();
+    btnFont.setPointSize(12);
+    btnFont.setBold(true);
+    btn->setFont(btnFont);
+    btn->setStyleSheet(
+        "QPushButton { "
+        "   background-color: #2196F3; "
+        "   color: white; "
+        "   border-radius: 5px; "
+        "   border: none; "
+        "}"
+        "QPushButton:hover { background-color: #1976D2; }"
+        "QPushButton:pressed { background-color: #0D47A1; }"
+    );
+    connect(btn, &QPushButton::clicked, logDialog, &QDialog::accept);
+    layout->addWidget(btn);
+    
+    logDialog->exec();
+    delete logDialog;
 }
 
 #ifdef _WIN32
@@ -4141,6 +4135,11 @@ void MainWindow::showMainList()
     }
 }
 
+void MainWindow::onUpdateLogRequested()
+{
+    showUpdateLogDialog();
+}
+
 void MainWindow::onSystemSettingsRequested()
 {
     if (!m_systemSettingsWindow) {
@@ -4163,14 +4162,8 @@ void MainWindow::onSystemSettingsRequested()
             this, &MainWindow::onFunction3UrlChanged);
         connect(m_systemSettingsWindow, &SystemSettingsWindow::userGuideRequested,
                 m_transparentImageList, &NewUiWindow::showUserGuide);
-    }
-    const bool wasVisible = m_systemSettingsWindow->isVisible();
-    const Qt::WindowFlags flags = m_systemSettingsWindow->windowFlags();
-    if (!(flags & Qt::WindowStaysOnTopHint)) {
-        if (wasVisible) {
-            m_systemSettingsWindow->hide();
-        }
-        m_systemSettingsWindow->setWindowFlags(flags | Qt::WindowStaysOnTopHint);
+        connect(m_systemSettingsWindow, &SystemSettingsWindow::updateLogRequested,
+                this, &MainWindow::onUpdateLogRequested);
     }
     m_systemSettingsWindow->show();
     m_systemSettingsWindow->raise();

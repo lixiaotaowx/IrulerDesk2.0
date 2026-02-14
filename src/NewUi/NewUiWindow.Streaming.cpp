@@ -1158,15 +1158,31 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
     client->setProperty("firstFrameReceived", false);
     connect(client, &StreamClient::frameReceived, this, [this, userId, client](const QPixmap &frame) {
         client->setProperty("firstFrameReceived", true);
+        m_lastCardFrameAtMs.insert(userId, QDateTime::currentMSecsSinceEpoch());
 
-        // [Fix] Receiving/Displaying should be handled by focus
-        if (QApplication::applicationState() != Qt::ApplicationActive) {
+        QLabel *label = m_userLabels.value(userId, nullptr);
+        bool hasImage = false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        if (label) {
+            QPixmap current = label->pixmap(Qt::ReturnByValue);
+            hasImage = !current.isNull();
+        }
+#else
+        if (label) {
+            const QPixmap *current = label->pixmap();
+            hasImage = (current && !current->isNull());
+        }
+#endif
+        const bool appActive = (QApplication::applicationState() == Qt::ApplicationActive);
+        if (!appActive && hasImage) {
+            if (m_suspendRemotePreviewsRequested) {
+                m_suspendedRemoteStreams.insert(userId);
+                client->disconnectFromServer();
+            }
             return;
         }
 
-        if (m_userLabels.contains(userId)) {
-             QLabel *label = m_userLabels[userId];
-
+        if (label) {
              QPixmap pixmap(m_imgWidth, m_imgHeight);
              pixmap.setDevicePixelRatio(1.0);
              pixmap.fill(Qt::transparent);
@@ -1186,6 +1202,11 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
 
              label->setPixmap(pixmap);
              label->update();
+        }
+
+        if (m_suspendRemotePreviewsRequested) {
+            m_suspendedRemoteStreams.insert(userId);
+            client->disconnectFromServer();
         }
     });
     connect(client, &StreamClient::connected, this, [client]() {
@@ -1208,6 +1229,25 @@ void NewUiWindow::addUser(const QString &userId, const QString &userName, int ic
             c->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
         });
     });
+
+    QPointer<StreamClient> retryClient = client;
+    QTimer *retryTimer = new QTimer(client);
+    retryTimer->setInterval(5000);
+    connect(retryTimer, &QTimer::timeout, this, [this, retryClient]() {
+        QTimer *t = qobject_cast<QTimer*>(sender());
+        if (!retryClient) {
+            if (t) { t->stop(); t->deleteLater(); }
+            return;
+        }
+        if (retryClient->property("firstFrameReceived").toBool()) {
+            if (t) { t->stop(); t->deleteLater(); }
+            return;
+        }
+        QJsonObject start;
+        start["type"] = "start_streaming";
+        retryClient->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+    });
+    retryTimer->start();
 
     client->connectToServer(QUrl(subscribeUrl));
     m_remoteStreams.insert(userId, client);
@@ -1242,6 +1282,9 @@ void NewUiWindow::removeUser(const QString &userId)
     m_userLabels.remove(userId);
     m_userAvatarLabels.remove(userId);
     m_remoteActivityStates.remove(userId);
+    m_lastCardFrameAtMs.remove(userId);
+    m_lastPreviewRequestAtMs.remove(userId);
+    m_suspendedRemoteStreams.remove(userId);
 
     if (m_avatarSubscribers.contains(userId)) {
         StreamClient *client = m_avatarSubscribers.take(userId);
@@ -1347,6 +1390,8 @@ void NewUiWindow::restartUserStreamSubscription(const QString &userId)
     const QString previewChannelId = QStringLiteral("preview_%1").arg(userId);
     const QString subscribeUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), previewChannelId);
     client->disconnectFromServer();
+    client->setProperty("firstFrameReceived", false);
+    m_suspendedRemoteStreams.remove(userId);
     if (shouldRestoreHiFps) {
         connect(client, &StreamClient::connected, this, [this, userId]() {
             if (m_hiFpsActiveUserId != userId || m_hiFpsActiveChannelId.isEmpty()) {
@@ -1360,6 +1405,66 @@ void NewUiWindow::restartUserStreamSubscription(const QString &userId)
         startHiFpsForUser(userId);
         resetSelectionAutoPause(userId);
     }
+}
+
+bool NewUiWindow::hasCardImage(const QString &userId) const
+{
+    QLabel *label = m_userLabels.value(userId, nullptr);
+    if (!label) {
+        return false;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return !label->pixmap(Qt::ReturnByValue).isNull();
+#else
+    const QPixmap *current = label->pixmap();
+    return (current && !current->isNull());
+#endif
+}
+
+void NewUiWindow::requestPreviewFrameForUser(const QString &userId)
+{
+    StreamClient *client = m_remoteStreams.value(userId, nullptr);
+    if (!client) {
+        return;
+    }
+    if (m_suspendedRemoteStreams.contains(userId)) {
+        m_suspendedRemoteStreams.remove(userId);
+        client->setProperty("firstFrameReceived", false);
+    }
+    if (!client->isConnected()) {
+        restartUserStreamSubscription(userId);
+        return;
+    }
+    QJsonObject start;
+    start["type"] = "start_streaming";
+    client->sendTextMessage(QJsonDocument(start).toJson(QJsonDocument::Compact));
+}
+
+void NewUiWindow::setRemotePreviewsSuspended(bool suspended)
+{
+    m_suspendRemotePreviewsRequested = suspended;
+    if (suspended) {
+        const QStringList keys = m_remoteStreams.keys();
+        for (const QString &userId : keys) {
+            if (userId.isEmpty() || !hasCardImage(userId)) {
+                continue;
+            }
+            StreamClient *client = m_remoteStreams.value(userId, nullptr);
+            if (!client) {
+                continue;
+            }
+            if (client->isConnected()) {
+                m_suspendedRemoteStreams.insert(userId);
+                client->disconnectFromServer();
+            }
+        }
+        return;
+    }
+    const QList<QString> suspendedUsers = m_suspendedRemoteStreams.values();
+    for (const QString &userId : suspendedUsers) {
+        restartUserStreamSubscription(userId);
+    }
+    m_suspendedRemoteStreams.clear();
 }
 
 void NewUiWindow::onVideoReceivingStopped(const QString &targetId)

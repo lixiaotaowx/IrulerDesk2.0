@@ -173,6 +173,17 @@ SystemSettingsWindow::SystemSettingsWindow(QWidget* parent)
     versionLayout->addStretch();
     layout->addLayout(versionLayout);
 
+    QPushButton *updateLogBtn = new QPushButton(QStringLiteral("更新日志"), content);
+    updateLogBtn->setCursor(Qt::PointingHandCursor);
+    connect(updateLogBtn, &QPushButton::clicked, this, &SystemSettingsWindow::updateLogRequested);
+
+    QHBoxLayout *logLayout = new QHBoxLayout();
+    logLayout->setContentsMargins(0, 6, 0, 0);
+    logLayout->addStretch();
+    logLayout->addWidget(updateLogBtn);
+    logLayout->addStretch();
+    layout->addLayout(logLayout);
+
     populateScreens();
 
     connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem* item){

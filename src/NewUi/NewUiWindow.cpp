@@ -842,6 +842,31 @@ NewUiWindow::NewUiWindow(QWidget *parent)
         }
     });
 
+    m_cardWatchdogTimer = new QTimer(this);
+    m_cardWatchdogTimer->setInterval(8000);
+    connect(m_cardWatchdogTimer, &QTimer::timeout, this, [this]() {
+        if (m_suspendRemotePreviewsRequested) {
+            return;
+        }
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        const QStringList keys = m_remoteStreams.keys();
+        for (const QString &userId : keys) {
+            if (userId.isEmpty() || userId == m_myStreamId) {
+                continue;
+            }
+            if (hasCardImage(userId)) {
+                continue;
+            }
+            const qint64 lastReq = m_lastPreviewRequestAtMs.value(userId, 0);
+            if (lastReq > 0 && (nowMs - lastReq) < 5000) {
+                continue;
+            }
+            m_lastPreviewRequestAtMs.insert(userId, nowMs);
+            requestPreviewFrameForUser(userId);
+        }
+    });
+    m_cardWatchdogTimer->start();
+
     m_localActivityMonitor = new LocalActivityMonitor(this);
     connect(m_localActivityMonitor, &LocalActivityMonitor::activityStateChanged, this, [this](bool active) {
         if (m_localActivityActive == active) {
@@ -3626,7 +3651,8 @@ bool NewUiWindow::event(QEvent *event)
 #endif
     if (event->type() == QEvent::ApplicationStateChange) {
         if (QApplication::applicationState() == Qt::ApplicationActive) {
-            if (m_timer) m_timer->start(60000);
+            if (m_timer) m_timer->start(10000);
+            setRemotePreviewsSuspended(false);
             
             // Resume HiFps if a user is selected
             if (m_listWidget) {
@@ -3649,8 +3675,7 @@ bool NewUiWindow::event(QEvent *event)
                 }
             }
         } else {
-            if (m_timer) m_timer->stop();
-            
+            setRemotePreviewsSuspended(true);
             // Stop HiFps
             stopHiFpsForUser();
             if (m_selectionAutoPauseTimer) {

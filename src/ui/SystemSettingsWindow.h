@@ -32,6 +32,7 @@ signals:
     void function2UrlChanged(const QString& url);
     void function3UrlChanged(const QString& url);
     void userGuideRequested();
+    void updateLogRequested();
 
 public slots:
     void notifySwitchSucceeded();

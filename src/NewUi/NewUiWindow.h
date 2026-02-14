@@ -209,6 +209,9 @@ private:
     void updateTalkButtonsAvailability();
     void updateLocalWatchedOverlay();
     bool isInMyRoomViewerList(const QString &userId) const;
+    void setRemotePreviewsSuspended(bool suspended);
+    bool hasCardImage(const QString &userId) const;
+    void requestPreviewFrameForUser(const QString &userId);
     
     // Dragging support
     bool m_dragging = false;
@@ -229,6 +232,7 @@ private:
     QListWidget *m_listWidget = nullptr;
     QTimer *m_timer = nullptr;
     QTimer *m_selfPreviewFastTimer = nullptr;
+    QTimer *m_cardWatchdogTimer = nullptr;
     LocalActivityMonitor *m_localActivityMonitor = nullptr;
     QLabel *m_videoLabel = nullptr; // Local preview label (Index 0)
     QLabel *m_logoLabel = nullptr;
@@ -276,6 +280,10 @@ private:
     QMap<QString, QLabel*> m_userAvatarLabels;    // userId -> Avatar Label (top-left overlay)
     QMap<QString, bool> m_remoteActivityStates; // uid -> isActive
     QSet<QString> m_talkingUsers; // uid of talking users
+    QSet<QString> m_suspendedRemoteStreams;
+    QMap<QString, qint64> m_lastCardFrameAtMs;
+    QMap<QString, qint64> m_lastPreviewRequestAtMs;
+    bool m_suspendRemotePreviewsRequested = false;
     
     // Helper to update remote volume
     void updateRemoteVolume(float vol);

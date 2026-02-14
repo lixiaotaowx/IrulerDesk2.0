@@ -86,6 +86,7 @@ private slots:
     void onCloseRoomRequested();
     void onSpeakerToggleRequested(bool enabled);
     void sendBroadcastNotice(const QString& content, const QStringList &targets = QStringList());
+    void onUpdateLogRequested();
 
 private:
     void setupUI();
@@ -163,6 +164,7 @@ private:
     
     // 显示更新日志
     void checkAndShowUpdateLog();
+    void showUpdateLogDialog();
     void startLanDiscoveryListener();
 
     // 在线更新相关

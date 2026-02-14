@@ -384,8 +384,10 @@ void NewUiWindow::scheduleJanusEnsure(const QString &desiredOwnerId)
                 // [Fix] Only retry the switch command periodically to avoid interrupting the join process
                 // JS join can take a few seconds. If we reset every 350ms/900ms via applyJanusAudioState(), it never finishes.
                 // m_janusEnsureAttempt 0 is skipped because we just called applyJanusAudioState() before scheduling.
+                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                const qint64 elapsedMs = nowMs - m_janusEnsureStartAtMs;
                 const bool shouldRetryCommand = (m_janusActiveRoomOwnerId != desiredOwnerId) || 
-                                              (m_janusEnsureAttempt > 0 && m_janusEnsureAttempt % 10 == 0);
+                                              (m_janusEnsureAttempt > 0 && m_janusEnsureAttempt % 10 == 0 && elapsedMs > 12000);
 
                 if (shouldRetryCommand) {
                     m_janusActiveRoomOwnerId.clear();

@@ -628,7 +628,10 @@ QFrame* SystemSettingsWindow::setupConfigControls()
         "QPushButton:hover { background-color: #1084d9; }"
         "QPushButton:pressed { background-color: #006abc; }"
     );
-    connect(guideBtn, &QPushButton::clicked, this, &SystemSettingsWindow::userGuideRequested);
+    connect(guideBtn, &QPushButton::clicked, this, [this]() {
+        emit userGuideRequested();
+        close();
+    });
     guideLayout->addWidget(guideLabel);
     guideLayout->addWidget(guideBtn);
     guideLayout->addStretch(1);

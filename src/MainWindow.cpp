@@ -566,10 +566,6 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
     QString message = doc.toJson(QJsonDocument::Compact);
     m_loginWebSocket->sendTextMessage(message);
 
-    if (audioOnly) {
-        return;
-    }
-    
     // 显示非模态等待对话框
     if (m_waitingDialog) {
         m_waitingDialog->close();
@@ -579,12 +575,14 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
     m_waitingDialog = new QMessageBox(this);
     m_waitingDialog->setWindowFlags(m_waitingDialog->windowFlags() | Qt::WindowStaysOnTopHint);
     m_waitingDialog->setWindowTitle(QStringLiteral("等待同意"));
-    m_waitingDialog->setText(QStringLiteral("已发送请求，等待对方同意..."));
+    m_waitingDialog->setText(audioOnly
+        ? QStringLiteral("已发送语音通话请求，等待对方同意...")
+        : QStringLiteral("已发送请求，等待对方同意..."));
     
     // 添加挂断按钮
     QPushButton *hangupBtn = m_waitingDialog->addButton(QStringLiteral("挂断"), QMessageBox::RejectRole);
     
-    connect(hangupBtn, &QPushButton::clicked, this, [this, targetDeviceId]() {
+    connect(hangupBtn, &QPushButton::clicked, this, [this, targetDeviceId, audioOnly]() {
         // 标记主动取消
         m_selfCancelled = true;
 
@@ -595,6 +593,10 @@ void MainWindow::sendWatchRequestInternal(const QString& targetDeviceId, bool au
         cancelMsg["viewer_id"] = getDeviceId();
         cancelMsg["target_id"] = targetDeviceId;
         cancelMsg["viewer_name"] = m_userName;
+        if (audioOnly) {
+            cancelMsg["audio_only"] = true;
+            cancelMsg["action"] = "audio_only";
+        }
         QJsonDocument doc(cancelMsg);
         if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
             m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
@@ -1071,10 +1073,68 @@ void MainWindow::setupUI()
                 req["viewer_name"] = m_userName.isEmpty() ? getDeviceId() : m_userName;
                 
                 m_loginWebSocket->sendTextMessage(QJsonDocument(req).toJson(QJsonDocument::Compact));
-                
-                // Optional: Show waiting dialog? 
-                // The spinner on the button (setTalkPending) might be enough.
             }
+            if (m_waitingDialog) {
+                m_waitingDialog->close();
+                delete m_waitingDialog;
+                m_waitingDialog = nullptr;
+            }
+            m_waitingDialog = new QMessageBox(this);
+            m_waitingDialog->setWindowFlags(m_waitingDialog->windowFlags() | Qt::WindowStaysOnTopHint);
+            m_waitingDialog->setWindowTitle(QStringLiteral("等待同意"));
+            m_waitingDialog->setText(QStringLiteral("已发送语音通话请求，等待对方同意..."));
+            QPushButton *hangupBtn = m_waitingDialog->addButton(QStringLiteral("挂断"), QMessageBox::RejectRole);
+            connect(hangupBtn, &QPushButton::clicked, this, [this, targetId]() {
+                m_selfCancelled = true;
+
+                QJsonObject cancelMsg;
+                cancelMsg["type"] = "watch_request_canceled";
+                cancelMsg["viewer_id"] = getDeviceId();
+                cancelMsg["target_id"] = targetId;
+                cancelMsg["viewer_name"] = m_userName;
+                cancelMsg["audio_only"] = true;
+                cancelMsg["action"] = "audio_only";
+                QJsonDocument doc(cancelMsg);
+                if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                    m_loginWebSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+                }
+                if (m_transparentImageList) {
+                    if (m_transparentImageList->getCurrentUserId() != targetId) {
+                        m_transparentImageList->setWatchingTarget(QString());
+                        if (m_transparentImageList->isEmbeddedWatchingTarget(targetId)) {
+                            m_transparentImageList->stopEmbeddedWatching();
+                        }
+                    }
+                    m_transparentImageList->setTalkPending(targetId, false);
+                    m_transparentImageList->setTalkConnected(targetId, false);
+                }
+                if (m_pendingTalkTargetId == targetId) {
+                    m_pendingTalkTargetId.clear();
+                    m_pendingTalkEnabled = false;
+                }
+                if (m_audioOnlyTargetId == targetId) {
+                    m_audioOnlyTargetId.clear();
+                }
+                if (!targetId.isEmpty() && m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
+                    QJsonObject msg;
+                    msg["type"] = "viewer_mic_state";
+                    msg["viewer_id"] = getDeviceId();
+                    msg["target_id"] = targetId;
+                    msg["enabled"] = false;
+                    msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                    m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+                }
+                if (m_waitingDialog) {
+                    m_waitingDialog->close();
+                    m_waitingDialog->deleteLater();
+                    m_waitingDialog = nullptr;
+                }
+            });
+
+            m_waitingDialog->setModal(false);
+            m_waitingDialog->show();
+            m_waitingDialog->raise();
+            m_waitingDialog->activateWindow();
         } else {
             const bool keepWatchingVideo = m_transparentImageList && m_transparentImageList->isEmbeddedWatchingTarget(targetId);
             auto sendKickViewer = [this](const QString &viewerId) {
@@ -1365,13 +1425,12 @@ void MainWindow::sendActivityStateBroadcast(bool active)
     if (!m_loginWebSocket || m_loginWebSocket->state() != QAbstractSocket::ConnectedState || !m_isLoggedIn) {
         return;
     }
-    QJsonObject payload;
-    payload["kind"] = "activity_state";
-    payload["user_id"] = getDeviceId();
-    payload["active"] = active;
-    payload["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-    const QString content = QJsonDocument(payload).toJson(QJsonDocument::Compact);
-    sendBroadcastNotice(content);
+    QJsonObject msg;
+    msg["type"] = "activity_state";
+    msg["user_id"] = getDeviceId();
+    msg["active"] = active;
+    msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
 }
 
 void MainWindow::startProcesses()
@@ -2692,7 +2751,7 @@ void MainWindow::showInviteNotification(const QString &inviterId, const QString 
     timer->start();
 
     // Button Actions
-    connect(rejectBtn, &QPushButton::clicked, this, [this, inviterId, toast]() {
+    connect(rejectBtn, &QPushButton::clicked, this, [this, inviterId, type, toast]() {
         toast->deleteLater();
         
         QJsonObject rejectMsg;
@@ -2701,6 +2760,10 @@ void MainWindow::showInviteNotification(const QString &inviterId, const QString 
         rejectMsg["target_id"] = inviterId;
         rejectMsg["reason"] = "user_action";
         rejectMsg["viewer_name"] = m_userName.isEmpty() ? getDeviceId() : m_userName;
+        if (type == QStringLiteral("audio_call")) {
+            rejectMsg["audio_only"] = true;
+            rejectMsg["action"] = "audio_only";
+        }
         
         if (m_loginWebSocket && m_loginWebSocket->state() == QAbstractSocket::ConnectedState) {
             m_loginWebSocket->sendTextMessage(QJsonDocument(rejectMsg).toJson(QJsonDocument::Compact));
@@ -2832,6 +2895,76 @@ void MainWindow::showToastNotification(const QString &message, bool isWarning, c
 
     // Auto-close after 5 seconds
     QTimer::singleShot(5000, toast, &QWidget::deleteLater);
+
+    repositionOnlineToasts();
+    toast->show();
+    toast->raise();
+}
+
+void MainWindow::showMissedCallNotification(const QString &message, const QString &userId)
+{
+    QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
+    toast->setAttribute(Qt::WA_TranslucentBackground);
+    toast->setAttribute(Qt::WA_ShowWithoutActivating);
+
+    QWidget *body = new QWidget(toast);
+    body->setStyleSheet(QStringLiteral("background-color: rgba(140, 70, 70, 255); border: none; border-radius: 18px;"));
+    body->setMinimumSize(420, 96);
+
+    QHBoxLayout *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(20, 18, 20, 18);
+    bodyLayout->setSpacing(14);
+
+    const int avatarSize = 56;
+    QLabel *avatar = new QLabel(body);
+    avatar->setFixedSize(avatarSize, avatarSize);
+    avatar->setPixmap(loadAvatarPixmapForToast(userId, -1, avatarSize));
+    avatar->setAlignment(Qt::AlignCenter);
+    avatar->setStyleSheet("background: transparent;");
+    bodyLayout->addWidget(avatar);
+
+    QVBoxLayout *textLayout = new QVBoxLayout();
+    textLayout->setSpacing(6);
+    textLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel *label = new QLabel(message, body);
+    label->setStyleSheet("color: #ffffff; font-size: 18px; font-weight: 800; background: transparent; border: none;");
+    label->setWordWrap(true);
+    textLayout->addWidget(label);
+
+    QLabel *timeLabel = new QLabel(QDateTime::currentDateTime().toString(QStringLiteral("MM-dd HH:mm")), body);
+    timeLabel->setStyleSheet("color: rgba(255, 255, 255, 180); font-size: 12px; background: transparent; border: none;");
+    textLayout->addWidget(timeLabel);
+
+    bodyLayout->addLayout(textLayout, 1);
+
+    QPushButton *closeBtn = new QPushButton("×", body);
+    closeBtn->setFixedSize(24, 24);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton { color: #ccc; background: transparent; border: none; font-size: 20px; font-weight: bold; margin-top: -10px; }"
+        "QPushButton:hover { color: #fff; }"
+    );
+    connect(closeBtn, &QPushButton::clicked, toast, &QWidget::deleteLater);
+
+    QVBoxLayout *rightLayout = new QVBoxLayout();
+    rightLayout->addWidget(closeBtn);
+    rightLayout->addStretch();
+    bodyLayout->addLayout(rightLayout);
+
+    QVBoxLayout *root = new QVBoxLayout(toast);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->addWidget(body);
+
+    toast->adjustSize();
+    body->adjustSize();
+
+    m_onlineToasts.append(toast);
+
+    connect(toast, &QObject::destroyed, this, [this, toast]() {
+        m_onlineToasts.removeAll(toast);
+        repositionOnlineToasts();
+    });
 
     repositionOnlineToasts();
     toast->show();
@@ -3198,6 +3331,12 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         }
         updateUserList(users);
         if (!m_appReadyEmitted) { emit appReady(); m_appReadyEmitted = true; }
+    } else if (type == "activity_state") {
+        const QString userId = obj.value("user_id").toString();
+        if (!userId.isEmpty() && userId != getDeviceId() && m_transparentImageList) {
+            const bool active = obj.value("active").toBool(true);
+            m_transparentImageList->setRemoteActivityState(userId, active);
+        }
     } else if (type == "broadcast_notice") {
         QString content = obj["content"].toString();
         QJsonParseError contentError;
@@ -3301,8 +3440,13 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 if (viewerName.isEmpty()) {
                     viewerName = QStringLiteral("访客");
                 }
-                
-                showToastNotification(QStringLiteral("用户 %1 已取消观看请求").arg(viewerName), true, viewerId);
+
+                const bool audioOnlyCancel = obj.value("audio_only").toBool(false);
+                if (audioOnlyCancel) {
+                    showMissedCallNotification(QStringLiteral("未接语音通话：用户 %1").arg(viewerName), viewerId);
+                } else {
+                    showToastNotification(QStringLiteral("用户 %1 已取消观看请求").arg(viewerName), true, viewerId);
+                }
             } else {
                 qInfo() << "No approval dialog to close for canceled request (via action)";
             }
@@ -3608,12 +3752,13 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_currentWatchdogSocket->write("CMD_REJECT");
             m_currentWatchdogSocket->flush();
         }
-        
+        bool handledApprovalDialog = false;
         // 如果有待处理的审批弹窗，关闭它
         if (m_approvalDialog) {
             m_approvalDialog->close();
             m_approvalDialog->deleteLater();
             m_approvalDialog = nullptr;
+            handledApprovalDialog = true;
             
             // 显示未接提醒
             QString viewerName = obj.value("viewer_name").toString();
@@ -3633,9 +3778,66 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             if (viewerName.isEmpty()) {
                 viewerName = QStringLiteral("访客");
             }
-            showToastNotification(QStringLiteral("用户 %1 已取消观看请求").arg(viewerName), true, viewerId);
-        } else {
-            qInfo() << "No approval dialog to close for canceled request";
+            const bool audioOnlyCancel = obj.value("audio_only").toBool(false) || obj.value("action").toString() == QStringLiteral("audio_only");
+            if (audioOnlyCancel) {
+                showMissedCallNotification(QStringLiteral("未接语音通话：用户 %1").arg(viewerName), viewerId);
+            } else {
+                showToastNotification(QStringLiteral("用户 %1 已取消观看请求").arg(viewerName), true, viewerId);
+            }
+        }
+
+        if (!handledApprovalDialog && targetId == getDeviceId()) {
+            auto resolveName = [this](const QString &id) -> QString {
+                QString name;
+                if (m_listWidget) {
+                    for (int i = 0; i < m_listWidget->count(); ++i) {
+                        auto *item = m_listWidget->item(i);
+                        if (!item) {
+                            continue;
+                        }
+                        if (item->data(Qt::UserRole).toString() == id) {
+                            QString text = item->text().trimmed();
+                            int idx = text.lastIndexOf('(');
+                            if (idx > 0 && text.endsWith(')')) {
+                                text = text.left(idx).trimmed();
+                            }
+                            name = text;
+                            break;
+                        }
+                    }
+                }
+                if (name.isEmpty()) {
+                    name = id;
+                }
+                if (name.isEmpty()) {
+                    name = QStringLiteral("对方");
+                }
+                return name;
+            };
+
+            const QString targetName = resolveName(viewerId);
+            const bool isAudioOnlyCancel = obj.value("audio_only").toBool(false)
+                || obj.value("action").toString() == QStringLiteral("audio_only")
+                || m_audioOnlyTargetId == viewerId
+                || m_pendingTalkTargetId == viewerId;
+
+            if (m_transparentImageList && !viewerId.isEmpty()) {
+                m_transparentImageList->setTalkPending(viewerId, false);
+                m_transparentImageList->setTalkConnected(viewerId, false);
+            }
+            if (m_pendingTalkTargetId == viewerId) {
+                m_pendingTalkTargetId.clear();
+                m_pendingTalkEnabled = false;
+            }
+            if (m_audioOnlyTargetId == viewerId) {
+                m_audioOnlyTargetId.clear();
+            }
+
+            if (isAudioOnlyCancel) {
+                showMissedCallNotification(QStringLiteral("用户%1已拒绝语音通话").arg(targetName), viewerId);
+            } else {
+                showMissedCallNotification(QStringLiteral("未接视频通话：用户%1").arg(targetName), viewerId);
+            }
         }
     } else if (type == "watch_request_error") {
         QString message = obj["message"].toString();
@@ -3762,7 +3964,43 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 return;
             }
 
+            auto resolveName = [this](const QString &id) -> QString {
+                QString name;
+                if (m_listWidget) {
+                    for (int i = 0; i < m_listWidget->count(); ++i) {
+                        auto *item = m_listWidget->item(i);
+                        if (!item) {
+                            continue;
+                        }
+                        if (item->data(Qt::UserRole).toString() == id) {
+                            QString text = item->text().trimmed();
+                            int idx = text.lastIndexOf('(');
+                            if (idx > 0 && text.endsWith(')')) {
+                                text = text.left(idx).trimmed();
+                            }
+                            name = text;
+                            break;
+                        }
+                    }
+                }
+                if (name.isEmpty()) {
+                    name = id;
+                }
+                if (name.isEmpty()) {
+                    name = QStringLiteral("对方");
+                }
+                return name;
+            };
+
+            const QString targetName = resolveName(targetId);
+            const bool isAudioOnlyReject = obj.value("audio_only").toBool(false) || (m_audioOnlyTargetId == targetId);
+            const QString rejectText = isAudioOnlyReject
+                ? QStringLiteral("用户 %1 已拒绝语音通话").arg(targetName)
+                : QStringLiteral("用户 %1 已拒绝请求").arg(targetName);
+            showMissedCallNotification(rejectText, targetId);
+
             if (m_transparentImageList && !targetId.isEmpty() && (m_pendingTalkTargetId == targetId || m_audioOnlyTargetId == targetId)) {
+                m_transparentImageList->setTalkPending(targetId, false);
                 m_transparentImageList->setTalkConnected(targetId, false);
             }
             if (m_pendingTalkTargetId == targetId) {
@@ -3797,21 +4035,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             // msgBox.setWindowFlags(msgBox.windowFlags() | Qt::WindowStaysOnTopHint);
             // msgBox.exec();
         }
-    } else if (type == "watch_request_canceled") {
-        QString viewerId = obj.value("viewer_id").toString();
-        QString targetId = obj.value("target_id").toString();
-        QString reason = obj.value("reason").toString();
-        QString viewerName = obj.value("viewer_name").toString();
-        if (viewerName.isEmpty()) viewerName = viewerId;
-
-        // If I am the target (Host) and the viewer canceled (rejected my invite)
-        if (targetId == getDeviceId()) {
-                 if (reason == "timeout") {
-                     showToastNotification(QStringLiteral("用户%1邀请过期，自动拒绝").arg(viewerName), true, viewerId);
-                 } else {
-                     showToastNotification(QStringLiteral("用户%1拒绝").arg(viewerName), false, viewerId);
-                 }
-            }
     } else if (type == "viewer_mic_state") {
         QString viewerId = obj.value("viewer_id").toString();
         QString targetId = obj.value("target_id").toString();

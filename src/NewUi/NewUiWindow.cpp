@@ -5151,6 +5151,7 @@ void NewUiWindow::showUserGuide()
     if (!m_userGuide) {
         m_userGuide = new NewUserGuide(this);
     }
+    m_userGuide->resetToStart();
     m_userGuide->show();
     // Mark as seen immediately so it doesn't pop up again automatically
     AppConfig::setLastTutorialVersion(AppConfig::applicationVersion());

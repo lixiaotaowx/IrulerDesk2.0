@@ -7,6 +7,8 @@
 #include <QApplication>
 #include <QDebug>
 #include <QFontMetrics>
+#include <QVBoxLayout>
+#include <QLabel>
 
 NewUserGuide::NewUserGuide(NewUiWindow *parent)
     : QWidget(parent), m_parentWindow(parent), m_currentIndex(0)
@@ -51,6 +53,28 @@ NewUserGuide::NewUserGuide(NewUiWindow *parent)
     );
     m_fakeRemoteBtn->setVisible(false); // Hidden by default
 
+    m_fakeContextMenu = new QWidget(this);
+    m_fakeContextMenu->setVisible(false);
+    m_fakeContextMenu->setAttribute(Qt::WA_TranslucentBackground);
+    m_fakeContextMenu->setStyleSheet(
+        "QWidget {"
+        "    background-color: rgba(29, 29, 35, 210);"
+        "    border: 1px solid rgba(255, 255, 255, 22);"
+        "    border-radius: 12px;"
+        "}"
+    );
+    QVBoxLayout *menuLayout = new QVBoxLayout(m_fakeContextMenu);
+    menuLayout->setContentsMargins(8, 8, 8, 8);
+    menuLayout->setSpacing(4);
+    m_fakePrivacyItem = new QLabel(QStringLiteral("开启隐私时间"), m_fakeContextMenu);
+    m_fakePrivacyItem->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_fakePrivacyItem->setStyleSheet("color: #e0e0e0; padding: 6px 12px; border-radius: 6px;");
+    menuLayout->addWidget(m_fakePrivacyItem);
+    m_fakeCameraItem = new QLabel(QStringLiteral("切换到摄像头"), m_fakeContextMenu);
+    m_fakeCameraItem->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_fakeCameraItem->setStyleSheet("color: #e0e0e0; padding: 6px 12px; border-radius: 6px;");
+    menuLayout->addWidget(m_fakeCameraItem);
+
     setAttribute(Qt::WA_TranslucentBackground);
     // Ensure it blocks input to underlying widgets
     // By default a widget consumes mouse events
@@ -67,14 +91,26 @@ void NewUserGuide::nextStep()
              m_dismissBtn->setText("完成");
         }
     } else {
+        hideFakeContextMenu();
+        restoreLocalCardStyle();
         close();
     }
+}
+
+void NewUserGuide::resetToStart()
+{
+    m_currentIndex = 0;
+    hideFakeContextMenu();
+    restoreLocalCardStyle();
+    calculateTargets();
+    update();
 }
 
 void NewUserGuide::calculateTargets()
 {
     m_items.clear();
     if (!m_parentWindow) return;
+    m_localCardTarget = nullptr;
 
     auto addTarget = [&](const QString &name, const QString &desc, const QString &detail, GuideItem::Position pos) {
         QWidget *w = m_parentWindow->findChild<QWidget*>(name);
@@ -155,6 +191,42 @@ void NewUserGuide::calculateTargets()
                         GuideItem::Bottom, QPoint(), QPoint(), QRect()});
     }
 
+    const QString myId = m_parentWindow->getCurrentUserId();
+    QList<QWidget*> cards = m_parentWindow->findChildren<QWidget*>("CardFrame");
+    for (QWidget *card : cards) {
+        if (!card) {
+            continue;
+        }
+        const QString uid = card->property("userId").toString();
+        if (!myId.isEmpty() && uid == myId) {
+            m_localCardTarget = card;
+            break;
+        }
+    }
+    if (!m_localCardTarget && !cards.isEmpty()) {
+        m_localCardTarget = cards.first();
+    }
+    if (m_localCardTarget && m_localCardTarget->isVisible()) {
+        QPoint p = m_localCardTarget->mapToGlobal(QPoint(0, 0));
+        p = this->mapFromGlobal(p);
+        const QRect rect(p, m_localCardTarget->size());
+        if (m_localCardStyle.isEmpty()) {
+            m_localCardStyle = m_localCardTarget->styleSheet();
+        }
+        m_items.append({rect, "隐私模式",
+                        "右键自己的卡片：\n选择开启隐私时间。\n开启后画面变为隐私提示。",
+                        GuideItem::Bottom, QPoint(), QPoint(), QRect()});
+        m_items.append({rect, "摄像头模式",
+                        "右键自己的卡片：\n选择切换到摄像头。\n再次切回屏幕。",
+                        GuideItem::Bottom, QPoint(), QPoint(), QRect()});
+        m_items.append({rect, "在线演示",
+                        "自己的卡片顶部为绿色时，代表在线与活跃状态。",
+                        GuideItem::Bottom, QPoint(), QPoint(), QRect()});
+        m_items.append({rect, "离线演示",
+                        "自己的卡片顶部为紫色时，代表离线或不活跃状态。",
+                        GuideItem::Bottom, QPoint(), QPoint(), QRect()});
+    }
+
     // Don't reset index if we are just resizing, unless invalid
     if (m_currentIndex >= m_items.size()) m_currentIndex = 0;
     if (m_items.isEmpty()) return;
@@ -178,6 +250,21 @@ void NewUserGuide::layoutItems()
     
     GuideItem &item = m_items[m_currentIndex];
     
+    if (item.description == "在线演示") {
+        applyLocalCardDemoStyle(true);
+    } else if (item.description == "离线演示") {
+        applyLocalCardDemoStyle(false);
+    } else {
+        restoreLocalCardStyle();
+    }
+    if (item.description == "隐私模式") {
+        showFakeContextMenu(item.rect, true, false);
+    } else if (item.description == "摄像头模式") {
+        showFakeContextMenu(item.rect, false, true);
+    } else {
+        hideFakeContextMenu();
+    }
+
     // Only show fake button if it's the current target
     if (m_fakeRemoteBtn) {
         if (item.description == "远程控制" && item.rect == m_fakeRemoteBtn->geometry()) {
@@ -307,3 +394,72 @@ void NewUserGuide::paintEvent(QPaintEvent *event)
     p.drawText(centerRect.adjusted(20, 20, -20, -20), Qt::AlignCenter | Qt::TextWordWrap, item.detailText);
 }
 
+void NewUserGuide::applyLocalCardDemoStyle(bool active)
+{
+    if (!m_localCardTarget) {
+        return;
+    }
+    if (m_localCardStyle.isEmpty()) {
+        m_localCardStyle = m_localCardTarget->styleSheet();
+    }
+    const QString base = QStringLiteral("rgba(32, 32, 36, 175)");
+    const QString baseHover = QStringLiteral("rgba(40, 40, 45, 190)");
+    const QString top = active ? QStringLiteral("rgba(0, 200, 83, 200)") : QStringLiteral("rgba(160, 90, 210, 200)");
+    const QString topHover = active ? QStringLiteral("rgba(0, 220, 95, 230)") : QStringLiteral("rgba(180, 110, 230, 230)");
+    const QString gradient = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")
+                                 .arg(top, base);
+    const QString gradientHover = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")
+                                      .arg(topHover, baseHover);
+    m_localCardTarget->setStyleSheet(
+        QStringLiteral(
+            "#CardFrame {"
+            "   background: %1;"
+            "   border: 1px solid rgba(255, 255, 255, 22);"
+            "   border-radius: 15px;"
+            "}"
+            "#CardFrame:hover {"
+            "   background: %2;"
+            "}"
+        ).arg(gradient, gradientHover)
+    );
+}
+
+void NewUserGuide::restoreLocalCardStyle()
+{
+    if (m_localCardTarget && !m_localCardStyle.isEmpty()) {
+        m_localCardTarget->setStyleSheet(m_localCardStyle);
+    }
+}
+
+void NewUserGuide::showFakeContextMenu(const QRect &targetRect, bool highlightPrivacy, bool highlightCamera)
+{
+    if (!m_fakeContextMenu || !m_fakePrivacyItem || !m_fakeCameraItem) {
+        return;
+    }
+    const QString normalStyle = QStringLiteral("color: #e0e0e0; padding: 6px 12px; border-radius: 6px;");
+    const QString highlightStyle = QStringLiteral("color: #ffffff; background-color: #0078d4; padding: 6px 12px; border-radius: 6px;");
+    m_fakePrivacyItem->setStyleSheet(highlightPrivacy ? highlightStyle : normalStyle);
+    m_fakeCameraItem->setStyleSheet(highlightCamera ? highlightStyle : normalStyle);
+    m_fakeContextMenu->adjustSize();
+    int x = targetRect.right() + 12;
+    int y = targetRect.top() + 12;
+    if (x + m_fakeContextMenu->width() > width()) {
+        x = targetRect.left() - m_fakeContextMenu->width() - 12;
+    }
+    if (y + m_fakeContextMenu->height() > height()) {
+        y = height() - m_fakeContextMenu->height() - 12;
+    }
+    if (y < 0) {
+        y = 12;
+    }
+    m_fakeContextMenu->move(x, y);
+    m_fakeContextMenu->raise();
+    m_fakeContextMenu->setVisible(true);
+}
+
+void NewUserGuide::hideFakeContextMenu()
+{
+    if (m_fakeContextMenu) {
+        m_fakeContextMenu->setVisible(false);
+    }
+}

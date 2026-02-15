@@ -284,6 +284,7 @@ private:
     void showInviteNotification(const QString &inviterId, const QString &inviterName, const QString &type);
     void showExpiredInviteNotification(const QString &inviterName);
     void showToastNotification(const QString &message, bool isWarning = false, const QString &userId = QString());
+    void showMissedCallNotification(const QString &message, const QString &userId = QString());
 
 private slots:};
 

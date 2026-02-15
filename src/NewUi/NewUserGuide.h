@@ -7,6 +7,7 @@
 #include <QPushButton>
 
 class NewUiWindow;
+class QLabel;
 
 class NewUserGuide : public QWidget {
     Q_OBJECT
@@ -16,6 +17,7 @@ public:
     ~NewUserGuide() override = default;
 
     void calculateTargets();
+    void resetToStart();
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -42,9 +44,18 @@ private:
     };
     QList<GuideItem> m_items;
     int m_currentIndex = 0;
+    QWidget *m_localCardTarget = nullptr;
+    QString m_localCardStyle;
+    QWidget *m_fakeContextMenu = nullptr;
+    QLabel *m_fakePrivacyItem = nullptr;
+    QLabel *m_fakeCameraItem = nullptr;
 
     void layoutItems();
     void nextStep();
+    void applyLocalCardDemoStyle(bool active);
+    void restoreLocalCardStyle();
+    void showFakeContextMenu(const QRect &targetRect, bool highlightPrivacy, bool highlightCamera);
+    void hideFakeContextMenu();
 };
 
 #endif // NEW_USER_GUIDE_H

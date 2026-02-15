@@ -66,6 +66,7 @@ namespace {
 #include <QDateTime>
 #include <QSettings>
 #include <QTextEdit>
+#include <QScrollBar>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -378,6 +379,13 @@ void MainWindow::showUpdateLogDialog()
     QFont contentFont = content->font();
     contentFont.setPointSize(14);
     content->setFont(contentFont);
+    content->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    content->setLineWrapMode(QTextEdit::WidgetWidth);
+    // 设置更小的滚动步长，让滚轮滚动更加平滑
+    QScrollBar *scrollBar = content->verticalScrollBar();
+    if (scrollBar) {
+        scrollBar->setSingleStep(10); // 每次滚动10像素，更接近滚动一行文字
+    }
     
     QString html;
     QString logPath = QCoreApplication::applicationDirPath() + "/UpdateLog.html";

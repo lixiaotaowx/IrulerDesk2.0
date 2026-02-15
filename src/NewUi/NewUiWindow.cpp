@@ -2634,12 +2634,8 @@ void NewUiWindow::setupUi()
         "QPushButton:hover{ background: rgba(0, 92, 54, 210); }"
         "QPushButton:pressed{ background: rgba(0, 92, 54, 235); }"));
     connect(callRestoreBtn, &QPushButton::clicked, this, [this]() {
-        setAudioCallMiniHidden(false);
-        hideAudioCallMiniBar();
-        if (m_audioCallDialog && !m_audioCallPeerId.isEmpty()) {
-            m_audioCallDialog->show();
-            m_audioCallDialog->raise();
-        }
+        // Use animated restore for smooth transition
+        restoreAudioCallUiAnimated();
     });
     m_audioCallTitleRestoreBtn = callRestoreBtn;
     titleLayout->addWidget(callRestoreBtn, 0, Qt::AlignCenter);
@@ -3939,12 +3935,8 @@ bool NewUiWindow::eventFilter(QObject *watched, QEvent *event)
                 auto *me = static_cast<QMouseEvent*>(event);
                 if (me->button() == Qt::LeftButton) {
                     m_audioCallMiniBarDragging = false;
-                    setAudioCallMiniHidden(false);
-                    // hideAudioCallMiniBar();
-                    if (m_audioCallDialog && !m_audioCallPeerId.isEmpty()) {
-                        m_audioCallDialog->show();
-                        m_audioCallDialog->raise();
-                    }
+                    // Use animated restore for smooth transition
+                    restoreAudioCallUiAnimated();
                     return true;
                 }
             } else if (event->type() == QEvent::MouseButtonPress) {

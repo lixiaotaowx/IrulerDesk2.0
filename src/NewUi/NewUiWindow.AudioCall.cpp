@@ -2,6 +2,7 @@
 
 #include "../common/AppConfig.h"
 
+#include <QAbstractAnimation>
 #include <QAbstractButton>
 #include <QAction>
 #include <QBuffer>
@@ -26,6 +27,7 @@
 #include <QMetaType>
 #include <QPainter>
 #include <QPointer>
+#include <QPropertyAnimation>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -487,6 +489,56 @@ void NewUiWindow::restoreAudioCallUi()
         m_audioCallDialog->show();
         m_audioCallDialog->raise();
     }
+}
+
+void NewUiWindow::restoreAudioCallUiAnimated()
+{
+    if (!m_audioCallDialog || m_audioCallPeerId.isEmpty() || !m_audioCallMiniBar) {
+        return;
+    }
+
+    setAudioCallMiniHidden(false);
+
+    // Get starting position (center of miniBar)
+    const QRect miniRect = m_audioCallMiniBar->geometry();
+    const QPoint miniCenter = miniRect.center();
+
+    // Calculate target position for dialog (center it on screen)
+    const QRect parentRect = this->geometry();
+    const QRect targetRect(parentRect.center().x() - m_audioCallDialog->width() / 2,
+                           parentRect.center().y() - m_audioCallDialog->height() / 2,
+                           m_audioCallDialog->width(),
+                           m_audioCallDialog->height());
+
+    // Start with miniBar position and size
+    const QSize animSize(50, 50);
+    const QRect animStartRect(miniCenter.x() - animSize.width()/2,
+                              miniCenter.y() - animSize.height()/2,
+                              animSize.width(), animSize.height());
+
+    // Set dialog geometry to starting position
+    m_audioCallDialog->setGeometry(animStartRect);
+
+    // Hide miniBar
+    hideAudioCallMiniBar();
+
+    // Show dialog (will be at starting position)
+    m_audioCallDialog->show();
+
+    // Create scale and position animation (0.5 seconds)
+    QPropertyAnimation *anim = new QPropertyAnimation(m_audioCallDialog, "geometry");
+    anim->setDuration(500);
+    anim->setStartValue(animStartRect);
+    anim->setEndValue(targetRect);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+
+    // Clean up animation when finished
+    connect(anim, &QPropertyAnimation::finished, this, [anim]() {
+        anim->deleteLater();
+    });
+
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+    m_audioCallDialog->raise();
 }
 
 QString NewUiWindow::activeAudioCallPeerId() const
@@ -1045,18 +1097,52 @@ void NewUiWindow::showAudioCallMiniBar()
     }
     setAudioCallMiniHidden(false);
     m_audioCallMiniBarDragging = false;
+
+    // Get the starting position (center of the dialog)
+    QRect startRect;
     if (m_audioCallDialog->isVisible()) {
+        startRect = m_audioCallDialog->geometry();
         m_audioCallDialog->hide();
+    } else {
+        // If dialog is not visible, use its saved position or center of parent
+        const QRect parentRect = this->geometry();
+        const int x = parentRect.center().x() - m_audioCallDialog->width() / 2;
+        const int y = parentRect.center().y() - m_audioCallDialog->height() / 2;
+        startRect = QRect(x, y, m_audioCallDialog->width(), m_audioCallDialog->height());
     }
-    if (!m_audioCallMiniBar->isVisible()) {
-        QScreen *screen = QGuiApplication::primaryScreen();
-        const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1280, 720);
-        const QSize s = m_audioCallMiniBar->size();
-        const int x = avail.right() - s.width() - 18;
-        const int y = avail.bottom() - s.height() - 18;
-        m_audioCallMiniBar->setGeometry(QRect(QPoint(x, y), s));
-    }
+
+    // Calculate target position (bottom-right corner)
+    QScreen *screen = QGuiApplication::primaryScreen();
+    const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1280, 720);
+    const QSize s = m_audioCallMiniBar->size();
+    const int targetX = avail.right() - s.width() - 18;
+    const int targetY = avail.bottom() - s.height() - 18;
+    const QRect targetRect(QPoint(targetX, targetY), s);
+
+    // Calculate center point of dialog for animation start
+    const QPoint startCenter = startRect.center();
+    const QSize animSize(50, 50); // Small size for animation
+    const QRect animStartRect(startCenter.x() - animSize.width()/2,
+                               startCenter.y() - animSize.height()/2,
+                               animSize.width(), animSize.height());
+
+    // Set initial geometry for animation
+    m_audioCallMiniBar->setGeometry(animStartRect);
     m_audioCallMiniBar->show();
+
+    // Create scale and position animation (0.5 seconds)
+    QPropertyAnimation *anim = new QPropertyAnimation(m_audioCallMiniBar, "geometry");
+    anim->setDuration(500);
+    anim->setStartValue(animStartRect);
+    anim->setEndValue(targetRect);
+    anim->setEasingCurve(QEasingCurve::OutCubic); // Smooth easing curve
+
+    // Clean up animation when finished
+    connect(anim, &QPropertyAnimation::finished, this, [anim]() {
+        anim->deleteLater();
+    });
+
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
     m_audioCallMiniBar->raise();
 }
 

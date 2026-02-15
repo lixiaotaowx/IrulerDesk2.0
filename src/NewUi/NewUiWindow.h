@@ -96,6 +96,7 @@ public:
     void hideAudioCallMiniBar();
     void setAudioCallMiniHidden(bool hidden);
     void restoreAudioCallUi();
+    void restoreAudioCallUiAnimated(); // 动画恢复窗口
     QString activeAudioCallPeerId() const;
 
     // Viewer List Management

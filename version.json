@@ -1,6 +1,6 @@
 {
-    "version": "1.0.5",
-    "url": "https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/IrulerDeskPro-1.0.5-win64.exe",
+    "version": "1.0.6",
+    "url": "https://github.com/lixiaotaowx/IrulerDesk2.0/releases/latest/download/IrulerDeskPro-1.0.6-win64.exe",
     "force": false,
-    "description": "1. 新加局域网优先\n2. 优化了视频稳定性，重做音频房间\n3. 新增自动更新、会议模式、公告任务功能等\n4. "
+    "description": "1. 在线检测\n2. 通话声音显示\n3. 新增摄像头功能\n4. 视频画面修复（闪烁问题）\n5. 新增隐私模式（不显示缩略图但不影响通话/视频）\n6. bug修复：系统设置切换屏幕不更新、用户列表偶发无画面等"
 }

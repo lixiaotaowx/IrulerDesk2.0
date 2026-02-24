@@ -271,6 +271,7 @@ private:
 
     // 提示音
     QSoundEffect *m_alertSound = nullptr;
+    QTimer *m_alertSoundTimer = nullptr;
 
     QUdpSocket *m_lanDiscoverySocket = nullptr;
     QHash<QString, QString> m_lanDiscoveredBaseByTarget;
@@ -285,6 +286,8 @@ private:
     void showExpiredInviteNotification(const QString &inviterName);
     void showToastNotification(const QString &message, bool isWarning = false, const QString &userId = QString());
     void showMissedCallNotification(const QString &message, const QString &userId = QString());
+    void startAlertSoundLoop();
+    void stopAlertSoundLoop();
 
 private slots:};
 

@@ -245,6 +245,43 @@ void MainWindow::onUpdateError(const QString &error)
     }
 }
 
+void MainWindow::startAlertSoundLoop()
+{
+    if (!m_alertSound) {
+        m_alertSound = new QSoundEffect(this);
+        m_alertSound->setSource(QUrl::fromLocalFile(QCoreApplication::applicationDirPath() + "/audio/ling2.wav"));
+        m_alertSound->setVolume(1.0f);
+    }
+    if (!m_alertSoundTimer) {
+        m_alertSoundTimer = new QTimer(this);
+        m_alertSoundTimer->setInterval(2000);
+        connect(m_alertSoundTimer, &QTimer::timeout, this, [this]() {
+            if (!m_alertSound) {
+                return;
+            }
+            if (m_alertSound->isPlaying()) {
+                m_alertSound->stop();
+            }
+            m_alertSound->play();
+        });
+    }
+    if (m_alertSound->isPlaying()) {
+        m_alertSound->stop();
+    }
+    m_alertSound->play();
+    m_alertSoundTimer->start();
+}
+
+void MainWindow::stopAlertSoundLoop()
+{
+    if (m_alertSoundTimer && m_alertSoundTimer->isActive()) {
+        m_alertSoundTimer->stop();
+    }
+    if (m_alertSound && m_alertSound->isPlaying()) {
+        m_alertSound->stop();
+    }
+}
+
 void MainWindow::startLanDiscoveryListener()
 {
     if (!AppConfig::lanDiscoveryEnabled()) {
@@ -3422,6 +3459,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_approvalDialog->close();
                 m_approvalDialog->deleteLater();
                 m_approvalDialog = nullptr;
+                stopAlertSoundLoop();
                 
                 QString viewerName = obj.value("viewer_name").toString();
                 if (viewerName.isEmpty() && m_listWidget) {
@@ -3452,14 +3490,6 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             }
             return;
         }
-
-        // 播放来电提醒音
-        if (!m_alertSound) {
-            m_alertSound = new QSoundEffect(this);
-            m_alertSound->setSource(QUrl::fromLocalFile(QCoreApplication::applicationDirPath() + "/audio/ling2.wav"));
-            m_alertSound->setVolume(1.0f);
-        }
-        m_alertSound->play();
 
         QString viewerName = obj.value("viewer_name").toString();
         
@@ -3532,6 +3562,8 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 m_approvalDialog->deleteLater();
                 m_approvalDialog = nullptr;
             }
+            stopAlertSoundLoop();
+            startAlertSoundLoop();
             
             QWidget *toast = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint);
             toast->setAttribute(Qt::WA_TranslucentBackground);
@@ -3611,12 +3643,14 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             
             connect(toast, &QObject::destroyed, this, [this, toast]() {
                 if (m_approvalDialog == toast) m_approvalDialog = nullptr;
+                stopAlertSoundLoop();
                 m_onlineToasts.removeAll(toast);
                 repositionOnlineToasts();
             });
 
             // Connect Logic
             connect(acceptBtn, &QPushButton::clicked, this, [this, toast, viewerId, targetId, viewerName, audioOnly]() {
+                stopAlertSoundLoop();
                 // [Fix] Handle Audio Call Accept (Viewer-Initiated)
                 if (audioOnly) {
                     // 1. Send watch_request_accepted
@@ -3686,6 +3720,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             });
             
             connect(rejectBtn, &QPushButton::clicked, this, [this, toast, viewerId, targetId]() {
+                stopAlertSoundLoop();
                 // 拒绝
                 QJsonObject rejected;
                 rejected["type"] = "watch_request_rejected";
@@ -3758,6 +3793,7 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
             m_approvalDialog->close();
             m_approvalDialog->deleteLater();
             m_approvalDialog = nullptr;
+            stopAlertSoundLoop();
             handledApprovalDialog = true;
             
             // 显示未接提醒

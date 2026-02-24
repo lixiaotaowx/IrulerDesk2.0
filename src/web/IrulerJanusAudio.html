@@ -288,7 +288,7 @@
       if (state.reconnectInFlight) return;
       if (state.reconnectTimer) return;
       const attempt = Math.max(0, state.reconnectAttempt | 0);
-      const delay = Math.min(12000, 600 + attempt * 900);
+      const delay = Math.min(5000, 300 + attempt * 500);
       try { logLine("reconnect scheduled in " + delay + "ms reason=" + String(reason || "")); } catch (_) {}
       state.reconnectTimer = setTimeout(async () => {
         state.reconnectTimer = null;
@@ -617,7 +617,7 @@
           retryCount++;
           state.joinWaiter = null;
           if (retryCount >= 10) throw e;
-          const delay = 1000 + (retryCount * 1000);
+          const delay = 400 + (retryCount * 400);
           try { logLine("join failed, retrying (" + retryCount + ") in " + delay + "ms: " + (e && e.message ? e.message : String(e))); } catch (_) {}
           await new Promise(r => setTimeout(r, delay));
         }

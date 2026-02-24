@@ -777,7 +777,9 @@ void MainWindow::onWatchButtonClicked()
     QRegularExpressionMatch match = regex.match(selectedUser);
     if (match.hasMatch()) {
         QString targetDeviceId = match.captured(1);
-
+        if (!ensureTargetOnline(targetDeviceId)) {
+            return;
+        }
         sendWatchRequest(targetDeviceId);
         
     } else {
@@ -2524,6 +2526,33 @@ void MainWindow::sendHeartbeat()
     m_loginWebSocket->sendTextMessage(message);
 }
 
+bool MainWindow::ensureTargetOnline(const QString &targetDeviceId, const QString &targetName)
+{
+    if (targetDeviceId.isEmpty()) {
+        return false;
+    }
+    if (m_serverOnlineUsers.contains(targetDeviceId)) {
+        return true;
+    }
+    if (m_transparentImageList) {
+        m_transparentImageList->removeUser(targetDeviceId);
+    }
+    for (int i = m_listWidget->count() - 1; i >= 0; --i) {
+        QListWidgetItem *item = m_listWidget->item(i);
+        if (!item) continue;
+        const QString userId = item->data(Qt::UserRole).toString();
+        if (userId == targetDeviceId) {
+            delete m_listWidget->takeItem(i);
+        }
+    }
+    if (m_listWidget->count() == 0) {
+        m_listWidget->addItem("暂无在线用户");
+    }
+    const QString displayName = targetName.isEmpty() ? targetDeviceId : targetName;
+    showToastNotification(QStringLiteral("用户 %1 已离线").arg(displayName), true, targetDeviceId);
+    return false;
+}
+
 void MainWindow::updateUserList(const QJsonArray& users)
 {
     // 1. 更新服务器在线用户蓄水池，并构建新用户ID集合
@@ -4260,6 +4289,9 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
         QString viewerId = obj["viewer_id"].toString();
         QString targetId = obj["target_id"].toString();
         QString streamUrl = obj["stream_url"].toString();
+        if (streamUrl.isEmpty() && !targetId.isEmpty()) {
+            streamUrl = QString("%1/subscribe/%2").arg(AppConfig::wsBaseUrl(), targetId);
+        }
         
         // 检查是否是当前用户的观看请求
         if (viewerId == getDeviceId()) {
@@ -4297,17 +4329,18 @@ void MainWindow::onLoginWebSocketTextMessageReceived(const QString &message)
                 }
             }
             startVideoReceiving(targetId, streamUrl);
-            if (showVideoWindow && m_transparentImageList) {
-                m_transparentImageList->setWatchingTarget(targetId);
-            }
-            if (m_transparentImageList) {
+            QTimer::singleShot(80, this, [this, showVideoWindow, targetId]() {
+                if (!m_transparentImageList) return;
+                if (showVideoWindow) {
+                    m_transparentImageList->setWatchingTarget(targetId);
+                }
                 const QString activePeer = m_transparentImageList->activeAudioCallPeerId();
                 if (activePeer.isEmpty() || activePeer == targetId) {
                     m_transparentImageList->janusSwitchToUserRoom(targetId);
                     m_transparentImageList->showAudioCallUiForSession(targetId, true);
                     m_transparentImageList->showAudioCallMiniBar();
                 }
-            }
+            });
             if (talkWasPending) {
                 m_pendingTalkTargetId.clear();
                 m_pendingTalkEnabled = false;
@@ -4432,7 +4465,9 @@ void MainWindow::onContextMenuOption1()
     QRegularExpressionMatch match = regex.match(itemText);
     if (match.hasMatch()) {
         QString targetDeviceId = match.captured(1);
-        
+        if (!ensureTargetOnline(targetDeviceId)) {
+            return;
+        }
         // 发送观看请求
         sendWatchRequest(targetDeviceId);
     } else {
@@ -4459,7 +4494,9 @@ void MainWindow::onUserImageClicked(const QString &userId, const QString &userNa
     //     m_videoWindow->activateWindow();
     // }
     
-    // 发送观看请求
+    if (!ensureTargetOnline(userId, userName)) {
+        return;
+    }
     sendWatchRequest(userId);
     
     // 启动视频接收 - 移至收到 streaming_ok 后

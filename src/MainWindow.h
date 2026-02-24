@@ -148,6 +148,7 @@ private:
     void saveManualApprovalEnabledToConfig(bool enabled);
     bool loadOnlineNotificationEnabledFromConfig() const;
     void saveOnlineNotificationEnabledToConfig(bool enabled);
+    bool ensureTargetOnline(const QString &targetDeviceId, const QString &targetName = QString());
     
     // 登录系统相关方法
     void initializeLoginSystem();

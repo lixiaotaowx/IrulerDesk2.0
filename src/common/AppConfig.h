@@ -45,8 +45,8 @@ inline void applyApplicationInfo(QCoreApplication &app)
 
 inline QString defaultServerAddress()
 {
-    // return QStringLiteral("111.231.58.28:8765");
-    return QStringLiteral("115.159.43.237:8765");
+    return QStringLiteral("111.231.58.28:8765");
+    // return QStringLiteral("115.159.43.237:8765");
 }
 
 inline QString normalizeWsBaseUrl(const QString &value)

@@ -404,8 +404,8 @@ void NewUserGuide::applyLocalCardDemoStyle(bool active)
     }
     const QString base = QStringLiteral("rgba(32, 32, 36, 175)");
     const QString baseHover = QStringLiteral("rgba(40, 40, 45, 190)");
-    const QString top = active ? QStringLiteral("rgba(0, 200, 83, 200)") : QStringLiteral("rgba(160, 90, 210, 200)");
-    const QString topHover = active ? QStringLiteral("rgba(0, 220, 95, 230)") : QStringLiteral("rgba(180, 110, 230, 230)");
+    const QString top = active ? QStringLiteral("rgba(60, 120, 90, 170)") : QStringLiteral("rgba(110, 90, 140, 170)");
+    const QString topHover = active ? QStringLiteral("rgba(70, 140, 105, 190)") : QStringLiteral("rgba(125, 105, 160, 190)");
     const QString gradient = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")
                                  .arg(top, base);
     const QString gradientHover = QStringLiteral("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:0.38 %2, stop:0.62 %2, stop:1 %2)")

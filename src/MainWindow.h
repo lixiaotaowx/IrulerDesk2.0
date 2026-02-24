@@ -139,6 +139,7 @@ private:
     QString loadMicInputDeviceIdFromConfig() const;
     void saveMicInputFollowSystemToConfig(bool followSystem);
     void saveMicInputDeviceIdToConfig(const QString &deviceId);
+    void updateShareBorderOverlay();
     bool loadSpeakerEnabledFromConfig() const;
     bool loadMicEnabledFromConfig() const;
     void saveSpeakerEnabledToConfig(bool enabled);
@@ -254,6 +255,7 @@ private:
     
     
     StreamingIslandWidget *m_islandWidget = nullptr;
+    QWidget *m_shareBorderOverlay = nullptr;
 
     // 等待同意弹窗
     class QMessageBox *m_waitingDialog = nullptr;

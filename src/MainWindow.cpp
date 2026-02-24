@@ -68,6 +68,38 @@ namespace {
 #include <QTextEdit>
 #include <QScrollBar>
 
+class ShareBorderOverlay : public QWidget
+{
+public:
+    explicit ShareBorderOverlay(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint);
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_ShowWithoutActivating);
+    }
+
+    void updateGeometryForScreen(QScreen *screen)
+    {
+        if (!screen) {
+            return;
+        }
+        setGeometry(screen->geometry());
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        QPen pen(QColor(220, 0, 0), 2);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        const QRect r = rect().adjusted(1, 1, -1, -1);
+        p.drawRect(r);
+    }
+};
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_centralWidget(nullptr)
@@ -1328,6 +1360,7 @@ void MainWindow::startStreaming()
     
     m_isStreaming = true;
 
+    updateShareBorderOverlay();
 
     if (m_islandWidget) {
         int screenIndex = loadScreenIndexFromConfig();
@@ -1350,6 +1383,7 @@ void MainWindow::stopStreaming()
     if (m_noViewerSoftStopTimer) {
         m_noViewerSoftStopTimer->stop();
     }
+    updateShareBorderOverlay();
     
     // [Fix] Do NOT force clear viewers here.
     // Let individual viewer_exit events handle removal.
@@ -1433,7 +1467,37 @@ void MainWindow::updateStatus()
                          .arg(m_isStreaming ? "推流中" : "空闲");
     
     m_statusLabel->setText(status);
+    updateShareBorderOverlay();
     // broadcastStatusIfChanged();
+}
+
+void MainWindow::updateShareBorderOverlay()
+{
+    const int viewerCount = (m_transparentImageList ? m_transparentImageList->getViewerCount() : 0);
+    const bool shouldShow = m_isStreaming && viewerCount > 0;
+    if (!shouldShow) {
+        if (m_shareBorderOverlay) {
+            m_shareBorderOverlay->hide();
+        }
+        return;
+    }
+    if (!m_shareBorderOverlay) {
+        m_shareBorderOverlay = new ShareBorderOverlay(nullptr);
+    }
+    int screenIndex = loadScreenIndexFromConfig();
+    const auto screens = QGuiApplication::screens();
+    QScreen *screen = nullptr;
+    if (screenIndex >= 0 && screenIndex < screens.size()) {
+        screen = screens[screenIndex];
+    } else if (!screens.isEmpty()) {
+        screen = screens.first();
+    }
+    if (!screen) {
+        return;
+    }
+    static_cast<ShareBorderOverlay*>(m_shareBorderOverlay)->updateGeometryForScreen(screen);
+    m_shareBorderOverlay->show();
+    m_shareBorderOverlay->raise();
 }
 
 QString MainWindow::buildStatusBroadcastContent() const
@@ -1468,6 +1532,18 @@ void MainWindow::sendActivityStateBroadcast(bool active)
     msg["active"] = active;
     msg["timestamp"] = QDateTime::currentMSecsSinceEpoch();
     m_loginWebSocket->sendTextMessage(QJsonDocument(msg).toJson(QJsonDocument::Compact));
+
+    QJsonObject payload;
+    payload["kind"] = "activity_state";
+    payload["user_id"] = getDeviceId();
+    payload["active"] = active;
+    payload["timestamp"] = msg["timestamp"];
+    QJsonObject broadcast;
+    broadcast["type"] = "broadcast_notice";
+    broadcast["content"] = QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    broadcast["sender"] = m_userName.isEmpty() ? m_userId : m_userName;
+    broadcast["timestamp"] = msg["timestamp"];
+    m_loginWebSocket->sendTextMessage(QJsonDocument(broadcast).toJson(QJsonDocument::Compact));
 }
 
 void MainWindow::startProcesses()

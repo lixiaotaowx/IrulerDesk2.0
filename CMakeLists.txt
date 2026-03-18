@@ -19,7 +19,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # 查找 Qt 组件
-find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia WebEngineWidgets WebChannel Positioning Quick Qml OpenGL REQUIRED)
+find_package(Qt6 COMPONENTS Core Widgets WebSockets Gui Network Svg Multimedia MultimediaWidgets WebEngineWidgets WebChannel Positioning Quick Qml OpenGL REQUIRED)
 
 # Opus audio codec
 set(Opus_DIR "G:/rust_projects/vcpkg/installed/x64-windows-static-md/share/opus")
@@ -51,6 +51,16 @@ set(MAIN_SOURCES
     src/NewUi/InviteUsersDialog.cpp       # 邀请用户对话框实现
     src/NewUi/InviteUsersDialog.h         # 邀请用户对话框声明
     src/NewUi/NewUiWindow.h               # 新UI窗口声明
+    src/NewUi/NodeGraph/NodeGraphWidget.cpp
+    src/NewUi/NodeGraph/NodeGraphWidget.h
+    src/NewUi/NodeGraph/GraphNode.cpp
+    src/NewUi/NodeGraph/GraphNode.h
+    src/NewUi/NodeGraph/GraphEdge.cpp
+    src/NewUi/NodeGraph/GraphEdge.h
+    src/NewUi/NodeGraph/GraphSocket.cpp
+    src/NewUi/NodeGraph/GraphSocket.h
+    src/NewUi/NodeGraph/NodeGraphView.cpp
+    src/NewUi/NodeGraph/NodeGraphView.h
     src/NewUi/StreamClient.cpp            # 流媒体客户端实现
     src/NewUi/StreamClient.h              # 流媒体客户端声明
     src/common/ConsoleLogger.cpp          # 控制台日志重定向
@@ -174,6 +184,7 @@ target_link_libraries(ScreenStreamApp PRIVATE
     Qt6::Network
     Qt6::Svg
     Qt6::Multimedia
+    Qt6::MultimediaWidgets
     Qt6::WebEngineWidgets
     Qt6::WebChannel
     Qt6::Positioning

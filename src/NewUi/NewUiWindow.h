@@ -29,12 +29,16 @@ class QDialog;
 class QTimer;
 class QScrollArea;
 class QHBoxLayout;
+class QMediaPlayer;
+class QVideoWidget;
 class VideoDisplayWidget;
 class AnnotationToolbar;
 class AutoUpdater;
 class QProgressDialog;
 class NewUserGuide;
 class LocalActivityMonitor;
+
+#include "NodeGraph/NodeGraphWidget.h"
 
 class NewUiWindow : public QWidget
 {
@@ -259,9 +263,13 @@ private:
     QWidget *m_function3BrowserPage = nullptr;
     QWidget *m_videoContentPage = nullptr;
     QWebEngineView *m_function1WebView = nullptr;
-    QWebEngineView *m_function2WebView = nullptr;
+    NodeGraphWidget *m_nodeGraphWidget = nullptr;
     QWebEngineView *m_function3WebView = nullptr;
     QWebEngineView *m_janusWebView = nullptr;
+    QWidget *m_browserWindow = nullptr; // 独立浏览器窗口
+    QWidget *m_videoPlayerWindow = nullptr; // 视频播放器窗口
+    QMediaPlayer *m_mediaPlayer = nullptr;
+    QVideoWidget *m_videoWidget = nullptr;
     StreamClient *m_streamClient = nullptr;
     StreamClient *m_streamClientLan = nullptr;
     LoginClient *m_loginClient = nullptr;

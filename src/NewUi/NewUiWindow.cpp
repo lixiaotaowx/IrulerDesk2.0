@@ -54,6 +54,8 @@
 #include <QWebChannel>
 #include <QSignalBlocker>
 #include <QAbstractButton>
+#include <QMediaPlayer>
+#include <QtMultimediaWidgets/QVideoWidget>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -420,6 +422,22 @@ QWebEngineProfile *ensureWebEngineProfileConfigured()
     profile->setPersistentStoragePath(base + QStringLiteral("/storage"));
     profile->setCachePath(base + QStringLiteral("/cache"));
     profile->setPersistentCookiesPolicy(QWebEngineProfile::AllowPersistentCookies);
+
+    // 启用视频播放支持
+    profile->settings()->setAttribute(QWebEngineSettings::PluginsEnabled, true);
+    profile->settings()->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
+    profile->settings()->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, false);
+    profile->settings()->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
+    profile->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, true);
+    profile->settings()->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, true);
+
+    // 强制使用系统解码器
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-features=PlatformHEVCDecoder,PlatformH264Decoder");
+
+    // 额外视频支持配置
+    qputenv("QTWEBENGINE_DISABLE_GPU", "0");
+    qputenv("QTWEBENGINE_DISABLE_HARDWARE_ACCELERATION", "0");
+
     return profile;
 }
 
@@ -2386,18 +2404,6 @@ void NewUiWindow::setupUi()
 
             connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
                 playIconBling(btn);
-                if (m_function2WebView) {
-                    QString v = AppConfig::readConfigValue(QStringLiteral("function2_url")).trimmed();
-                    if (v.isEmpty()) {
-                        m_function2WebView->setHtml(
-                            QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head>"
-                                           "<body style=\"background:#404040;color:#e0e0e0;font-family:sans-serif;padding:18px;\">"
-                                           "请在系统设置-配置中填写“功能2网址”"
-                                           "</body></html>"));
-                    } else {
-                        m_function2WebView->load(QUrl::fromUserInput(v));
-                    }
-                }
                 if (m_rightContentStack && m_function2BrowserPage) {
                     m_rightContentStack->setCurrentWidget(m_function2BrowserPage);
                 }
@@ -2420,27 +2426,37 @@ void NewUiWindow::setupUi()
             connect(btn, &QPushButton::clicked, [this, btn, playIconBling]() {
                 playIconBling(btn);
 
-                // [Fix] Reset maintenance state
-                if (m_function3BrowserPage) {
-                    if (QLabel *l = m_function3BrowserPage->findChild<QLabel*>("MaintenanceLabel")) l->setVisible(false);
+                // 使用Qt Multimedia播放网络视频
+                if (!m_videoPlayerWindow) {
+                    m_videoPlayerWindow = new QWidget(nullptr, Qt::Window);
+                    m_videoPlayerWindow->setWindowTitle(QStringLiteral("视频播放器"));
+                    m_videoPlayerWindow->resize(1280, 720);
+                    m_videoPlayerWindow->setStyleSheet("background-color: #000000;");
+
+                    QVBoxLayout *layout = new QVBoxLayout(m_videoPlayerWindow);
+                    layout->setContentsMargins(0, 0, 0, 0);
+
+                    m_videoWidget = new QVideoWidget(m_videoPlayerWindow);
+                    layout->addWidget(m_videoWidget);
+
+                    m_mediaPlayer = new QMediaPlayer(m_videoPlayerWindow);
+                    m_mediaPlayer->setVideoOutput(m_videoWidget);
+
+                    // 播放网络视频
+                    m_mediaPlayer->setSource(QUrl(QStringLiteral("https://www.runoob.com/try/demo_source/mov_bbb.mp4")));
+                    m_mediaPlayer->play();
+
+                    // 窗口关闭时清理
+                    connect(m_videoPlayerWindow, &QWidget::destroyed, this, [this]() {
+                        m_videoPlayerWindow = nullptr;
+                        m_mediaPlayer = nullptr;
+                        m_videoWidget = nullptr;
+                    });
                 }
 
-                if (m_function3WebView) {
-                    m_function3WebView->setVisible(true);
-                    QString v = AppConfig::readConfigValue(QStringLiteral("function3_url")).trimmed();
-                    if (v.isEmpty()) {
-                        m_function3WebView->setHtml(
-                            QStringLiteral("<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head>"
-                                           "<body style=\"background:#404040;color:#e0e0e0;font-family:sans-serif;padding:18px;\">"
-                                           "请在系统设置-配置中填写“功能3网址”"
-                                           "</body></html>"));
-                    } else {
-                        m_function3WebView->load(QUrl::fromUserInput(v));
-                    }
-                }
-                if (m_rightContentStack && m_function3BrowserPage) {
-                    m_rightContentStack->setCurrentWidget(m_function3BrowserPage);
-                }
+                m_videoPlayerWindow->show();
+                m_videoPlayerWindow->raise();
+                m_videoPlayerWindow->activateWindow();
             });
         }
         
@@ -3296,14 +3312,8 @@ void NewUiWindow::setupUi()
     browserLayout2->setContentsMargins(0, 0, 0, 0);
     browserLayout2->setSpacing(0);
 
-    m_function2WebView = new QWebEngineView(browserContainer2);
-    auto *page2 = new StoryboardWebPage(profile, this, m_function2WebView);
-    m_function2WebView->setPage(page2);
-    connect(m_function2WebView, &QWebEngineView::loadFinished, this, [this](bool ok) {
-        if (!ok) return;
-        injectWebCredentialAndAutofill(m_function2WebView);
-    });
-    browserLayout2->addWidget(m_function2WebView);
+    m_nodeGraphWidget = new NodeGraphWidget(browserContainer2);
+    browserLayout2->addWidget(m_nodeGraphWidget);
     m_function2BrowserPage = browserContainer2;
     m_rightContentStack->addWidget(m_function2BrowserPage);
 
@@ -3325,6 +3335,16 @@ void NewUiWindow::setupUi()
     m_function3WebView = new QWebEngineView(browserContainer3);
     auto *page3 = new StoryboardWebPage(profile, this, m_function3WebView);
     m_function3WebView->setPage(page3);
+
+    // 启用视频播放相关设置
+    m_function3WebView->settings()->setAttribute(QWebEngineSettings::PluginsEnabled, true);
+    m_function3WebView->settings()->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
+    m_function3WebView->settings()->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, false);
+    m_function3WebView->settings()->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
+    m_function3WebView->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, true);
+    m_function3WebView->settings()->setAttribute(QWebEngineSettings::AllowWindowActivationFromJavaScript, true);
+    m_function3WebView->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
+
     connect(m_function3WebView, &QWebEngineView::loadFinished, this, [this](bool ok) {
         if (!ok) return;
         injectWebCredentialAndAutofill(m_function3WebView);
